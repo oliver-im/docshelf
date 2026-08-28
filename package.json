@@ -1,0 +1,32 @@
+{
+  "name": "atlas",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "A local, searchable catalog for explicitly registered HTML artifacts.",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "sync": "node scripts/sync-artifacts.mjs",
+    "predev": "npm run sync",
+    "dev": "astro dev",
+    "prebuild": "npm run sync",
+    "build": "astro build",
+    "precheck": "npm run sync",
+    "check": "astro check",
+    "prepreview": "npm run sync",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.41.10",
+    "astro": "^7.2.9",
+    "pagefind": "^1.5.2",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^6.0.3"
+  }
+}
