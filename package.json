@@ -18,7 +18,10 @@
     "check": "astro check",
     "prepreview": "npm run sync",
     "preview": "astro preview",
-    "watch": "node scripts/watch.mjs"
+    "watch": "node scripts/watch.mjs",
+    "daemon:install": "node scripts/launchd.mjs install",
+    "daemon:status": "node scripts/launchd.mjs status",
+    "daemon:uninstall": "node scripts/launchd.mjs uninstall"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.10",

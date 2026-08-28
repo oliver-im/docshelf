@@ -70,6 +70,27 @@ ATLAS_PORT=4331 npm run watch
 keeps Atlas local; binding to a network interface can expose registered files
 to other machines.
 
+## macOS login service
+
+Install the watcher as a per-user `launchd` service that starts at login and is
+kept running:
+
+```sh
+npm run daemon:install
+npm run daemon:status
+```
+
+The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
+It records the current Node executable and Atlas path, so rerun the installer if
+either location changes. Runtime builds and service logs stay in the ignored
+`.atlas-runtime/` directory.
+
+Remove the service with:
+
+```sh
+npm run daemon:uninstall
+```
+
 ## License
 
 MIT
