@@ -47,6 +47,29 @@ npm run preview
 Search is generated during the production build and is unavailable in the Astro
 development server.
 
+## Always-on local server
+
+Run Atlas with production search and automatic rebuilding:
+
+```sh
+npm run watch
+```
+
+The watcher listens on `http://127.0.0.1:4321/`, observes only the manifest
+files and registered HTML sources, and switches to a new isolated build only
+after it succeeds. An invalid manifest or failed build leaves the previous site
+online.
+
+Set a different port when needed:
+
+```sh
+ATLAS_PORT=4331 npm run watch
+```
+
+`ATLAS_HOST` can change the listening interface. The default loopback address
+keeps Atlas local; binding to a network interface can expose registered files
+to other machines.
+
 ## License
 
 MIT

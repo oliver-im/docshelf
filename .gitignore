@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .astro/
+.atlas-runtime/
 artifacts.local.json
 public/artifacts/
 src/generated/

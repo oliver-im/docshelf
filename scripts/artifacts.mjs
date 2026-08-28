@@ -17,8 +17,8 @@ import * as pagefind from 'pagefind';
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const atlasRoot = path.resolve(scriptsDirectory, '..');
 const workspaceRoot = path.resolve(atlasRoot, '..');
-const defaultManifestPath = path.join(atlasRoot, 'artifacts.json');
-const localManifestPath = path.join(atlasRoot, 'artifacts.local.json');
+export const defaultManifestPath = path.join(atlasRoot, 'artifacts.json');
+export const localManifestPath = path.join(atlasRoot, 'artifacts.local.json');
 const generatedRoot = path.join(atlasRoot, 'public', 'artifacts');
 const generatedManifestPath = path.join(atlasRoot, 'src', 'generated', 'artifacts.json');
 
