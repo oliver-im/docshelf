@@ -9,6 +9,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "test": "node --test",
     "sync": "node scripts/sync-artifacts.mjs",
     "predev": "npm run sync",
     "dev": "astro dev",

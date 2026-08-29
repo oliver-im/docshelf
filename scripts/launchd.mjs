@@ -92,10 +92,17 @@ async function status() {
   }
 
   process.stdout.write(result.stdout);
-  console.log(`\nAtlas: http://${host}:${port}/`);
+  const installedHost = launchctlEnvironmentValue(result.stdout, 'ATLAS_HOST') || host;
+  const installedPort = launchctlEnvironmentValue(result.stdout, 'ATLAS_PORT') || String(port);
+  console.log(`\nAtlas: http://${installedHost}:${installedPort}/`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
+}
+
+function launchctlEnvironmentValue(output, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return output.match(new RegExp(`^[\\t ]*${escapedKey}[\\t ]*=>[\\t ]*(.+?)[\\t ]*$`, 'm'))?.[1];
 }
 
 async function uninstall() {

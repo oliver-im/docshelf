@@ -12,6 +12,7 @@ import {
   localManifestPath,
   syncArtifacts,
 } from './artifacts.mjs';
+import { isAllowedHostHeader } from './server-security.mjs';
 
 const host = process.env.ATLAS_HOST || '127.0.0.1';
 const port = Number(process.env.ATLAS_PORT || 4321);
@@ -216,6 +217,12 @@ async function isSuccessfulBuild(buildRoot) {
 }
 
 async function serveRequest(request, response) {
+  if (!isAllowedHostHeader(request.headers.host, host)) {
+    response.writeHead(421, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('Misdirected request\n');
+    return;
+  }
+
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.writeHead(405, {
       allow: 'GET, HEAD',

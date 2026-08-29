@@ -42,6 +42,11 @@ const generatedManifestPath = path.join(atlasRoot, 'src', 'generated', 'artifact
 export async function loadArtifactManifest() {
   const localManifestStats = await stat(localManifestPath).catch(() => null);
   const manifestPath = localManifestStats ? localManifestPath : defaultManifestPath;
+  return loadArtifactManifestFrom(manifestPath);
+}
+
+/** @param {string} manifestPath @returns {Promise<ArtifactManifest>} */
+export async function loadArtifactManifestFrom(manifestPath) {
   const contents = await readFile(manifestPath, 'utf8');
   /** @type {unknown} */
   let parsed;
@@ -92,7 +97,9 @@ export async function loadArtifactManifest() {
     }
 
     if (!isWithin(workspaceRoot, resolvedSource)) {
-      throw new Error(`Artifact ${index + 1} source is outside the hhe workspace: ${source}`);
+      throw new Error(
+        `Artifact ${index + 1} source is outside the workspace root (the parent directory of Atlas): ${source}`,
+      );
     }
 
     if (sources.has(resolvedSource)) {
@@ -192,6 +199,9 @@ export function artifactSearchIntegration() {
         const searchOutput = path.join(outputRoot, 'pagefind');
 
         try {
+          // Starlight has already built its default language-detected Pagefind output at this
+          // point. Rebuild it as one English-base index so the same search UI can find mixed-
+          // language artifact content instead of loading only the page's detected language.
           const response = await pagefind.createIndex({ forceLanguage: 'en' });
           if (!response.index || response.errors.length > 0) {
             throw new Error(response.errors.join('\n') || 'Pagefind did not create an index.');
@@ -259,7 +269,7 @@ function requiredString(entry, key, index) {
 }
 
 /** @param {string} source @param {number} index */
-function validateSource(source, index) {
+export function validateSource(source, index) {
   if (path.isAbsolute(source)) {
     throw new Error(`Artifact ${index + 1} source must be relative to Atlas.`);
   }
@@ -269,7 +279,7 @@ function validateSource(source, index) {
 }
 
 /** @param {string} route @param {number} index */
-function validateRoute(route, index) {
+export function validateRoute(route, index) {
   if (route.startsWith('/') || route.includes('\\')) {
     throw new Error(`Artifact ${index + 1} route must be relative and use forward slashes.`);
   }
