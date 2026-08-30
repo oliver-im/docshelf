@@ -66,6 +66,16 @@ Machine-specific registrations belong only in the ignored
 `npm run sync`, `dev`, `check`, and `build` validate the manifest and regenerate
 the ignored file-level symlink tree in `public/artifacts/`.
 
+## Using the viewer
+
+Choose an artifact in the left sidebar to load it inside Atlas. Use a modified
+click or the browser's link menu when you want to open the standalone HTML file.
+
+- `Command/Ctrl+B` toggles the artifact sidebar.
+
+The sidebar preference is stored in the browser. The selected artifact is also
+written to the page URL, so a viewer state can be bookmarked.
+
 ## Site development
 
 Use Astro's development server while changing Atlas pages, components, or

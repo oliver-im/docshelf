@@ -47,6 +47,9 @@ export default defineConfig({
     starlight({
       title: 'Atlas',
       sidebar,
+      components: {
+        SiteTitle: './src/components/AtlasSiteTitle.astro',
+      },
     }),
     artifactSearchIntegration(),
   ],

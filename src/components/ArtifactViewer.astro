@@ -1,0 +1,211 @@
+---
+import manifest from '../generated/artifacts.json';
+
+interface Artifact {
+  route: string;
+  title: string;
+}
+
+const artifacts = manifest.artifacts as Artifact[];
+const initialArtifact = artifacts[0];
+---
+
+<div class="atlas-viewer" data-atlas-viewer data-artifacts={JSON.stringify(artifacts)}>
+  {
+    initialArtifact ? (
+      <section class="document-pane" aria-label="Document viewer">
+        <iframe
+          data-document-frame
+          src={`/artifacts/${initialArtifact.route}`}
+          title={initialArtifact.title}
+        />
+      </section>
+    ) : (
+      <div class="empty-state">
+        <h2>No artifacts are registered</h2>
+        <p>Add an entry to <code>artifacts.local.json</code> to begin.</p>
+      </div>
+    )
+  }
+</div>
+
+<script>
+  interface Artifact {
+    route: string;
+    title: string;
+  }
+
+  const viewer = document.querySelector<HTMLElement>('[data-atlas-viewer]');
+
+  if (viewer && viewer.dataset.initialized !== 'true') {
+    viewer.dataset.initialized = 'true';
+    initializeViewer(viewer);
+  }
+
+  function initializeViewer(root: HTMLElement) {
+    const artifacts = JSON.parse(root.dataset.artifacts || '[]') as Artifact[];
+    const frame = root.querySelector<HTMLIFrameElement>('[data-document-frame]')!;
+
+    if (artifacts.length === 0 || !frame) return;
+
+    const sidebarLinks = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('#starlight__sidebar a[href]'),
+    )
+      .map((link) => ({ link, route: artifactRouteFromLink(link) }))
+      .filter((entry): entry is { link: HTMLAnchorElement; route: string } => Boolean(entry.route));
+
+    let currentArtifact: Artifact | undefined;
+
+    for (const { link, route } of sidebarLinks) {
+      link.addEventListener('click', (event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        selectArtifact(route, 'push');
+      });
+    }
+
+    window.addEventListener('popstate', () => {
+      selectArtifact(requestedRoute() || artifacts[0].route, 'none');
+    });
+
+    selectArtifact(requestedRoute() || artifacts[0].route, 'none');
+
+    function selectArtifact(route: string, historyMode: 'push' | 'none') {
+      const artifact = artifacts.find((candidate) => candidate.route === route) || artifacts[0];
+      if (!artifact) return;
+
+      const rawUrl = `/artifacts/${artifact.route}`;
+      const changed = currentArtifact?.route !== artifact.route;
+      currentArtifact = artifact;
+      frame.title = artifact.title;
+      document.title = `${artifact.title} | Atlas`;
+
+      if (changed && frame.getAttribute('src') !== rawUrl) frame.src = rawUrl;
+
+      for (const entry of sidebarLinks) {
+        const isCurrent = entry.route === artifact.route;
+        if (isCurrent) {
+          entry.link.setAttribute('data-atlas-current', '');
+          entry.link.setAttribute('aria-current', 'page');
+        } else {
+          entry.link.removeAttribute('data-atlas-current');
+          entry.link.removeAttribute('aria-current');
+        }
+      }
+
+      if (historyMode === 'push' && requestedRoute() !== artifact.route) {
+        const url = new URL(window.location.href);
+        url.pathname = '/';
+        url.searchParams.set('artifact', artifact.route);
+        url.hash = '';
+        window.history.pushState({ artifact: artifact.route }, '', url);
+      }
+    }
+  }
+
+  function artifactRouteFromLink(link: HTMLAnchorElement) {
+    const pathname = new URL(link.href, window.location.href).pathname;
+    const prefix = '/artifacts/';
+    return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
+  }
+
+  function requestedRoute() {
+    return new URL(window.location.href).searchParams.get('artifact');
+  }
+</script>
+
+<style>
+  :global(html:has(.atlas-viewer) .sl-container) {
+    max-width: none;
+  }
+
+  :global(html:has(.atlas-viewer)) {
+    --sl-mobile-toc-height: 0rem;
+  }
+
+  :global(html:has(.atlas-viewer) main) {
+    height: calc(100vh - var(--sl-nav-height));
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  :global(html:has(.atlas-viewer) .right-sidebar-container) {
+    display: none;
+  }
+
+  :global(html:has(.atlas-viewer) .main-pane) {
+    --sl-content-margin-inline: auto;
+    width: 100%;
+  }
+
+  :global(html:has(.atlas-viewer) main > .content-panel:first-of-type),
+  :global(html:has(.atlas-viewer) footer) {
+    display: none;
+  }
+
+  :global(html:has(.atlas-viewer) main > .content-panel:last-of-type) {
+    height: 100%;
+    border-block-start: 0;
+    padding: 0;
+  }
+
+  :global(html:has(.atlas-viewer) main > .content-panel:last-of-type > .sl-container),
+  :global(html:has(.atlas-viewer) .sl-markdown-content) {
+    height: 100%;
+  }
+
+  :global(#starlight__sidebar a[data-atlas-current]) {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-text-accent);
+    font-weight: 600;
+  }
+
+  .atlas-viewer,
+  .document-pane {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .atlas-viewer {
+    overflow: hidden;
+    background: var(--sl-color-bg-nav);
+  }
+
+  .document-pane {
+    min-width: 0;
+    background: white;
+  }
+
+  .document-pane iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: white;
+  }
+
+  .empty-state {
+    padding: clamp(2rem, 8vw, 5rem);
+    text-align: center;
+  }
+
+  .empty-state h2,
+  .empty-state p {
+    margin: 0;
+  }
+
+  .empty-state p {
+    margin-top: 0.75rem;
+    color: var(--sl-color-gray-3);
+  }
+</style>
