@@ -73,8 +73,12 @@ click or the browser's link menu when you want to open the standalone HTML file.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
 
-The sidebar preference is stored in the browser. The selected artifact is also
-written to the page URL, so a viewer state can be bookmarked.
+Drag the divider beside the sidebar to change its width. When the divider has
+keyboard focus, the arrow keys resize it in smaller steps. The width and
+visibility preferences are stored in the browser.
+
+The selected artifact is written to the page URL, so a viewer state can be
+bookmarked.
 
 ## Site development
 
