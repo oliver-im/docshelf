@@ -1,19 +1,20 @@
 # Atlas
 
-A local, searchable catalog for explicitly registered HTML artifacts. Source
-projects keep ownership of their files; Atlas provides navigation, stable local
-URLs, and search without exposing the surrounding workspace.
+A local, searchable catalog for explicitly registered HTML and Markdown
+artifacts. Source projects keep ownership of their files; Atlas provides
+navigation, stable local URLs, and search without exposing the surrounding
+workspace.
 
 ## Why Atlas exists
 
-HTML is useful for visual reports, interactive explanations, and other documents
-that are awkward to understand as plain text. Those files become difficult to
+HTML is useful for visual reports and interactive explanations, while Markdown
+is useful for durable notes and documentation. Those files become difficult to
 rediscover when they are spread across projects or opened through ad hoc
 `file://` links. Atlas gives explicitly selected files one local catalog without
 crawling or serving their owning project directories.
 
-Atlas is intentionally explicit: one manifest entry maps one source HTML file to
-one stable route.
+Atlas is intentionally explicit: one manifest entry maps one source file to one
+stable route.
 
 ## Requirements
 
@@ -48,7 +49,7 @@ Register artifacts in the ignored `artifacts.local.json` file:
   "artifacts": [
     {
       "project": "Example Project",
-      "source": "../example-project/docs/overview.html",
+      "source": "../example-project/docs/overview.md",
       "route": "example-project/overview.html",
       "title": "Project overview",
       "description": "A visual overview of the example project."
@@ -57,11 +58,16 @@ Register artifacts in the ignored `artifacts.local.json` file:
 }
 ```
 
-Sources are relative to the Atlas directory and routes are served below
-`/artifacts/`. `artifacts.json` is both the copyable manifest template and a
-tracked empty fallback, allowing a clean clone to build without local entries.
-Machine-specific registrations belong only in the ignored
+Sources are relative to the Atlas directory and may end in `.html` or `.md`.
+Routes are served below `/artifacts/` and always end in `.html`, including when
+the source is Markdown. `artifacts.json` is both the copyable manifest template
+and a tracked empty fallback, allowing a clean clone to build without local
+entries. Machine-specific registrations belong only in the ignored
 `artifacts.local.json` file.
+
+HTML sources are passed through unchanged. Markdown sources are rendered into
+standalone HTML snapshots beneath Atlas's ignored runtime directory; Atlas never
+modifies the original files.
 
 `npm run sync`, `dev`, `check`, and `build` validate the manifest and regenerate
 the ignored file-level symlink tree in `public/artifacts/`.
@@ -69,7 +75,7 @@ the ignored file-level symlink tree in `public/artifacts/`.
 ## Using the viewer
 
 Choose an artifact in the left sidebar to load it inside Atlas. Use a modified
-click or the browser's link menu when you want to open the standalone HTML file.
+click or the browser's link menu when you want to open the standalone artifact.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
 
@@ -79,6 +85,23 @@ visibility preferences are stored in the browser.
 
 The selected artifact is written to the page URL, so a viewer state can be
 bookmarked.
+
+## Markdown rendering
+
+Markdown artifacts support GitHub-flavored tables, task lists, strikethrough,
+heading anchors, and syntax-highlighted fenced code. YAML or TOML frontmatter is
+removed from the rendered document; a valid `lang` frontmatter value sets the
+HTML document language.
+
+Rendered Markdown uses an adapted Tokyo Night reading theme with a constrained
+line length. Its light or dark appearance follows Atlas, including theme changes
+made while the document is open. Existing HTML artifacts retain their own
+styles.
+
+Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
+document needs custom markup or scripts. Remote images work, but relative images
+do not yet: Atlas exposes only registered files and does not serve neighboring
+project directories.
 
 ## Site development
 
@@ -112,9 +135,9 @@ npm run watch
 ```
 
 The watcher listens on `http://127.0.0.1:4321/`, observes only the manifest
-files and registered HTML sources, and switches to a new isolated build only
-after it succeeds. An invalid manifest or failed build leaves the previous site
-online.
+files and registered artifact sources, and switches to a new isolated build
+only after it succeeds. An invalid manifest or failed build leaves the previous
+site online.
 
 Set a different port when needed:
 
@@ -156,3 +179,6 @@ npm run daemon:uninstall
 ## License
 
 MIT
+
+The Markdown theme is adapted from Tokyo Night for Obsidian. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for its MIT notice.

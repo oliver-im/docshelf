@@ -1,7 +1,7 @@
 # Atlas agent guidance
 
-Atlas catalogs explicitly registered HTML files without taking ownership of
-their source projects.
+Atlas catalogs explicitly registered HTML and Markdown files without taking
+ownership of their source projects.
 
 ## Repository boundaries
 
@@ -10,8 +10,9 @@ their source projects.
   committed.
 - `public/artifacts/`, `src/generated/`, `dist/`, `.astro/`, and
   `.atlas-runtime/` are generated. Do not edit or commit them.
-- Source HTML belongs to its owning project. Atlas may create symlinks and alter
-  copied build output, but must not modify source artifacts.
+- Source files belong to their owning projects. Atlas may create symlinks,
+  render Markdown beneath its runtime directory, and alter copied build output,
+  but must not modify source artifacts.
 - Preserve the safety checks around workspace containment, symlink-only cleanup,
   and build output beneath `.atlas-runtime/`.
 
