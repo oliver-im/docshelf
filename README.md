@@ -18,7 +18,7 @@ stable route.
 
 ## Requirements
 
-- Node.js 22.12 or newer
+- Node.js 24 or newer
 - A filesystem that supports symbolic links
 
 Atlas expects to live inside a workspace alongside the projects it catalogs:
@@ -102,6 +102,13 @@ Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Remote images work, but relative images
 do not yet: Atlas exposes only registered files and does not serve neighboring
 project directories.
+
+## Security
+
+Registered HTML is treated as trusted content and may execute scripts with the
+same origin as Atlas. Register only HTML files you trust. Keep Atlas bound to its
+default loopback address unless you intentionally want to expose registered
+artifacts to the network.
 
 ## Site development
 
