@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import chokidar from 'chokidar';
 import {
-  atlasRoot,
+  docShelfRoot,
   defaultManifestPath,
   loadArtifactManifest,
   localManifestPath,
@@ -14,14 +14,15 @@ import {
 } from './artifacts.mjs';
 import { isAllowedHostHeader } from './server-security.mjs';
 
-const host = process.env.ATLAS_HOST || '127.0.0.1';
-const port = Number(process.env.ATLAS_PORT || 4321);
-const runtimeRoot = path.join(atlasRoot, '.atlas-runtime');
-const standardBuildRoot = path.join(atlasRoot, 'dist');
-const astroCli = path.join(atlasRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
+const host = process.env.DOCSHELF_HOST || '127.0.0.1';
+const port = Number(process.env.DOCSHELF_PORT || 4321);
+const browserHost = host === '127.0.0.1' ? 'shelf.localhost' : host;
+const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
+const standardBuildRoot = path.join(docShelfRoot, 'dist');
+const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error('ATLAS_PORT must be an integer between 1 and 65535.');
+  throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
 await mkdir(runtimeRoot, { recursive: true });
@@ -45,7 +46,7 @@ const watcher = chokidar.watch([defaultManifestPath, localManifestPath], {
 });
 
 watcher.on('all', (event, changedPath) => {
-  scheduleBuild(`${event} ${path.relative(atlasRoot, changedPath)}`);
+  scheduleBuild(`${event} ${path.relative(docShelfRoot, changedPath)}`);
 });
 
 watcher.on('error', (error) => {
@@ -71,9 +72,9 @@ await new Promise((resolve, reject) => {
 });
 
 activeBuildRoot = await findLatestBuild();
-console.log(`Atlas is available at http://${host}:${port}/`);
+console.log(`DocShelf is available at http://${browserHost}:${port}/`);
 if (activeBuildRoot) {
-  console.log(`[serve] Using ${path.relative(atlasRoot, activeBuildRoot)} while rebuilding.`);
+  console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
 } else {
   console.log('[serve] No successful build yet; requests will return 503 until one completes.');
 }
@@ -150,10 +151,10 @@ async function rebuild(reasons) {
 function runAstroBuild(buildRoot) {
   return new Promise((resolve, reject) => {
     currentBuildProcess = spawn(process.execPath, [astroCli, 'build'], {
-      cwd: atlasRoot,
+      cwd: docShelfRoot,
       env: {
         ...process.env,
-        ATLAS_WATCH_OUT_DIR: buildRoot,
+        DOCSHELF_WATCH_OUT_DIR: buildRoot,
       },
       stdio: 'inherit',
     });
@@ -239,13 +240,13 @@ async function serveRequest(request, response) {
       'content-type': 'text/plain; charset=utf-8',
       'retry-after': '1',
     });
-    response.end('Atlas is building\n');
+    response.end('DocShelf is building\n');
     return;
   }
 
   let pathname;
   try {
-    pathname = decodeURIComponent(new URL(request.url || '/', 'http://atlas.local').pathname);
+    pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
   } catch {
     response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('Bad request\n');

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import {
-  atlasRoot,
+  docShelfRoot,
   artifactBuildIntegration,
   artifactSearchIntegration,
   artifactUrl,
@@ -11,18 +11,18 @@ import {
 } from './scripts/artifacts.mjs';
 
 const manifest = await loadArtifactManifest();
-const configuredOutput = process.env.ATLAS_WATCH_OUT_DIR;
+const configuredOutput = process.env.DOCSHELF_WATCH_OUT_DIR;
 const outDir = configuredOutput ? path.resolve(configuredOutput) : undefined;
 
 if (outDir) {
-  const runtimeRoot = path.join(atlasRoot, '.atlas-runtime');
+  const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
   const relativeOutput = path.relative(runtimeRoot, outDir);
   if (
     relativeOutput === '' ||
     relativeOutput === '..' ||
     relativeOutput.startsWith(`..${path.sep}`)
   ) {
-    throw new Error('ATLAS_WATCH_OUT_DIR must be a child of Atlas .atlas-runtime.');
+    throw new Error('DOCSHELF_WATCH_OUT_DIR must be a child of DocShelf .docshelf-runtime.');
   }
 }
 const sidebar = Array.from(
@@ -37,7 +37,7 @@ const sidebar = Array.from(
 );
 
 export default defineConfig({
-  site: 'http://127.0.0.1:4321',
+  site: 'http://shelf.localhost:4321',
   outDir,
   build: {
     format: 'file',
@@ -45,10 +45,10 @@ export default defineConfig({
   integrations: [
     artifactBuildIntegration(manifest),
     starlight({
-      title: 'Atlas',
+      title: 'DocShelf',
       sidebar,
       components: {
-        SiteTitle: './src/components/AtlasSiteTitle.astro',
+        SiteTitle: './src/components/DocShelfSiteTitle.astro',
       },
     }),
     artifactSearchIntegration(),

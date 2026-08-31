@@ -1,8 +1,8 @@
 {
-  "name": "atlas",
+  "name": "docshelf",
   "type": "module",
   "version": "0.0.1",
-  "description": "A local, searchable catalog for explicitly registered HTML and Markdown artifacts.",
+  "description": "A local, searchable shelf for explicitly registered HTML and Markdown artifacts.",
   "license": "MIT",
   "private": true,
   "engines": {

@@ -1,19 +1,19 @@
-# Atlas
+# DocShelf
 
-A local, searchable catalog for explicitly registered HTML and Markdown
-artifacts. Source projects keep ownership of their files; Atlas provides
+A local, searchable shelf for explicitly registered HTML and Markdown
+artifacts. Source projects keep ownership of their files; DocShelf provides
 navigation, stable local URLs, and search without exposing the surrounding
 workspace.
 
-## Why Atlas exists
+## Why DocShelf exists
 
 HTML is useful for visual reports and interactive explanations, while Markdown
 is useful for durable notes and documentation. Those files become difficult to
 rediscover when they are spread across projects or opened through ad hoc
-`file://` links. Atlas gives explicitly selected files one local catalog without
-crawling or serving their owning project directories.
+`file://` links. DocShelf gives explicitly selected files one curated local
+shelf without crawling or serving their owning project directories.
 
-Atlas is intentionally explicit: one manifest entry maps one source file to one
+DocShelf is intentionally explicit: one manifest entry maps one source file to one
 stable route.
 
 ## Requirements
@@ -21,15 +21,15 @@ stable route.
 - Node.js 24 or newer
 - A filesystem that supports symbolic links
 
-Atlas expects to live inside a workspace alongside the projects it catalogs:
+DocShelf expects to live inside a workspace alongside the projects it catalogs:
 
 ```text
 workspace/
-├── atlas/
+├── docshelf/
 └── example-project/
 ```
 
-Registered sources must resolve inside the workspace root, defined as Atlas's
+Registered sources must resolve inside the workspace root, defined as DocShelf's
 parent directory. This keeps a misplaced manifest entry from reaching outside
 the intended workspace.
 
@@ -58,7 +58,7 @@ Register artifacts in the ignored `artifacts.local.json` file:
 }
 ```
 
-Sources are relative to the Atlas directory and may end in `.html` or `.md`.
+Sources are relative to the DocShelf directory and may end in `.html` or `.md`.
 Routes are served below `/artifacts/` and always end in `.html`, including when
 the source is Markdown. `artifacts.json` is both the copyable manifest template
 and a tracked empty fallback, allowing a clean clone to build without local
@@ -66,7 +66,7 @@ entries. Machine-specific registrations belong only in the ignored
 `artifacts.local.json` file.
 
 HTML sources are passed through unchanged. Markdown sources are rendered into
-standalone HTML snapshots beneath Atlas's ignored runtime directory; Atlas never
+standalone HTML snapshots beneath DocShelf's ignored runtime directory; DocShelf never
 modifies the original files.
 
 `npm run sync`, `dev`, `check`, and `build` validate the manifest and regenerate
@@ -74,7 +74,7 @@ the ignored file-level symlink tree in `public/artifacts/`.
 
 ## Using the viewer
 
-Choose an artifact in the left sidebar to load it inside Atlas. Use a modified
+Choose an artifact in the left sidebar to load it inside DocShelf. Use a modified
 click or the browser's link menu when you want to open the standalone artifact.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
@@ -94,25 +94,25 @@ removed from the rendered document; a valid `lang` frontmatter value sets the
 HTML document language.
 
 Rendered Markdown uses an adapted Tokyo Night reading theme with a constrained
-line length. Its light or dark appearance follows Atlas, including theme changes
+line length. Its light or dark appearance follows DocShelf, including theme changes
 made while the document is open. Existing HTML artifacts retain their own
 styles.
 
 Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Remote images work, but relative images
-do not yet: Atlas exposes only registered files and does not serve neighboring
+do not yet: DocShelf exposes only registered files and does not serve neighboring
 project directories.
 
 ## Security
 
 Registered HTML is treated as trusted content and may execute scripts with the
-same origin as Atlas. Register only HTML files you trust. Keep Atlas bound to its
+same origin as DocShelf. Register only HTML files you trust. Keep DocShelf bound to its
 default loopback address unless you intentionally want to expose registered
 artifacts to the network.
 
 ## Site development
 
-Use Astro's development server while changing Atlas pages, components, or
+Use Astro's development server while changing DocShelf pages, components, or
 styles:
 
 ```sh
@@ -135,13 +135,14 @@ npm run preview
 
 ## Always-on local server
 
-Run Atlas with production search and automatic rebuilding:
+Run DocShelf with production search and automatic rebuilding:
 
 ```sh
 npm run watch
 ```
 
-The watcher listens on `http://127.0.0.1:4321/`, observes only the manifest
+The watcher is available at `http://shelf.localhost:4321/`, binds to
+`127.0.0.1` by default, and observes only the manifest
 files and registered artifact sources, and switches to a new isolated build
 only after it succeeds. An invalid manifest or failed build leaves the previous
 site online.
@@ -149,12 +150,12 @@ site online.
 Set a different port when needed:
 
 ```sh
-ATLAS_PORT=4331 npm run watch
+DOCSHELF_PORT=4331 npm run watch
 ```
 
-`ATLAS_HOST` can change the listening interface. The default loopback address
-keeps Atlas local; binding to a network interface can expose registered files
-to other machines. In loopback mode, Atlas accepts only loopback and
+`DOCSHELF_HOST` can change the listening interface. The default loopback address
+keeps DocShelf local; binding to a network interface can expose registered files
+to other machines. In loopback mode, DocShelf accepts only loopback and
 `*.localhost` Host headers to prevent unrelated domains from reading the local
 catalog through DNS rebinding.
 
@@ -172,9 +173,9 @@ npm run daemon:status
 ```
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
-It records the current Node executable, Atlas path, host, and port, so rerun the
+It records the current Node executable, DocShelf path, host, and port, so rerun the
 installer if any of them change. `daemon:status` reports the values loaded by
-`launchd`. Runtime builds and service logs stay in the ignored `.atlas-runtime/`
+`launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
 directory.
 
 Remove the service with:

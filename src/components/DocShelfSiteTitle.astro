@@ -4,13 +4,13 @@ import StarlightSiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
 const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
 ---
 
-<div class="atlas-site-title">
+<div class="docshelf-site-title">
   {
     showSidebarToggle && (
       <button
         class="sidebar-toggle print:hidden"
         type="button"
-        data-atlas-sidebar-toggle
+        data-docshelf-sidebar-toggle
         aria-controls="starlight__sidebar"
         aria-expanded="true"
         aria-label="Hide navigation"
@@ -27,7 +27,9 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
 </div>
 
 <script>
-  const sidebarToggle = document.querySelector<HTMLButtonElement>('[data-atlas-sidebar-toggle]');
+  const sidebarToggle = document.querySelector<HTMLButtonElement>(
+    '[data-docshelf-sidebar-toggle]',
+  );
 
   if (sidebarToggle && sidebarToggle.dataset.initialized !== 'true') {
     sidebarToggle.dataset.initialized = 'true';
@@ -42,8 +44,8 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
     if (!sidebar) return;
 
     const resizer = document.createElement('div');
-    resizer.className = 'atlas-sidebar-resizer';
-    resizer.dataset.atlasSidebarResizer = '';
+    resizer.className = 'docshelf-sidebar-resizer';
+    resizer.dataset.docshelfSidebarResizer = '';
     resizer.setAttribute('role', 'separator');
     resizer.setAttribute('aria-label', 'Resize navigation');
     resizer.setAttribute('aria-orientation', 'vertical');
@@ -52,22 +54,22 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
     document.body.append(resizer);
 
     const defaultWidth = sidebar.getBoundingClientRect().width;
-    const savedWidth = Number(readPreference('atlas:sidebar-width'));
+    const savedWidth = Number(readPreference('docshelf:sidebar-width'));
     let currentWidth = Number.isFinite(savedWidth) && savedWidth > 0 ? savedWidth : defaultWidth;
     let activePointer: number | undefined;
 
     button.addEventListener('click', () => {
-      setSidebar(root.dataset.atlasLeft === 'hidden');
+      setSidebar(root.dataset.docshelfLeft === 'hidden');
     });
 
     resizer.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || !desktop.matches || root.dataset.atlasLeft === 'hidden') return;
+      if (event.button !== 0 || !desktop.matches || root.dataset.docshelfLeft === 'hidden') return;
 
       event.preventDefault();
       activePointer = event.pointerId;
       resizer.setPointerCapture(event.pointerId);
       resizer.dataset.resizing = 'true';
-      document.body.dataset.atlasResizing = 'true';
+      document.body.dataset.docshelfResizing = 'true';
       resizeFromPointer(event.clientX);
     });
 
@@ -108,11 +110,11 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       }
 
       event.preventDefault();
-      setSidebar(root.dataset.atlasLeft === 'hidden');
+      setSidebar(root.dataset.docshelfLeft === 'hidden');
     });
 
     setSidebarWidth(currentWidth, false);
-    setSidebar(readPreference('atlas:left-panel') !== 'hidden', false);
+    setSidebar(readPreference('docshelf:left-panel') !== 'hidden', false);
 
     function resizeFromPointer(pointerX: number) {
       const width = getComputedStyle(root).direction === 'rtl' ? window.innerWidth - pointerX : pointerX;
@@ -124,8 +126,8 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       if (resizer.hasPointerCapture(event.pointerId)) resizer.releasePointerCapture(event.pointerId);
       activePointer = undefined;
       delete resizer.dataset.resizing;
-      delete document.body.dataset.atlasResizing;
-      writePreference('atlas:sidebar-width', String(currentWidth));
+      delete document.body.dataset.docshelfResizing;
+      writePreference('docshelf:sidebar-width', String(currentWidth));
     }
 
     function setSidebarWidth(width: number, persist = true) {
@@ -135,7 +137,7 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       resizer.setAttribute('aria-valuemin', String(range.min));
       resizer.setAttribute('aria-valuemax', String(range.max));
       resizer.setAttribute('aria-valuenow', String(currentWidth));
-      if (persist) writePreference('atlas:sidebar-width', String(currentWidth));
+      if (persist) writePreference('docshelf:sidebar-width', String(currentWidth));
     }
 
     function sidebarWidthRange() {
@@ -146,10 +148,10 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
     }
 
     function setSidebar(visible: boolean, persist = true) {
-      root.dataset.atlasLeft = visible ? 'visible' : 'hidden';
+      root.dataset.docshelfLeft = visible ? 'visible' : 'hidden';
       button.setAttribute('aria-expanded', String(visible));
       button.setAttribute('aria-label', visible ? 'Hide navigation' : 'Show navigation');
-      if (persist) writePreference('atlas:left-panel', visible ? 'visible' : 'hidden');
+      if (persist) writePreference('docshelf:left-panel', visible ? 'visible' : 'hidden');
     }
   }
 
@@ -180,7 +182,7 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
 </script>
 
 <style>
-  .atlas-site-title {
+  .docshelf-site-title {
     display: flex;
     min-width: 0;
     align-items: center;
@@ -236,19 +238,19 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       display: inline-flex;
     }
 
-    :global(html[data-atlas-left='hidden']) {
+    :global(html[data-docshelf-left='hidden']) {
       --sl-content-inline-start: 0rem;
     }
 
-    :global(html[data-atlas-left='hidden'] nav.sidebar) {
+    :global(html[data-docshelf-left='hidden'] nav.sidebar) {
       display: none;
     }
 
-    :global(html[data-atlas-left='visible'] .atlas-sidebar-resizer) {
+    :global(html[data-docshelf-left='visible'] .docshelf-sidebar-resizer) {
       display: block;
     }
 
-    :global(.atlas-sidebar-resizer) {
+    :global(.docshelf-sidebar-resizer) {
       position: fixed;
       z-index: 6;
       inset-block: var(--sl-nav-height) 0;
@@ -259,7 +261,7 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       touch-action: none;
     }
 
-    :global(.atlas-sidebar-resizer::after) {
+    :global(.docshelf-sidebar-resizer::after) {
       position: absolute;
       inset-block: 0;
       inset-inline-start: calc(50% - 0.5px);
@@ -271,23 +273,23 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
         background-color 160ms ease;
     }
 
-    :global(.atlas-sidebar-resizer:hover::after),
-    :global(.atlas-sidebar-resizer:focus-visible::after),
-    :global(.atlas-sidebar-resizer[data-resizing='true']::after) {
+    :global(.docshelf-sidebar-resizer:hover::after),
+    :global(.docshelf-sidebar-resizer:focus-visible::after),
+    :global(.docshelf-sidebar-resizer[data-resizing='true']::after) {
       width: 2px;
       background: var(--sl-color-accent);
     }
 
-    :global(.atlas-sidebar-resizer:focus-visible) {
+    :global(.docshelf-sidebar-resizer:focus-visible) {
       outline: none;
     }
 
-    :global(body[data-atlas-resizing='true']) {
+    :global(body[data-docshelf-resizing='true']) {
       cursor: col-resize;
       user-select: none;
     }
 
-    :global(body[data-atlas-resizing='true'] iframe) {
+    :global(body[data-docshelf-resizing='true'] iframe) {
       pointer-events: none;
     }
   }
@@ -297,7 +299,7 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
       transition: none;
     }
 
-    :global(.atlas-sidebar-resizer::after) {
+    :global(.docshelf-sidebar-resizer::after) {
       transition: none;
     }
   }

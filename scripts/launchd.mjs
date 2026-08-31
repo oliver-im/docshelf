@@ -3,28 +3,28 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { atlasRoot } from './artifacts.mjs';
+import { docShelfRoot } from './artifacts.mjs';
 
 const command = process.argv[2];
-const label = 'local.atlas.watch';
+const label = 'local.docshelf.watch';
 const userId = process.getuid?.();
 const userHome = homedir();
 const launchAgentsDirectory = path.join(userHome, 'Library', 'LaunchAgents');
 const plistPath = path.join(launchAgentsDirectory, `${label}.plist`);
 const serviceTarget = `gui/${userId}/${label}`;
-const runtimeRoot = path.join(atlasRoot, '.atlas-runtime');
-const standardOutputPath = path.join(runtimeRoot, 'atlas.stdout.log');
-const standardErrorPath = path.join(runtimeRoot, 'atlas.stderr.log');
-const watchScript = path.join(atlasRoot, 'scripts', 'watch.mjs');
-const host = process.env.ATLAS_HOST || '127.0.0.1';
-const port = Number(process.env.ATLAS_PORT || 4321);
+const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
+const standardOutputPath = path.join(runtimeRoot, 'docshelf.stdout.log');
+const standardErrorPath = path.join(runtimeRoot, 'docshelf.stderr.log');
+const watchScript = path.join(docShelfRoot, 'scripts', 'watch.mjs');
+const host = process.env.DOCSHELF_HOST || '127.0.0.1';
+const port = Number(process.env.DOCSHELF_PORT || 4321);
 
 if (process.platform !== 'darwin' || userId === undefined) {
-  throw new Error('The Atlas launchd integration requires macOS user launch agents.');
+  throw new Error('The DocShelf launchd integration requires macOS user launch agents.');
 }
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error('ATLAS_PORT must be an integer between 1 and 65535.');
+  throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
 if (userHome === '/' || path.dirname(launchAgentsDirectory) !== path.join(userHome, 'Library')) {
@@ -77,7 +77,7 @@ async function install() {
   }
 
   console.log(`Installed and started ${label}.`);
-  console.log(`Atlas: http://${host}:${port}/`);
+  console.log(`DocShelf: http://${browserHost(host)}:${port}/`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -92,9 +92,9 @@ async function status() {
   }
 
   process.stdout.write(result.stdout);
-  const installedHost = launchctlEnvironmentValue(result.stdout, 'ATLAS_HOST') || host;
-  const installedPort = launchctlEnvironmentValue(result.stdout, 'ATLAS_PORT') || String(port);
-  console.log(`\nAtlas: http://${installedHost}:${installedPort}/`);
+  const installedHost = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_HOST') || host;
+  const installedPort = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_PORT') || String(port);
+  console.log(`\nDocShelf: http://${browserHost(installedHost)}:${installedPort}/`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -103,6 +103,10 @@ async function status() {
 function launchctlEnvironmentValue(output, key) {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return output.match(new RegExp(`^[\\t ]*${escapedKey}[\\t ]*=>[\\t ]*(.+?)[\\t ]*$`, 'm'))?.[1];
+}
+
+function browserHost(listenHost) {
+  return listenHost === '127.0.0.1' ? 'shelf.localhost' : listenHost;
 }
 
 async function uninstall() {
@@ -205,12 +209,12 @@ function renderPlist() {
     <string>${xml(watchScript)}</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>${xml(atlasRoot)}</string>
+  <string>${xml(docShelfRoot)}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ATLAS_HOST</key>
+    <key>DOCSHELF_HOST</key>
     <string>${xml(host)}</string>
-    <key>ATLAS_PORT</key>
+    <key>DOCSHELF_PORT</key>
     <string>${port}</string>
     <key>PATH</key>
     <string>${xml(executablePath)}</string>

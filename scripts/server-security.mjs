@@ -2,7 +2,7 @@ import { isIP } from 'node:net';
 
 /**
  * Restrict loopback listeners to hostnames that browsers also resolve to loopback.
- * A deliberate non-loopback ATLAS_HOST binding keeps accepting network hostnames.
+ * A deliberate non-loopback DOCSHELF_HOST binding keeps accepting network hostnames.
  *
  * @param {string | undefined} hostHeader
  * @param {string} listenHost

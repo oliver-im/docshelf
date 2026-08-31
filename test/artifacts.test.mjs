@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  atlasRoot,
+  docShelfRoot,
   loadArtifactManifestFrom,
   validateRoute,
   validateSource,
@@ -38,11 +38,11 @@ test('source validation accepts relative HTML and Markdown paths', () => {
 });
 
 test('manifest loading resolves a valid source inside the workspace', async (t) => {
-  const fixtureRoot = await createAtlasFixture(t);
+  const fixtureRoot = await createDocShelfFixture(t);
   const sourcePath = path.join(fixtureRoot, 'report.html');
   const manifestPath = path.join(fixtureRoot, 'manifest.json');
   await writeFile(sourcePath, '<!doctype html><title>Report</title>');
-  await writeManifest(manifestPath, [artifact(path.relative(atlasRoot, sourcePath))]);
+  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
   const manifest = await loadArtifactManifestFrom(manifestPath);
 
@@ -52,11 +52,11 @@ test('manifest loading resolves a valid source inside the workspace', async (t) 
 });
 
 test('manifest loading identifies a Markdown source', async (t) => {
-  const fixtureRoot = await createAtlasFixture(t);
+  const fixtureRoot = await createDocShelfFixture(t);
   const sourcePath = path.join(fixtureRoot, 'report.md');
   const manifestPath = path.join(fixtureRoot, 'manifest.json');
   await writeFile(sourcePath, '# Report\n');
-  await writeManifest(manifestPath, [artifact(path.relative(atlasRoot, sourcePath))]);
+  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
   const manifest = await loadArtifactManifestFrom(manifestPath);
 
@@ -103,36 +103,36 @@ const ready = true;
 });
 
 test('manifest loading rejects duplicate routes', async (t) => {
-  const fixtureRoot = await createAtlasFixture(t);
+  const fixtureRoot = await createDocShelfFixture(t);
   const firstSource = path.join(fixtureRoot, 'first.html');
   const secondSource = path.join(fixtureRoot, 'second.html');
   const manifestPath = path.join(fixtureRoot, 'manifest.json');
   await writeFile(firstSource, '<!doctype html><title>First</title>');
   await writeFile(secondSource, '<!doctype html><title>Second</title>');
   await writeManifest(manifestPath, [
-    artifact(path.relative(atlasRoot, firstSource)),
-    artifact(path.relative(atlasRoot, secondSource)),
+    artifact(path.relative(docShelfRoot, firstSource)),
+    artifact(path.relative(docShelfRoot, secondSource)),
   ]);
 
   await assert.rejects(loadArtifactManifestFrom(manifestPath), { message: /duplicates route/ });
 });
 
 test('manifest loading rejects sources outside the workspace root', async (t) => {
-  const fixtureRoot = await createAtlasFixture(t);
-  const externalRoot = await mkdtemp(path.join(tmpdir(), 'atlas-external-'));
+  const fixtureRoot = await createDocShelfFixture(t);
+  const externalRoot = await mkdtemp(path.join(tmpdir(), 'docshelf-external-'));
   t.after(() => rm(externalRoot, { recursive: true, force: true }));
   const sourcePath = path.join(externalRoot, 'report.html');
   const manifestPath = path.join(fixtureRoot, 'manifest.json');
   await writeFile(sourcePath, '<!doctype html><title>Outside</title>');
-  await writeManifest(manifestPath, [artifact(path.relative(atlasRoot, sourcePath))]);
+  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
   await assert.rejects(loadArtifactManifestFrom(manifestPath), {
-    message: /outside the workspace root \(the parent directory of Atlas\)/,
+    message: /outside the workspace root \(the parent directory of DocShelf\)/,
   });
 });
 
-async function createAtlasFixture(t) {
-  const fixtureParent = path.join(atlasRoot, '.atlas-runtime');
+async function createDocShelfFixture(t) {
+  const fixtureParent = path.join(docShelfRoot, '.docshelf-runtime');
   await mkdir(fixtureParent, { recursive: true });
   const fixtureRoot = await mkdtemp(path.join(fixtureParent, 'test-'));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));

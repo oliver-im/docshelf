@@ -11,7 +11,7 @@ const processorPromise = createMarkdownProcessor({
 
 /**
  * Render a registered Markdown source as a complete, standalone HTML document.
- * The source remains untouched; Atlas writes this output only beneath its runtime directory.
+ * The source remains untouched; DocShelf writes this output only beneath its runtime directory.
  *
  * @param {{ title: string, description: string, sourcePath: string }} artifact
  * @param {string} source

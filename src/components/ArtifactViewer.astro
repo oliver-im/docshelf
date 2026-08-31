@@ -10,7 +10,7 @@ const artifacts = manifest.artifacts as Artifact[];
 const initialArtifact = artifacts[0];
 ---
 
-<div class="atlas-viewer" data-atlas-viewer data-artifacts={JSON.stringify(artifacts)}>
+<div class="docshelf-viewer" data-docshelf-viewer data-artifacts={JSON.stringify(artifacts)}>
   {
     initialArtifact ? (
       <section class="document-pane" aria-label="Document viewer">
@@ -35,7 +35,7 @@ const initialArtifact = artifacts[0];
     title: string;
   }
 
-  const viewer = document.querySelector<HTMLElement>('[data-atlas-viewer]');
+  const viewer = document.querySelector<HTMLElement>('[data-docshelf-viewer]');
 
   if (viewer && viewer.dataset.initialized !== 'true') {
     viewer.dataset.initialized = 'true';
@@ -88,17 +88,17 @@ const initialArtifact = artifacts[0];
       const changed = currentArtifact?.route !== artifact.route;
       currentArtifact = artifact;
       frame.title = artifact.title;
-      document.title = `${artifact.title} | Atlas`;
+      document.title = `${artifact.title} | DocShelf`;
 
       if (changed && frame.getAttribute('src') !== rawUrl) frame.src = rawUrl;
 
       for (const entry of sidebarLinks) {
         const isCurrent = entry.route === artifact.route;
         if (isCurrent) {
-          entry.link.setAttribute('data-atlas-current', '');
+          entry.link.setAttribute('data-docshelf-current', '');
           entry.link.setAttribute('aria-current', 'page');
         } else {
-          entry.link.removeAttribute('data-atlas-current');
+          entry.link.removeAttribute('data-docshelf-current');
           entry.link.removeAttribute('aria-current');
         }
       }
@@ -125,58 +125,58 @@ const initialArtifact = artifacts[0];
 </script>
 
 <style>
-  :global(html:has(.atlas-viewer) .sl-container) {
+  :global(html:has(.docshelf-viewer) .sl-container) {
     max-width: none;
   }
 
-  :global(html:has(.atlas-viewer)) {
+  :global(html:has(.docshelf-viewer)) {
     --sl-mobile-toc-height: 0rem;
   }
 
-  :global(html:has(.atlas-viewer) main) {
+  :global(html:has(.docshelf-viewer) main) {
     height: calc(100vh - var(--sl-nav-height));
     min-width: 0;
     overflow: hidden;
   }
 
-  :global(html:has(.atlas-viewer) .right-sidebar-container) {
+  :global(html:has(.docshelf-viewer) .right-sidebar-container) {
     display: none;
   }
 
-  :global(html:has(.atlas-viewer) .main-pane) {
+  :global(html:has(.docshelf-viewer) .main-pane) {
     --sl-content-margin-inline: auto;
     width: 100%;
   }
 
-  :global(html:has(.atlas-viewer) main > .content-panel:first-of-type),
-  :global(html:has(.atlas-viewer) footer) {
+  :global(html:has(.docshelf-viewer) main > .content-panel:first-of-type),
+  :global(html:has(.docshelf-viewer) footer) {
     display: none;
   }
 
-  :global(html:has(.atlas-viewer) main > .content-panel:last-of-type) {
+  :global(html:has(.docshelf-viewer) main > .content-panel:last-of-type) {
     height: 100%;
     border-block-start: 0;
     padding: 0;
   }
 
-  :global(html:has(.atlas-viewer) main > .content-panel:last-of-type > .sl-container),
-  :global(html:has(.atlas-viewer) .sl-markdown-content) {
+  :global(html:has(.docshelf-viewer) main > .content-panel:last-of-type > .sl-container),
+  :global(html:has(.docshelf-viewer) .sl-markdown-content) {
     height: 100%;
   }
 
-  :global(#starlight__sidebar a[data-atlas-current]) {
+  :global(#starlight__sidebar a[data-docshelf-current]) {
     background: var(--sl-color-accent-low);
     color: var(--sl-color-text-accent);
     font-weight: 600;
   }
 
-  .atlas-viewer,
+  .docshelf-viewer,
   .document-pane {
     height: 100%;
     min-height: 0;
   }
 
-  .atlas-viewer {
+  .docshelf-viewer {
     overflow: hidden;
     background: var(--sl-color-bg-nav);
   }
