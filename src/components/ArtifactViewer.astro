@@ -13,11 +13,23 @@ const initialArtifact = artifacts[0];
 <div class="docshelf-viewer" data-docshelf-viewer data-artifacts={JSON.stringify(artifacts)}>
   {
     initialArtifact ? (
-      <section class="document-pane" aria-label="Document viewer">
+      <section class="document-pane" aria-label="Document viewer" aria-busy="false">
         <iframe
           data-document-frame
+          data-frame-state="active"
+          data-frame-ready="false"
+          data-artifact-route={initialArtifact.route}
           src={`/artifacts/${initialArtifact.route}`}
           title={initialArtifact.title}
+        />
+        <iframe
+          data-document-frame
+          data-frame-state="standby"
+          data-frame-ready="false"
+          data-artifact-route=""
+          title="Document preload"
+          aria-hidden="true"
+          tabindex="-1"
         />
       </section>
     ) : (
@@ -44,9 +56,18 @@ const initialArtifact = artifacts[0];
 
   function initializeViewer(root: HTMLElement) {
     const artifacts = JSON.parse(root.dataset.artifacts || '[]') as Artifact[];
-    const frame = root.querySelector<HTMLIFrameElement>('[data-document-frame]')!;
+    const pane = root.querySelector<HTMLElement>('.document-pane');
+    const frames = Array.from(
+      root.querySelectorAll<HTMLIFrameElement>('[data-document-frame]'),
+    );
+    const initialActiveFrame = frames.find((frame) => frame.dataset.frameState === 'active');
+    const initialStagingFrame = frames.find((frame) => frame !== initialActiveFrame);
 
-    if (artifacts.length === 0 || !frame) return;
+    if (artifacts.length === 0 || !pane || !initialActiveFrame || !initialStagingFrame) return;
+
+    const documentPane: HTMLElement = pane;
+    let activeFrame: HTMLIFrameElement = initialActiveFrame;
+    let stagingFrame: HTMLIFrameElement = initialStagingFrame;
 
     const sidebarLinks = Array.from(
       document.querySelectorAll<HTMLAnchorElement>('#starlight__sidebar a[href]'),
@@ -55,6 +76,7 @@ const initialArtifact = artifacts[0];
       .filter((entry): entry is { link: HTMLAnchorElement; route: string } => Boolean(entry.route));
 
     let currentArtifact: Artifact | undefined;
+    let navigationId = 0;
 
     for (const { link, route } of sidebarLinks) {
       link.addEventListener('click', (event) => {
@@ -87,10 +109,9 @@ const initialArtifact = artifacts[0];
       const rawUrl = `/artifacts/${artifact.route}`;
       const changed = currentArtifact?.route !== artifact.route;
       currentArtifact = artifact;
-      frame.title = artifact.title;
       document.title = `${artifact.title} | DocShelf`;
 
-      if (changed && frame.getAttribute('src') !== rawUrl) frame.src = rawUrl;
+      if (changed) void displayArtifact(artifact, rawUrl);
 
       for (const entry of sidebarLinks) {
         const isCurrent = entry.route === artifact.route;
@@ -111,6 +132,186 @@ const initialArtifact = artifacts[0];
         window.history.pushState({ artifact: artifact.route }, '', url);
       }
     }
+
+    async function displayArtifact(artifact: Artifact, rawUrl: string) {
+      const requestId = ++navigationId;
+
+      if (activeFrame.dataset.artifactRoute === artifact.route) {
+        activeFrame.title = artifact.title;
+        documentPane.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      documentPane.setAttribute('aria-busy', 'true');
+
+      if (
+        stagingFrame.dataset.artifactRoute === artifact.route &&
+        stagingFrame.dataset.frameReady === 'true'
+      ) {
+        await waitForPaint();
+        if (requestId === navigationId) swapFrames(stagingFrame, artifact);
+        return;
+      }
+
+      const expectsDarkReader =
+        documentUsesDarkReader(document) || frameUsesDarkReader(activeFrame);
+
+      stagingFrame.dataset.frameState = 'loading';
+      stagingFrame.dataset.frameReady = 'false';
+      stagingFrame.dataset.artifactRoute = artifact.route;
+      stagingFrame.title = artifact.title;
+      stagingFrame.setAttribute('aria-hidden', 'true');
+      stagingFrame.tabIndex = -1;
+
+      const loaded = await loadFrame(stagingFrame, rawUrl);
+      if (!loaded || requestId !== navigationId) {
+        if (requestId === navigationId) documentPane.setAttribute('aria-busy', 'false');
+        return;
+      }
+
+      await waitForFrameToSettle(stagingFrame, expectsDarkReader);
+      if (requestId !== navigationId) return;
+
+      stagingFrame.dataset.frameReady = 'true';
+      swapFrames(stagingFrame, artifact);
+    }
+
+    function swapFrames(nextFrame: HTMLIFrameElement, artifact: Artifact) {
+      const previousFrame = activeFrame;
+
+      if (frameHasLoadedRoute(previousFrame, previousFrame.dataset.artifactRoute || '')) {
+        previousFrame.dataset.frameReady = 'true';
+      }
+
+      nextFrame.dataset.frameState = 'active';
+      nextFrame.title = artifact.title;
+      nextFrame.removeAttribute('aria-hidden');
+      nextFrame.removeAttribute('tabindex');
+
+      previousFrame.dataset.frameState = 'standby';
+      previousFrame.setAttribute('aria-hidden', 'true');
+      previousFrame.tabIndex = -1;
+
+      activeFrame = nextFrame;
+      stagingFrame = previousFrame;
+      documentPane.setAttribute('aria-busy', 'false');
+    }
+  }
+
+  function loadFrame(frame: HTMLIFrameElement, rawUrl: string) {
+    const expectedUrl = new URL(rawUrl, window.location.href).href;
+
+    return new Promise<boolean>((resolve) => {
+      const timeoutId = window.setTimeout(() => finish(false), 15_000);
+
+      const handleLoad = () => {
+        if (frameHasLoadedUrl(frame, expectedUrl)) finish(true);
+      };
+
+      const finish = (loaded: boolean) => {
+        window.clearTimeout(timeoutId);
+        frame.removeEventListener('load', handleLoad);
+        resolve(loaded);
+      };
+
+      frame.addEventListener('load', handleLoad);
+      try {
+        if (frame.contentWindow) {
+          frame.contentWindow.location.replace(rawUrl);
+        } else {
+          frame.src = rawUrl;
+        }
+      } catch {
+        frame.src = rawUrl;
+      }
+
+      if (frameHasLoadedUrl(frame, expectedUrl)) finish(true);
+    });
+  }
+
+  async function waitForFrameToSettle(frame: HTMLIFrameElement, expectsDarkReader: boolean) {
+    let frameDocument: Document | null = null;
+
+    try {
+      frameDocument = frame.contentDocument;
+    } catch {
+      // Artifacts are normally same-origin. A future external frame can still use load + paint.
+    }
+
+    if (frameDocument?.fonts) {
+      await withTimeout(frameDocument.fonts.ready, 1_500);
+    }
+
+    if (frameDocument && expectsDarkReader && !documentUsesDarkReader(frameDocument)) {
+      await waitForDarkReader(frameDocument, 500);
+    }
+
+    await waitForPaint();
+  }
+
+  function waitForDarkReader(frameDocument: Document, timeout: number) {
+    if (documentUsesDarkReader(frameDocument)) return Promise.resolve();
+
+    return new Promise<void>((resolve) => {
+      const root = frameDocument.documentElement;
+      let timeoutId = 0;
+      const observer = new MutationObserver(() => {
+        if (documentUsesDarkReader(frameDocument)) finish();
+      });
+
+      const finish = () => {
+        window.clearTimeout(timeoutId);
+        observer.disconnect();
+        resolve();
+      };
+
+      timeoutId = window.setTimeout(finish, timeout);
+      observer.observe(root, {
+        attributes: true,
+        attributeFilter: ['data-darkreader-mode'],
+      });
+    });
+  }
+
+  function documentUsesDarkReader(frameDocument: Document) {
+    return frameDocument.documentElement.hasAttribute('data-darkreader-mode');
+  }
+
+  function frameUsesDarkReader(frame: HTMLIFrameElement) {
+    try {
+      return Boolean(frame.contentDocument && documentUsesDarkReader(frame.contentDocument));
+    } catch {
+      return false;
+    }
+  }
+
+  function frameHasLoadedRoute(frame: HTMLIFrameElement, route: string) {
+    if (!route) return false;
+    return frameHasLoadedUrl(frame, new URL(`/artifacts/${route}`, window.location.href).href);
+  }
+
+  function frameHasLoadedUrl(frame: HTMLIFrameElement, expectedUrl: string) {
+    try {
+      return (
+        frame.contentDocument?.readyState === 'complete' &&
+        frame.contentWindow?.location.href === expectedUrl
+      );
+    } catch {
+      return frame.src === expectedUrl;
+    }
+  }
+
+  function withTimeout<T>(promise: Promise<T>, timeout: number) {
+    return Promise.race([
+      promise,
+      new Promise<void>((resolve) => window.setTimeout(resolve, timeout)),
+    ]);
+  }
+
+  function waitForPaint() {
+    return new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+    });
   }
 
   function artifactRouteFromLink(link: HTMLAnchorElement) {
@@ -182,16 +383,29 @@ const initialArtifact = artifacts[0];
   }
 
   .document-pane {
+    position: relative;
     min-width: 0;
-    background: white;
+    overflow: hidden;
+    background: var(--sl-color-bg);
   }
 
   .document-pane iframe {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
     border: 0;
-    background: white;
+    opacity: 0;
+    background: var(--sl-color-bg);
+    pointer-events: none;
+  }
+
+  .document-pane iframe[data-frame-state='active'] {
+    z-index: 1;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .empty-state {
