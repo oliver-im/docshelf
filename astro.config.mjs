@@ -13,6 +13,16 @@ import {
 const manifest = await loadArtifactManifest();
 const configuredOutput = process.env.DOCSHELF_WATCH_OUT_DIR;
 const outDir = configuredOutput ? path.resolve(configuredOutput) : undefined;
+const host = process.env.DOCSHELF_HOST || '127.0.0.1';
+const port = Number(process.env.DOCSHELF_PORT || 4321);
+
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
+}
+
+const siteHost =
+  host === '127.0.0.1' ? 'shelf.localhost' : host.includes(':') ? `[${host}]` : host;
+const site = `http://${siteHost}:${port}`;
 
 if (outDir) {
   const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
@@ -37,7 +47,7 @@ const sidebar = Array.from(
 );
 
 export default defineConfig({
-  site: 'http://shelf.localhost:4321',
+  site,
   outDir,
   build: {
     format: 'file',

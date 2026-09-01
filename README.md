@@ -65,9 +65,13 @@ and a tracked empty fallback, allowing a clean clone to build without local
 entries. Machine-specific registrations belong only in the ignored
 `artifacts.local.json` file.
 
-HTML sources are passed through unchanged. Markdown sources are rendered into
-standalone HTML snapshots beneath DocShelf's ignored runtime directory; DocShelf never
-modifies the original files.
+DocShelf reads each registered source into a standalone HTML snapshot beneath
+its ignored runtime directory. Markdown is rendered to HTML; existing HTML is
+copied into the same generated pipeline. When a relative link resolves to
+another registered source, DocShelf rewrites only the generated link to use the
+target's stable DocShelf route. External links, same-document anchors, and
+unregistered targets remain unchanged. DocShelf never modifies the original
+files.
 
 `npm run sync`, `dev`, `check`, and `build` validate the manifest and regenerate
 the ignored file-level symlink tree in `public/artifacts/`.
@@ -84,7 +88,11 @@ keyboard focus, the arrow keys resize it in smaller steps. The width and
 visibility preferences are stored in the browser.
 
 The selected artifact is written to the page URL, so a viewer state can be
-bookmarked.
+bookmarked. The viewer keeps the current document visible while a selected or
+updated artifact loads in a hidden frame, then swaps frames after the new
+document is ready. While `npm run watch` is running, content revisions are
+checked when the window regains focus and every few seconds while it remains
+visible.
 
 ## Markdown rendering
 
@@ -108,7 +116,8 @@ project directories.
 Registered HTML is treated as trusted content and may execute scripts with the
 same origin as DocShelf. Register only HTML files you trust. Keep DocShelf bound to its
 default loopback address unless you intentionally want to expose registered
-artifacts to the network.
+artifacts to the network. See [`SECURITY.md`](SECURITY.md) for the vulnerability
+reporting policy and security boundaries.
 
 ## Site development
 
@@ -152,6 +161,9 @@ Set a different port when needed:
 ```sh
 DOCSHELF_PORT=4331 npm run watch
 ```
+
+The configured host and port are also used for generated canonical and sitemap
+URLs.
 
 `DOCSHELF_HOST` can change the listening interface. The default loopback address
 keeps DocShelf local; binding to a network interface can expose registered files
