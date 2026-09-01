@@ -3,7 +3,9 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { contentRevision, rewriteArtifactLinks } from '../scripts/artifact-html.mjs';
 import {
+  artifactSourcesMatch,
   docShelfRoot,
   loadArtifactManifestFrom,
   validateRoute,
@@ -102,6 +104,96 @@ const ready = true;
   assert.doesNotMatch(html, /shouldNotRun/);
 });
 
+test('generated HTML rewrites only links to registered source artifacts', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const ideasPath = path.join(fixtureRoot, 'docs', 'ideas.md');
+  const researchPath = path.join(fixtureRoot, 'docs', 'research', 'dialect.md');
+  await mkdir(path.dirname(researchPath), { recursive: true });
+  await writeFile(ideasPath, '# Ideas\n');
+  await writeFile(researchPath, '# Dialect\n');
+
+  const ideas = loadedArtifact(ideasPath, 'example/ideas.html', 'markdown');
+  const research = loadedArtifact(researchPath, 'example/dialect.html', 'markdown');
+  const html = await rewriteArtifactLinks(
+    `<!doctype html><html><body>
+      <a href="research/dialect.md?view=full#findings">Research</a>
+      <a href="?view=compact">Current view</a>
+      <a href="missing.md">Missing</a>
+      <a href="#local">Local</a>
+      <a href="https://example.com/report.md">External</a>
+    </body></html>`,
+    ideas,
+    { version: 1, artifacts: [ideas, research] },
+  );
+
+  assert.match(
+    html,
+    /href="\/?\?artifact=example%2Fdialect\.html&amp;artifact-query=view%3Dfull#findings"/,
+  );
+  assert.match(html, /data-docshelf-artifact="example\/dialect\.html"/);
+  assert.match(
+    html,
+    /href="\/?\?artifact=example%2Fideas\.html&amp;artifact-query=view%3Dcompact"/,
+  );
+  assert.match(html, /target="_top"/);
+  assert.match(html, /href="missing\.md"/);
+  assert.match(html, /href="#local"/);
+  assert.match(html, /href="https:\/\/example\.com\/report\.md"/);
+});
+
+test('generated HTML preserves an explicit new-tab target', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const firstPath = path.join(fixtureRoot, 'first.html');
+  const secondPath = path.join(fixtureRoot, 'second.html');
+  await writeFile(firstPath, '<!doctype html><title>First</title>');
+  await writeFile(secondPath, '<!doctype html><title>Second</title>');
+  const first = loadedArtifact(firstPath, 'example/first.html', 'html');
+  const second = loadedArtifact(secondPath, 'example/second.html', 'html');
+
+  const html = await rewriteArtifactLinks(
+    '<!doctype html><a href="second.html" target="_blank">Second</a>',
+    first,
+    { version: 1, artifacts: [first, second] },
+  );
+
+  assert.match(html, /target="_blank"/);
+  assert.match(html, /data-docshelf-artifact="example\/second\.html"/);
+});
+
+test('content revisions change only when the generated contents change', () => {
+  assert.equal(contentRevision('same'), contentRevision(Buffer.from('same')));
+  assert.notEqual(contentRevision('before'), contentRevision('after'));
+});
+
+test('source revision validation detects a file changed after synchronization', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const sourcePath = path.join(fixtureRoot, 'report.html');
+  await writeFile(sourcePath, '<!doctype html><title>Before</title>');
+  const registered = loadedArtifact(sourcePath, 'example/report.html', 'html');
+  const revisionState = {
+    version: 1,
+    revision: 'unused-in-source-validation',
+    catalogRevision: 'unused-in-source-validation',
+    artifacts: [
+      {
+        route: registered.route,
+        revision: 'unused-in-source-validation',
+        sourceRevision: contentRevision('<!doctype html><title>Before</title>'),
+      },
+    ],
+  };
+
+  assert.equal(
+    await artifactSourcesMatch({ version: 1, artifacts: [registered] }, revisionState),
+    true,
+  );
+  await writeFile(sourcePath, '<!doctype html><title>After</title>');
+  assert.equal(
+    await artifactSourcesMatch({ version: 1, artifacts: [registered] }, revisionState),
+    false,
+  );
+});
+
 test('manifest loading rejects duplicate routes', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const firstSource = path.join(fixtureRoot, 'first.html');
@@ -146,6 +238,18 @@ function artifact(source) {
     route: 'example/report.html',
     title: 'Example report',
     description: 'An example artifact.',
+  };
+}
+
+function loadedArtifact(sourcePath, route, format) {
+  return {
+    project: 'Example',
+    source: path.relative(docShelfRoot, sourcePath),
+    route,
+    title: route,
+    description: 'An example artifact.',
+    sourcePath,
+    format,
   };
 }
 

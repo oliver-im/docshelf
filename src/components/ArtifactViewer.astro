@@ -4,22 +4,34 @@ import manifest from '../generated/artifacts.json';
 interface Artifact {
   route: string;
   title: string;
+  revision: string;
 }
 
 const artifacts = manifest.artifacts as Artifact[];
 const initialArtifact = artifacts[0];
+const initialFrameUrl = initialArtifact
+  ? `/artifacts/${initialArtifact.route}?__docshelf_revision=${initialArtifact.revision}`
+  : '';
 ---
 
-<div class="docshelf-viewer" data-docshelf-viewer data-artifacts={JSON.stringify(artifacts)}>
+<div
+  class="docshelf-viewer"
+  data-docshelf-viewer
+  data-artifacts={JSON.stringify(artifacts)}
+  data-catalog-revision={manifest.catalogRevision}
+>
   {
     initialArtifact ? (
       <section class="document-pane" aria-label="Document viewer" aria-busy="false">
         <iframe
           data-document-frame
           data-frame-state="active"
-          data-frame-ready="false"
+          data-frame-ready="loading"
           data-artifact-route={initialArtifact.route}
-          src={`/artifacts/${initialArtifact.route}`}
+          data-artifact-revision={initialArtifact.revision}
+          data-artifact-location=""
+          data-artifact-url={initialFrameUrl}
+          src={initialFrameUrl}
           title={initialArtifact.title}
         />
         <iframe
@@ -27,6 +39,9 @@ const initialArtifact = artifacts[0];
           data-frame-state="standby"
           data-frame-ready="false"
           data-artifact-route=""
+          data-artifact-revision=""
+          data-artifact-location=""
+          data-artifact-url=""
           title="Document preload"
           aria-hidden="true"
           tabindex="-1"
@@ -45,7 +60,24 @@ const initialArtifact = artifacts[0];
   interface Artifact {
     route: string;
     title: string;
+    revision: string;
   }
+
+  interface ArtifactSelection {
+    route: string;
+    query: string;
+    hash: string;
+  }
+
+  interface RevisionState {
+    version: number;
+    catalogRevision: string;
+    artifacts: Array<{ route: string; revision: string }>;
+  }
+
+  const revisionStateUrl = '/artifacts/.docshelf-revisions.json';
+  const revisionParameter = '__docshelf_revision';
+  const revisionPollInterval = 3_000;
 
   const viewer = document.querySelector<HTMLElement>('[data-docshelf-viewer]');
 
@@ -76,7 +108,21 @@ const initialArtifact = artifacts[0];
       .filter((entry): entry is { link: HTMLAnchorElement; route: string } => Boolean(entry.route));
 
     let currentArtifact: Artifact | undefined;
+    let currentSelection: ArtifactSelection | undefined;
     let navigationId = 0;
+    let checkingRevisions = false;
+    const bridgedDocuments = new WeakSet<Document>();
+    const pendingRefreshes = new Set<string>();
+
+    for (const frame of frames) {
+      frame.addEventListener('load', () => {
+        bridgeFrameLinks(frame);
+        if (frame.dataset.frameState !== 'loading') {
+          frame.dataset.frameReady = frameHasLoadedDatasetUrl(frame) ? 'true' : 'false';
+        }
+      });
+      bridgeFrameLinks(frame);
+    }
 
     for (const { link, route } of sidebarLinks) {
       link.addEventListener('click', (event) => {
@@ -92,26 +138,42 @@ const initialArtifact = artifacts[0];
         }
 
         event.preventDefault();
-        selectArtifact(route, 'push');
+        selectArtifact(emptySelection(route), 'push');
       });
     }
 
     window.addEventListener('popstate', () => {
-      selectArtifact(requestedRoute() || artifacts[0].route, 'none');
+      selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
     });
+    window.addEventListener('focus', () => void checkForArtifactUpdates());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+    });
+    window.setInterval(() => {
+      if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+    }, revisionPollInterval);
 
-    selectArtifact(requestedRoute() || artifacts[0].route, 'none');
+    selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
 
-    function selectArtifact(route: string, historyMode: 'push' | 'none') {
-      const artifact = artifacts.find((candidate) => candidate.route === route) || artifacts[0];
+    function selectArtifact(
+      requested: ArtifactSelection,
+      historyMode: 'push' | 'none',
+      forceRefresh = false,
+    ) {
+      const artifact =
+        artifacts.find((candidate) => candidate.route === requested.route) || artifacts[0];
       if (!artifact) return;
 
-      const rawUrl = `/artifacts/${artifact.route}`;
-      const changed = currentArtifact?.route !== artifact.route;
+      const selection =
+        artifact.route === requested.route
+          ? normalizeSelection(requested)
+          : emptySelection(artifact.route);
+      const changed = selectionKey(currentSelection) !== selectionKey(selection);
       currentArtifact = artifact;
+      currentSelection = selection;
       document.title = `${artifact.title} | DocShelf`;
 
-      if (changed) void displayArtifact(artifact, rawUrl);
+      if (changed || forceRefresh) void displayArtifact(artifact, selection);
 
       for (const entry of sidebarLinks) {
         const isCurrent = entry.route === artifact.route;
@@ -124,28 +186,39 @@ const initialArtifact = artifacts[0];
         }
       }
 
-      if (historyMode === 'push' && requestedRoute() !== artifact.route) {
-        const url = new URL(window.location.href);
-        url.pathname = '/';
-        url.searchParams.set('artifact', artifact.route);
-        url.hash = '';
-        window.history.pushState({ artifact: artifact.route }, '', url);
+      if (
+        historyMode === 'push' &&
+        selectionKey(requestedSelection()) !== selectionKey(selection)
+      ) {
+        window.history.pushState(
+          { artifact: artifact.route },
+          '',
+          artifactViewerUrl(selection),
+        );
       }
     }
 
-    async function displayArtifact(artifact: Artifact, rawUrl: string) {
+    async function displayArtifact(artifact: Artifact, selection: ArtifactSelection) {
       const requestId = ++navigationId;
+      const rawUrl = artifactFrameUrl(artifact, selection);
 
-      if (activeFrame.dataset.artifactRoute === artifact.route) {
+      if (
+        frameMatches(activeFrame, artifact, selection) &&
+        activeFrame.dataset.frameReady !== 'false'
+      ) {
+        pendingRefreshes.delete(artifact.route);
         activeFrame.title = artifact.title;
+        bridgeFrameLinks(activeFrame);
         documentPane.setAttribute('aria-busy', 'false');
         return;
       }
 
       documentPane.setAttribute('aria-busy', 'true');
+      pendingRefreshes.add(artifact.route);
 
       if (
-        stagingFrame.dataset.artifactRoute === artifact.route &&
+        frameMatches(stagingFrame, artifact, selection) &&
+        frameHasLoadedDatasetUrl(stagingFrame) &&
         stagingFrame.dataset.frameReady === 'true'
       ) {
         await waitForPaint();
@@ -159,19 +232,26 @@ const initialArtifact = artifacts[0];
       stagingFrame.dataset.frameState = 'loading';
       stagingFrame.dataset.frameReady = 'false';
       stagingFrame.dataset.artifactRoute = artifact.route;
+      stagingFrame.dataset.artifactRevision = artifact.revision;
+      stagingFrame.dataset.artifactLocation = artifactLocation(selection);
+      stagingFrame.dataset.artifactUrl = rawUrl;
       stagingFrame.title = artifact.title;
       stagingFrame.setAttribute('aria-hidden', 'true');
       stagingFrame.tabIndex = -1;
 
       const loaded = await loadFrame(stagingFrame, rawUrl);
       if (!loaded || requestId !== navigationId) {
-        if (requestId === navigationId) documentPane.setAttribute('aria-busy', 'false');
+        if (requestId === navigationId) {
+          stagingFrame.dataset.frameState = 'standby';
+          documentPane.setAttribute('aria-busy', 'false');
+        }
         return;
       }
 
       await waitForFrameToSettle(stagingFrame, expectsDarkReader);
       if (requestId !== navigationId) return;
 
+      bridgeFrameLinks(stagingFrame);
       stagingFrame.dataset.frameReady = 'true';
       swapFrames(stagingFrame, artifact);
     }
@@ -179,7 +259,7 @@ const initialArtifact = artifacts[0];
     function swapFrames(nextFrame: HTMLIFrameElement, artifact: Artifact) {
       const previousFrame = activeFrame;
 
-      if (frameHasLoadedRoute(previousFrame, previousFrame.dataset.artifactRoute || '')) {
+      if (frameHasLoadedDatasetUrl(previousFrame)) {
         previousFrame.dataset.frameReady = 'true';
       }
 
@@ -194,7 +274,119 @@ const initialArtifact = artifacts[0];
 
       activeFrame = nextFrame;
       stagingFrame = previousFrame;
+      pendingRefreshes.delete(artifact.route);
       documentPane.setAttribute('aria-busy', 'false');
+    }
+
+    function bridgeFrameLinks(frame: HTMLIFrameElement) {
+      let frameDocument: Document | null = null;
+      try {
+        frameDocument = frame.contentDocument;
+      } catch {
+        return;
+      }
+
+      if (!frameDocument || bridgedDocuments.has(frameDocument)) return;
+      bridgedDocuments.add(frameDocument);
+      frameDocument.addEventListener('click', (event) => {
+        const mouseEvent = event as MouseEvent;
+        if (
+          event.defaultPrevented ||
+          mouseEvent.button !== 0 ||
+          mouseEvent.metaKey ||
+          mouseEvent.ctrlKey ||
+          mouseEvent.shiftKey ||
+          mouseEvent.altKey
+        ) {
+          return;
+        }
+
+        const eventElement =
+          event.target && 'closest' in event.target ? (event.target as Element) : null;
+        const link = eventElement?.closest<HTMLAnchorElement>('a[data-docshelf-artifact]');
+        const route = link?.dataset.docshelfArtifact;
+        const linkTarget = link?.target.toLowerCase();
+        if (
+          !link ||
+          !route ||
+          !artifacts.some((artifact) => artifact.route === route) ||
+          (linkTarget && linkTarget !== '_self' && linkTarget !== '_top')
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        const destination = new URL(link.href, window.location.href);
+        selectArtifact(
+          normalizeSelection({
+            route,
+            query: destination.searchParams.get('artifact-query') || '',
+            hash: destination.hash,
+          }),
+          'push',
+        );
+      });
+    }
+
+    async function checkForArtifactUpdates() {
+      if (checkingRevisions) return;
+      checkingRevisions = true;
+
+      try {
+        const response = await fetch(revisionStateUrl, { cache: 'no-store' });
+        if (!response.ok) return;
+        const state = (await response.json()) as RevisionState;
+        if (!validRevisionState(state)) return;
+
+        if (state.catalogRevision !== root.dataset.catalogRevision) {
+          window.location.reload();
+          return;
+        }
+
+        const revisions = new Map(
+          state.artifacts.map((artifact) => [artifact.route, artifact.revision]),
+        );
+        let refreshCurrent = false;
+
+        for (const artifact of artifacts) {
+          const revision = revisions.get(artifact.route);
+          if (!revision || revision === artifact.revision) continue;
+
+          artifact.revision = revision;
+          for (const frame of frames) {
+            if (
+              frame.dataset.artifactRoute === artifact.route &&
+              frame.dataset.artifactRevision !== revision
+            ) {
+              frame.dataset.frameReady = 'false';
+            }
+          }
+          if (currentSelection?.route === artifact.route) refreshCurrent = true;
+        }
+
+        if (refreshCurrent && currentArtifact && currentSelection) {
+          selectArtifact(currentSelection, 'none', true);
+        } else if (
+          currentArtifact &&
+          currentSelection &&
+          pendingRefreshes.has(currentArtifact.route) &&
+          !frames.some(
+            (frame) =>
+              frame.dataset.frameState === 'loading' &&
+              frameMatches(
+                frame,
+                currentArtifact as Artifact,
+                currentSelection as ArtifactSelection,
+              ),
+          )
+        ) {
+          selectArtifact(currentSelection, 'none', true);
+        }
+      } catch {
+        // The previous successful build remains usable while the watcher rebuilds.
+      } finally {
+        checkingRevisions = false;
+      }
     }
   }
 
@@ -285,9 +477,11 @@ const initialArtifact = artifacts[0];
     }
   }
 
-  function frameHasLoadedRoute(frame: HTMLIFrameElement, route: string) {
-    if (!route) return false;
-    return frameHasLoadedUrl(frame, new URL(`/artifacts/${route}`, window.location.href).href);
+  function frameHasLoadedDatasetUrl(frame: HTMLIFrameElement) {
+    const artifactUrl = frame.dataset.artifactUrl;
+    return Boolean(
+      artifactUrl && frameHasLoadedUrl(frame, new URL(artifactUrl, window.location.href).href),
+    );
   }
 
   function frameHasLoadedUrl(frame: HTMLIFrameElement, expectedUrl: string) {
@@ -320,8 +514,79 @@ const initialArtifact = artifacts[0];
     return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
   }
 
-  function requestedRoute() {
-    return new URL(window.location.href).searchParams.get('artifact');
+  function frameMatches(
+    frame: HTMLIFrameElement,
+    artifact: Artifact,
+    selection: ArtifactSelection,
+  ) {
+    return (
+      frame.dataset.artifactRoute === artifact.route &&
+      frame.dataset.artifactRevision === artifact.revision &&
+      frame.dataset.artifactLocation === artifactLocation(selection)
+    );
+  }
+
+  function artifactFrameUrl(artifact: Artifact, selection: ArtifactSelection) {
+    const url = new URL(`/artifacts/${artifact.route}`, window.location.href);
+    url.search = selection.query ? `?${selection.query}` : '';
+    url.searchParams.set(revisionParameter, artifact.revision);
+    url.hash = selection.hash;
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function artifactViewerUrl(selection: ArtifactSelection) {
+    const url = new URL('/', window.location.href);
+    url.searchParams.set('artifact', selection.route);
+    if (selection.query) url.searchParams.set('artifact-query', selection.query);
+    url.hash = selection.hash;
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function requestedSelection(): ArtifactSelection | null {
+    const url = new URL(window.location.href);
+    const route = url.searchParams.get('artifact');
+    if (!route) return null;
+    return normalizeSelection({
+      route,
+      query: url.searchParams.get('artifact-query') || '',
+      hash: url.hash,
+    });
+  }
+
+  function emptySelection(route: string): ArtifactSelection {
+    return { route, query: '', hash: '' };
+  }
+
+  function normalizeSelection(selection: ArtifactSelection): ArtifactSelection {
+    return {
+      route: selection.route,
+      query: selection.query.replace(/^\?/, ''),
+      hash: selection.hash && !selection.hash.startsWith('#')
+        ? `#${selection.hash}`
+        : selection.hash,
+    };
+  }
+
+  function artifactLocation(selection: ArtifactSelection) {
+    return `${selection.query ? `?${selection.query}` : ''}${selection.hash}`;
+  }
+
+  function selectionKey(selection: ArtifactSelection | null | undefined) {
+    return selection ? `${selection.route}\n${selection.query}\n${selection.hash}` : '';
+  }
+
+  function validRevisionState(state: RevisionState) {
+    return (
+      state?.version === 1 &&
+      typeof state.catalogRevision === 'string' &&
+      Array.isArray(state.artifacts) &&
+      state.artifacts.every(
+        (artifact) =>
+          typeof artifact?.route === 'string' &&
+          typeof artifact.revision === 'string' &&
+          /^[a-f\d]{64}$/.test(artifact.revision),
+      )
+    );
   }
 </script>
 

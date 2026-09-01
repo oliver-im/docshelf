@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import chokidar from 'chokidar';
 import {
+  artifactSourcesMatch,
   docShelfRoot,
   defaultManifestPath,
   loadArtifactManifest,
@@ -117,16 +118,23 @@ async function rebuild(reasons) {
 
   try {
     const manifest = await loadArtifactManifest();
-    await syncArtifacts(manifest);
+    const revisionState = await syncArtifacts(manifest);
     await rm(buildRoot, { recursive: true, force: true });
 
     const exitCode = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
+      if (!(await artifactSourcesMatch(manifest, revisionState))) {
+        requestFreshBuild('registered source changed during build');
+      }
       throw new Error(`Astro exited with code ${exitCode}.`);
     }
 
     if (!(await isSuccessfulBuild(buildRoot))) {
       throw new Error('Astro completed without producing index.html.');
+    }
+    if (!(await artifactSourcesMatch(manifest, revisionState))) {
+      requestFreshBuild('registered source changed during build');
+      throw new Error('Registered sources changed during the build.');
     }
 
     const previousBuildRoot = activeBuildRoot;
@@ -145,6 +153,11 @@ async function rebuild(reasons) {
     await rm(buildRoot, { recursive: true, force: true });
     console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
   }
+}
+
+function requestFreshBuild(reason) {
+  pendingReasons.add(reason);
+  buildRequested = true;
 }
 
 /** @param {string} buildRoot */
