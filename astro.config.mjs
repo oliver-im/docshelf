@@ -56,6 +56,11 @@ export default defineConfig({
     artifactBuildIntegration(manifest),
     starlight({
       title: 'DocShelf',
+      logo: {
+        dark: './src/assets/docshelf-mark-dark.svg',
+        light: './src/assets/docshelf-mark-light.svg',
+        alt: '',
+      },
       sidebar,
       components: {
         SiteTitle: './src/components/DocShelfSiteTitle.astro',
