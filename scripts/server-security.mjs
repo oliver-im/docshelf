@@ -1,5 +1,12 @@
 import { isIP } from 'node:net';
 
+/** @param {string} listenHost */
+export function browserHost(listenHost) {
+  const hostname = stripBrackets(listenHost);
+  if (hostname === '127.0.0.1') return 'shelf.localhost';
+  return hostname.includes(':') ? `[${hostname}]` : hostname;
+}
+
 /**
  * Restrict loopback listeners to hostnames that browsers also resolve to loopback.
  * A deliberate non-loopback DOCSHELF_HOST binding keeps accepting network hostnames.

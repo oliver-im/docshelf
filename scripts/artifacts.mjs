@@ -144,22 +144,31 @@ export function artifactUrl(artifact) {
 export async function syncArtifacts(manifest) {
   const publicRoot = path.join(docShelfRoot, 'public');
   const stagingRoot = path.join(publicRoot, `.artifacts-${process.pid}.tmp`);
-  const artifactBuildRoot = path.join(
-    runtimeRoot,
-    `${artifactRootPrefix}${Date.now()}-${process.pid}`,
-  );
+  const artifactBuildName = `${artifactRootPrefix}${Date.now()}-${process.pid}`;
+  const artifactBuildRoot = path.join(runtimeRoot, artifactBuildName);
+  const artifactStagingRoot = path.join(runtimeRoot, `.staging-${artifactBuildName}`);
   let published = false;
 
   await rm(stagingRoot, { recursive: true, force: true });
+  await rm(artifactStagingRoot, { recursive: true, force: true });
   await rm(artifactBuildRoot, { recursive: true, force: true });
   await mkdir(stagingRoot, { recursive: true });
-  await mkdir(artifactBuildRoot, { recursive: true });
-  await writeFile(
-    path.join(artifactBuildRoot, artifactOutputMarker),
-    artifactOutputMarkerContents,
-  );
 
   try {
+    await mkdir(artifactStagingRoot, { recursive: true });
+    await writeFile(
+      path.join(artifactStagingRoot, artifactOutputMarker),
+      artifactOutputMarkerContents,
+    );
+    const stagedMarker = await readFile(
+      path.join(artifactStagingRoot, artifactOutputMarker),
+      'utf8',
+    );
+    if (stagedMarker !== artifactOutputMarkerContents) {
+      throw new Error(`Could not validate generated artifact output: ${artifactStagingRoot}`);
+    }
+    await rename(artifactStagingRoot, artifactBuildRoot);
+
     const sourceSnapshots = await readArtifactSources(manifest);
     const revisionEntries = [];
 
@@ -215,6 +224,7 @@ export async function syncArtifacts(manifest) {
     return revisionState;
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });
+    await rm(artifactStagingRoot, { recursive: true, force: true });
     if (!published) await rm(artifactBuildRoot, { recursive: true, force: true });
   }
 }

@@ -9,6 +9,7 @@ import {
   artifactUrl,
   loadArtifactManifest,
 } from './scripts/artifacts.mjs';
+import { browserHost } from './scripts/server-security.mjs';
 
 const manifest = await loadArtifactManifest();
 const configuredOutput = process.env.DOCSHELF_WATCH_OUT_DIR;
@@ -20,9 +21,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
-const siteHost =
-  host === '127.0.0.1' ? 'shelf.localhost' : host.includes(':') ? `[${host}]` : host;
-const site = `http://${siteHost}:${port}`;
+const site = `http://${browserHost(host)}:${port}`;
 
 if (outDir) {
   const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');

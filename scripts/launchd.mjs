@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { docShelfRoot } from './artifacts.mjs';
+import { browserHost } from './server-security.mjs';
 
 const command = process.argv[2];
 const label = 'local.docshelf.watch';
@@ -103,10 +104,6 @@ async function status() {
 function launchctlEnvironmentValue(output, key) {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return output.match(new RegExp(`^[\\t ]*${escapedKey}[\\t ]*=>[\\t ]*(.+?)[\\t ]*$`, 'm'))?.[1];
-}
-
-function browserHost(listenHost) {
-  return listenHost === '127.0.0.1' ? 'shelf.localhost' : listenHost;
 }
 
 async function uninstall() {

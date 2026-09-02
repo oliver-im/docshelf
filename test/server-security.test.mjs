@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAllowedHostHeader } from '../scripts/server-security.mjs';
+import { browserHost, isAllowedHostHeader } from '../scripts/server-security.mjs';
+
+test('browser URLs use the local alias and bracket IPv6 hosts', () => {
+  assert.equal(browserHost('127.0.0.1'), 'shelf.localhost');
+  assert.equal(browserHost('docshelf.lan'), 'docshelf.lan');
+  assert.equal(browserHost('::1'), '[::1]');
+  assert.equal(browserHost('2001:db8::1'), '[2001:db8::1]');
+});
 
 test('loopback listeners accept only loopback and .localhost hostnames', () => {
   for (const hostHeader of [

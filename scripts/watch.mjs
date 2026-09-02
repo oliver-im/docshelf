@@ -13,11 +13,10 @@ import {
   localManifestPath,
   syncArtifacts,
 } from './artifacts.mjs';
-import { isAllowedHostHeader } from './server-security.mjs';
+import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
-const browserHost = host === '127.0.0.1' ? 'shelf.localhost' : host;
 const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
 const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
@@ -73,7 +72,7 @@ await new Promise((resolve, reject) => {
 });
 
 activeBuildRoot = await findLatestBuild();
-console.log(`DocShelf is available at http://${browserHost}:${port}/`);
+console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
 if (activeBuildRoot) {
   console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
 } else {
@@ -138,8 +137,8 @@ async function rebuild(reasons) {
     }
 
     const previousBuildRoot = activeBuildRoot;
-    activeBuildRoot = buildRoot;
     await refreshSourceWatches(manifest);
+    activeBuildRoot = buildRoot;
     console.log(`[build] Published ${manifest.artifacts.length} artifacts.`);
 
     if (previousBuildRoot && isWithin(runtimeRoot, previousBuildRoot)) {
