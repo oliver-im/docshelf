@@ -154,7 +154,8 @@ The watcher is available at `http://shelf.localhost:4321/`, binds to
 `127.0.0.1` by default, and observes only the manifest
 files and registered artifact sources, and switches to a new isolated build
 only after it succeeds. An invalid manifest or failed build leaves the previous
-site online.
+site online. Only one watcher may run per DocShelf checkout so concurrent
+processes cannot publish or clean the same runtime directories.
 
 Set a different port when needed:
 

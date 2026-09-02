@@ -14,6 +14,7 @@ import {
   syncArtifacts,
 } from './artifacts.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
+import { acquireWatcherLock } from './watcher-lock.mjs';
 
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
@@ -26,6 +27,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 
 await mkdir(runtimeRoot, { recursive: true });
+const watcherLock = await acquireWatcherLock(runtimeRoot);
+process.once('exit', watcherLock.releaseSync);
 
 let activeBuildRoot = null;
 let currentBuildProcess = null;
