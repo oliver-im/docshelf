@@ -197,6 +197,20 @@ Remove the service with:
 npm run daemon:uninstall
 ```
 
+## Releases
+
+Prepare a release with an explicit semantic version or a bump keyword:
+
+```sh
+gh workflow run release.yml -f version=patch
+# or: version=minor, version=major, version=0.1.0
+```
+
+The workflow updates `package.json` and `package-lock.json`, verifies the build,
+and pushes a `release/vX.Y.Z` branch. Open the pull-request link in the workflow
+summary and squash-merge it after CI passes. The merge to `main` tags that exact
+commit and creates the corresponding GitHub Release.
+
 ## License
 
 MIT
