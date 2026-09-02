@@ -1,0 +1,195 @@
+name: Release
+
+# A manual dispatch prepares a version-bump branch without bypassing protected main.
+# After that branch is squash-merged, the push to main tags the merged commit and
+# creates its GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Explicit semver (0.1.0) or a bump keyword (patch/minor/major)"
+        required: true
+        default: patch
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - package.json
+
+# Do not overlap version preparation with publication.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compute next version
+        id: version
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          current=$(jq -r .version package.json)
+          case "$INPUT" in
+            major|minor|patch)
+              major=${current%%.*}
+              rest=${current#*.}
+              minor=${rest%%.*}
+              patch=${rest##*.}
+              case "$INPUT" in
+                major) next="$((major + 1)).0.0" ;;
+                minor) next="$major.$((minor + 1)).0" ;;
+                patch) next="$major.$minor.$((patch + 1))" ;;
+              esac
+              ;;
+            *) next="${INPUT#v}" ;;
+          esac
+
+          echo "$next" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::Not a semantic version: $next"
+            exit 1
+          }
+
+          highest=$(printf '%s\n%s\n' "$current" "$next" | sort -V | tail -n1)
+          if [ "$next" = "$current" ] || [ "$next" != "$highest" ]; then
+            echo "::error::$next does not increase the current version $current"
+            exit 1
+          fi
+
+          tag="v$next"
+          branch="release/$tag"
+          git rev-parse "$tag" >/dev/null 2>&1 && {
+            echo "::error::Tag $tag already exists"
+            exit 1
+          }
+          git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1 && {
+            echo "::error::Branch $branch already exists"
+            exit 1
+          }
+
+          echo "Preparing $current -> $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          npm version "$NEXT" --no-git-tag-version
+          test "$(jq -r .version package.json)" = "$NEXT"
+          test "$(jq -r .version package-lock.json)" = "$NEXT"
+          test "$(jq -r '.packages[""].version' package-lock.json)" = "$NEXT"
+
+      - run: npm test
+      - run: npm run check
+      - run: npm run build
+
+      - name: Push version branch
+        env:
+          BRANCH: ${{ steps.version.outputs.branch }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add package.json package-lock.json
+          git commit -m "release: $TAG"
+          git push --set-upstream origin "$BRANCH"
+
+          compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1"
+          {
+            echo "### $TAG is ready"
+            echo
+            echo "[Open the release pull request]($compare_url), then squash-merge it after CI passes."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Identify version change
+        id: release
+        run: |
+          current=$(jq -r .version package.json)
+          previous=$(git show "${GITHUB_SHA}^:package.json" 2>/dev/null | jq -r .version || true)
+
+          if [ "$current" = "$previous" ]; then
+            echo "Package version is unchanged; no release is needed."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::Not a semantic version: $current"
+            exit 1
+          }
+          test "$(jq -r .version package-lock.json)" = "$current"
+          test "$(jq -r '.packages[""].version' package-lock.json)" = "$current"
+
+          tag="v$current"
+          echo "Publishing $tag"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - if: steps.release.outputs.publish == 'true'
+        run: npm ci
+
+      - if: steps.release.outputs.publish == 'true'
+        run: npm test
+
+      - if: steps.release.outputs.publish == 'true'
+        run: npm run check
+
+      - if: steps.release.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Tag release commit
+        if: steps.release.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --generate-notes
