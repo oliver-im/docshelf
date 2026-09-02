@@ -18,7 +18,10 @@ ownership of their source projects.
 
 ## Working commands
 
-- `npm run watch` runs the production-search build loop and local server.
+- `npm run watch` runs the production-search build loop and local server. One
+  watcher per checkout holds `.docshelf-runtime/watch.lock`; artifact sync
+  (`sync`, `dev`, `check`, `build`, `preview`) serializes on `sync.lock` and
+  waits for a rebuilding watcher. Never delete either lock while its owner runs.
 - `npm run dev` is for DocShelf UI development; restart it after manifest changes.
 - Before handing off code changes, run `npm test`, `npm run check`, and
   `npm run build`.

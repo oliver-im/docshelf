@@ -3,11 +3,11 @@ import path from 'node:path';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import {
-  docShelfRoot,
   artifactBuildIntegration,
   artifactSearchIntegration,
   artifactUrl,
   loadArtifactManifest,
+  runtimeRoot,
 } from './scripts/artifacts.mjs';
 import { browserHost } from './scripts/server-security.mjs';
 
@@ -24,7 +24,6 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 const site = `http://${browserHost(host)}:${port}`;
 
 if (outDir) {
-  const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
   const relativeOutput = path.relative(runtimeRoot, outDir);
   if (
     relativeOutput === '' ||

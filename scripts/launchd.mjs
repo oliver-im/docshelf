@@ -3,8 +3,9 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { docShelfRoot } from './artifacts.mjs';
+import { docShelfRoot, runtimeRoot } from './artifacts.mjs';
 import { browserHost } from './server-security.mjs';
+import { inspectWatcherLock, watcherLockPath } from './watcher-lock.mjs';
 
 const command = process.argv[2];
 const label = 'local.docshelf.watch';
@@ -13,7 +14,6 @@ const userHome = homedir();
 const launchAgentsDirectory = path.join(userHome, 'Library', 'LaunchAgents');
 const plistPath = path.join(launchAgentsDirectory, `${label}.plist`);
 const serviceTarget = `gui/${userId}/${label}`;
-const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
 const standardOutputPath = path.join(runtimeRoot, 'docshelf.stdout.log');
 const standardErrorPath = path.join(runtimeRoot, 'docshelf.stderr.log');
 const watchScript = path.join(docShelfRoot, 'scripts', 'watch.mjs');
@@ -53,6 +53,7 @@ async function install() {
 
   const previousPlist = await readFile(plistPath, 'utf8').catch(() => null);
   const wasLoaded = await isLoaded();
+  await assertNoForeignWatcher();
 
   if (wasLoaded) {
     await launchctl(['bootout', `gui/${userId}`, plistPath]);
@@ -77,6 +78,7 @@ async function install() {
     throw error;
   }
 
+  await confirmWatcherStarted();
   console.log(`Installed and started ${label}.`);
   console.log(`DocShelf: http://${browserHost(host)}:${port}/`);
   console.log(`Agent: ${plistPath}`);
@@ -118,8 +120,70 @@ async function uninstall() {
 }
 
 async function isLoaded() {
+  return (await agentState()).loaded;
+}
+
+/**
+ * Refuse to install over a watcher that launchd does not manage: the agent would fail the watcher
+ * lock and KeepAlive would relaunch it every ThrottleInterval, appending to the error log forever.
+ */
+async function assertNoForeignWatcher() {
+  const lock = await inspectWatcherLock(runtimeRoot);
+  if (lock.state !== 'live') return;
+  if (await ownsLock(lock)) return;
+  throw new Error(
+    `A DocShelf watcher is already running outside launchd (PID ${lock.owner.pid}). Stop it before ` +
+      `installing the agent; otherwise the agent cannot take ${watcherLockPath(runtimeRoot)} and ` +
+      'launchd relaunches it every 10 seconds.',
+  );
+}
+
+/** Wait until the freshly bootstrapped agent holds the watcher lock, or report why it did not. */
+async function confirmWatcherStarted() {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const lock = await inspectWatcherLock(runtimeRoot);
+    if (lock.state === 'live' && (await ownsLock(lock))) return;
+
+    const agent = await agentState();
+    if (agent.lastExitCode !== null && agent.lastExitCode !== 0) {
+      throw new Error(
+        `${label} is installed, but its watcher exited with code ${agent.lastExitCode} and launchd ` +
+          `keeps relaunching it. Check ${standardErrorPath}, then fix the cause or run ` +
+          '`npm run daemon:uninstall`.',
+      );
+    }
+    await delay(250);
+  }
+
+  throw new Error(
+    `${label} is installed, but its watcher did not take ${watcherLockPath(runtimeRoot)} within ` +
+      `20 seconds. Check ${standardErrorPath} or run \`npm run daemon:status\`.`,
+  );
+}
+
+/** @param {{ owner: { pid: number, launchdService: string | null } }} lock */
+async function ownsLock(lock) {
+  if (lock.owner.launchdService === label) return true;
+  const agent = await agentState();
+  return agent.pid !== null && agent.pid === lock.owner.pid;
+}
+
+async function agentState() {
   const result = await run('/bin/launchctl', ['print', serviceTarget], true);
-  return result.code === 0;
+  if (result.code !== 0) return { loaded: false, pid: null, lastExitCode: null };
+  const pid = Number(launchctlProperty(result.stdout, 'pid'));
+  const lastExitCode = launchctlProperty(result.stdout, 'last exit code');
+  return {
+    loaded: true,
+    pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+    lastExitCode: /^\d+$/.test(lastExitCode ?? '') ? Number(lastExitCode) : null,
+  };
+}
+
+function launchctlProperty(output, key) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return output.match(new RegExp(`^[\\t ]*${escapedKey}[\\t ]*=[\\t ]*(.+?)[\\t ]*$`, 'm'))?.[1];
 }
 
 async function launchctl(arguments_) {
