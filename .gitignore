@@ -5,3 +5,4 @@ dist/
 artifacts.local.json
 public/artifacts/
 src/generated/
+worktrees/
