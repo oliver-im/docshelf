@@ -68,6 +68,12 @@ jobs:
             exit 1
           }
 
+          highest=$(printf '%s\n%s\n' "$current" "$next" | sort -V | tail -n1)
+          if [ "$next" = "$current" ] || [ "$next" != "$highest" ]; then
+            echo "::error::$next does not increase the current version $current"
+            exit 1
+          fi
+
           tag="v$next"
           branch="release/$tag"
           git rev-parse "$tag" >/dev/null 2>&1 && {
