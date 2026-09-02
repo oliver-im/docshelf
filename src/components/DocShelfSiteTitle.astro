@@ -1,12 +1,10 @@
 ---
-import StarlightSiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
-
 const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
 ---
 
-<div class="docshelf-site-title">
-  {
-    showSidebarToggle && (
+{
+  showSidebarToggle && (
+    <div class="docshelf-header-controls">
       <button
         class="sidebar-toggle print:hidden"
         type="button"
@@ -21,10 +19,9 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
           <path d="M9 4v16" />
         </svg>
       </button>
-    )
-  }
-  <StarlightSiteTitle />
-</div>
+    </div>
+  )
+}
 
 <script>
   const sidebarToggle = document.querySelector<HTMLButtonElement>(
@@ -182,11 +179,10 @@ const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
 </script>
 
 <style>
-  .docshelf-site-title {
+  .docshelf-header-controls {
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 0.375rem;
   }
 
   .sidebar-toggle {
