@@ -1,6 +1,14 @@
+# Third-party notices
+
+## Tokyo Night for Obsidian
+
+The color palette and visual direction in
+`public/markdown-tokyo-night.css` are adapted from
+[Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight).
+
 MIT License
 
-Copyright (c) 2026 DocShelf contributors
+Copyright (c) 2023 Michael Bao
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
