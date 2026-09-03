@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import chokidar from 'chokidar';
 import {
   artifactSourcesMatch,
@@ -11,14 +13,19 @@ import {
   defaultManifestPath,
   loadArtifactManifest,
   localManifestPath,
+  runtimeRoot,
   syncArtifacts,
 } from './artifacts.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
-import { acquireWatcherLock } from './watcher-lock.mjs';
+import {
+  acquireSyncLock,
+  acquireWatcherLock,
+  describeLockOwner,
+  installShutdownSignals,
+} from './watcher-lock.mjs';
 
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
-const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
 const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
 
@@ -26,12 +33,30 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
-await mkdir(runtimeRoot, { recursive: true });
-const watcherLock = await acquireWatcherLock(runtimeRoot);
-process.once('exit', watcherLock.releaseSync);
+let watcherLock;
+try {
+  watcherLock = await acquireWatcherLock(runtimeRoot);
+} catch (error) {
+  if (typeof error?.code === 'string' && error.code.startsWith('DOCSHELF_LOCK_')) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  throw error;
+}
+
+// Release on every exit path from here on: the 'exit' handler covers uncaught errors and forced
+// exits, the signal handlers run a graceful shutdown that releases as soon as this process can no
+// longer touch the runtime directories.
+let syncLock = null;
+const shutdownController = new AbortController();
+process.on('exit', releaseLocks);
+installShutdownSignals(shutdown, {
+  onError: (error) => console.error(`[shutdown] ${formatError(error)}`),
+});
 
 let activeBuildRoot = null;
 let currentBuildProcess = null;
+let activeDrain = null;
 let buildRequested = false;
 let building = false;
 let debounceTimer;
@@ -87,9 +112,6 @@ await refreshSourceWatches().catch((error) => {
 });
 scheduleBuild('startup', 0);
 
-process.once('SIGINT', () => void shutdown('SIGINT'));
-process.once('SIGTERM', () => void shutdown('SIGTERM'));
-
 function scheduleBuild(reason, delay = 300) {
   pendingReasons.add(reason);
   clearTimeout(debounceTimer);
@@ -101,6 +123,10 @@ async function drainBuildQueue() {
   if (building || shuttingDown) return;
 
   building = true;
+  let finished;
+  activeDrain = new Promise((resolve) => {
+    finished = resolve;
+  });
   try {
     while (buildRequested && !shuttingDown) {
       buildRequested = false;
@@ -110,6 +136,8 @@ async function drainBuildQueue() {
     }
   } finally {
     building = false;
+    activeDrain = null;
+    finished();
   }
 }
 
@@ -119,9 +147,20 @@ async function rebuild(reasons) {
   console.log(`[build] ${reasons.join(', ') || 'change detected'}`);
 
   try {
+    // Hold the sync lock for the whole rebuild so `npm run sync`, `build`, `check`, `dev`, and
+    // `preview` cannot replace public/artifacts or delete this build's artifact root mid-build.
+    syncLock = await acquireSyncLock(runtimeRoot, {
+      signal: shutdownController.signal,
+      onWait: (owner) => {
+        console.log(`[build] Waiting for ${describeLockOwner(owner)} to finish synchronizing.`);
+      },
+    });
+    // A signal that arrived while waiting for the lock must not start a sync or a build now.
+    throwIfShuttingDown();
     const manifest = await loadArtifactManifest();
-    const revisionState = await syncArtifacts(manifest);
+    const revisionState = await syncArtifacts(manifest, { lock: false });
     await rm(buildRoot, { recursive: true, force: true });
+    throwIfShuttingDown();
 
     const exitCode = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
@@ -149,12 +188,22 @@ async function rebuild(reasons) {
         void rm(previousBuildRoot, { recursive: true, force: true }).catch((error) => {
           console.error(`[cleanup] ${formatError(error)}`);
         });
-      }, 5_000);
+      }, 5_000).unref();
     }
   } catch (error) {
     await rm(buildRoot, { recursive: true, force: true });
-    console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
+    if (shuttingDown) {
+      console.log('[build] Stopped by shutdown.');
+    } else {
+      console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
+    }
+  } finally {
+    releaseSyncLock();
   }
+}
+
+function throwIfShuttingDown() {
+  if (shuttingDown) throw new Error('The watcher is shutting down.');
 }
 
 function requestFreshBuild(reason) {
@@ -351,13 +400,63 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`\n[shutdown] ${signal}`);
   clearTimeout(debounceTimer);
+  shutdownController.abort();
   await watcher.close();
-
-  if (currentBuildProcess) {
-    currentBuildProcess.kill('SIGTERM');
-  }
-
+  await stopBuild();
   await new Promise((resolve) => server.close(resolve));
+  // The rebuild has settled, so nothing can mutate the runtime directories from here on; let a
+  // successor start now rather than when the last in-flight response ends.
+  releaseLocks();
+}
+
+/**
+ * Stop the Astro child and wait for the in-flight rebuild to settle. A rebuild that will not
+ * settle ends the process instead: releasing the locks while it still runs would let a successor
+ * work beside it, whereas the 'exit' handler releases them after this process's last write.
+ */
+async function stopBuild() {
+  const buildProcess = currentBuildProcess;
+  if (buildProcess && buildProcess.exitCode === null && buildProcess.signalCode === null) {
+    const exited = once(buildProcess, 'exit');
+    buildProcess.kill('SIGTERM');
+    const stopped = await Promise.race([
+      exited.then(() => true),
+      sleep(5_000, false, { ref: false }),
+    ]);
+    if (!stopped) {
+      buildProcess.kill('SIGKILL');
+      await exited;
+    }
+  }
+  if (activeDrain) {
+    const settled = await Promise.race([
+      activeDrain.then(() => true),
+      sleep(10_000, false, { ref: false }),
+    ]);
+    if (!settled) {
+      console.error('[shutdown] The rebuild did not stop within 10 seconds; exiting.');
+      process.exit(1);
+    }
+  }
+}
+
+function releaseSyncLock() {
+  const lock = syncLock;
+  syncLock = null;
+  try {
+    lock?.release();
+  } catch (error) {
+    console.error(`[shutdown] ${formatError(error)}`);
+  }
+}
+
+function releaseLocks() {
+  releaseSyncLock();
+  try {
+    watcherLock.release();
+  } catch (error) {
+    console.error(`[shutdown] ${formatError(error)}`);
+  }
 }
 
 function formatError(error) {

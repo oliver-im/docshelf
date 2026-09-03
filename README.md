@@ -168,8 +168,7 @@ The watcher is available at `http://shelf.localhost:4321/`, binds to
 `127.0.0.1` by default, and observes only the manifest
 files and registered artifact sources, and switches to a new isolated build
 only after it succeeds. An invalid manifest or failed build leaves the previous
-site online. Only one watcher may run per DocShelf checkout so concurrent
-processes cannot publish or clean the same runtime directories.
+site online.
 
 Set a different port when needed:
 
@@ -189,6 +188,28 @@ catalog through DNS rebinding.
 The watcher is portable to environments where Node.js and file symlinks are
 available. The login-service integration below is macOS-only.
 
+### Locks
+
+Only one watcher runs per DocShelf checkout. It holds
+`.docshelf-runtime/watch.lock`, a directory whose `owner.json` records the
+owning process, its start time, and the launchd service name when there is
+one. A second `npm run watch` is refused with the owner's PID while that
+process is alive. A lock left behind by a process that died without releasing
+it is reclaimed automatically at the next start, including one whose PID has
+since been reused by an unrelated process (on macOS and Linux, where the lock
+compares the recorded start time and command line). If a start is still
+refused for a PID that is not a DocShelf watcher, delete
+`.docshelf-runtime/watch.lock` and retry. When the owner is the launchd agent,
+`kill` alone lets launchd restart it; use `npm run daemon:uninstall` instead.
+
+Artifact synchronization takes `.docshelf-runtime/sync.lock`. The sync step
+that `npm run sync`, `dev`, `check`, `build`, and `preview` run first waits for
+a rebuilding watcher to finish (up to two minutes) before it replaces
+`public/artifacts`, and the watcher waits for a running sync before it
+rebuilds. The lock covers the sync step only: a watcher rebuild that starts
+while a manual `npm run build` is already copying `public/artifacts` can still
+make that manual build fail with a revision mismatch. Rerun it.
+
 ## macOS login service
 
 Install the watcher as a per-user `launchd` service that starts at login and is
@@ -204,6 +225,11 @@ It records the current Node executable, DocShelf path, host, and port, so rerun 
 installer if any of them change. `daemon:status` reports the values loaded by
 `launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
 directory.
+
+The installer refuses to run while a watcher that `launchd` does not manage
+holds the watcher lock, because the agent would fail to start and be relaunched
+every ten seconds. After bootstrapping it waits for the agent to take the lock
+and reports the exit code and log path if the agent exits instead.
 
 Remove the service with:
 

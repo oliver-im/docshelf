@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,7 @@ import {
   validateSource,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
+import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 test('route validation accepts a nested HTML route', () => {
   assert.doesNotThrow(() => validateRoute('project/report-v1.2.html', 0));
@@ -218,8 +219,7 @@ test('manifest loading rejects duplicate routes', async (t) => {
 
 test('manifest loading rejects sources outside the workspace root', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
-  const externalRoot = await mkdtemp(path.join(tmpdir(), 'docshelf-external-'));
-  t.after(() => rm(externalRoot, { recursive: true, force: true }));
+  const externalRoot = await temporaryDirectory(t, tmpdir(), 'docshelf-external-');
   const sourcePath = path.join(externalRoot, 'report.html');
   const manifestPath = path.join(fixtureRoot, 'manifest.json');
   await writeFile(sourcePath, '<!doctype html><title>Outside</title>');
@@ -230,12 +230,8 @@ test('manifest loading rejects sources outside the workspace root', async (t) =>
   });
 });
 
-async function createDocShelfFixture(t) {
-  const fixtureParent = path.join(docShelfRoot, '.docshelf-runtime');
-  await mkdir(fixtureParent, { recursive: true });
-  const fixtureRoot = await mkdtemp(path.join(fixtureParent, 'test-'));
-  t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
-  return fixtureRoot;
+function createDocShelfFixture(t) {
+  return temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'test-');
 }
 
 function artifact(source) {
