@@ -39,5 +39,7 @@ description: Register HTML or Markdown artifacts with DocShelf, or create self-c
 
 - If the DocShelf watcher is running, let it rebuild; never start a second watcher for verification.
 - Wait until the registered route is available and reflects the current source. If no watcher is running, validate with DocShelf's sync and build commands without installing or starting a daemon unless requested.
-- Return the stable URL in the form `https://shelf.localhost/?artifact=<encoded-route>`.
+- Return the stable URL in the form
+  `http://shelf.localhost:4321/?artifact=<encoded-route>` at the default port;
+  when `DOCSHELF_PORT` is set, use its value instead of `4321`.
 - If the local server is unavailable, report the successfully validated route and say that it will be served when DocShelf runs.
