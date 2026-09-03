@@ -180,6 +180,11 @@ own files (`astro.config.mjs`, `package-lock.json`, `tsconfig.json`,
 rebuild rather than watching. Astro's output is printed only when a build
 fails; set `DOCSHELF_VERBOSE=1` to stream it.
 
+Files beneath `_astro/` are served as immutable because Astro names them by
+content hash. Everything else is served with `no-cache` and an `ETag`, so a
+browser revalidates and receives `304 Not Modified` while a file is unchanged;
+artifacts use their content revision as the tag.
+
 Set a different port when needed:
 
 ```sh

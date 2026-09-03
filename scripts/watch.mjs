@@ -22,6 +22,7 @@ import { assembleIncrementalBuild, siteInputsSignature } from './build-output.mj
 import { standardStreamIs, trimLog, watcherLogPaths } from './log-trim.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
+import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
   acquireWatcherLock,
@@ -65,6 +66,7 @@ let activeBuildRoot = null;
 // must know exactly which catalog and which DocShelf site files that build embodies.
 let activeRevisionState = null;
 let activeSiteSignature = null;
+let activeArtifactRevisions = new Map();
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -220,6 +222,9 @@ async function rebuild(reasons) {
     await refreshSourceWatches(manifest);
     activeBuildRoot = buildRoot;
     activeRevisionState = revisionState;
+    activeArtifactRevisions = new Map(
+      revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
+    );
     if (mode === 'full') activeSiteSignature = siteSignature;
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     const kind = mode === 'full' ? 'a full' : 'an incremental';
@@ -371,6 +376,7 @@ async function serveRequest(request, response) {
   }
 
   const buildRoot = activeBuildRoot;
+  const artifactRevisions = activeArtifactRevisions;
   if (!buildRoot) {
     response.writeHead(503, {
       'cache-control': 'no-store',
@@ -409,7 +415,10 @@ async function serveRequest(request, response) {
     const notFoundPath = path.join(buildRoot, '404.html');
     const notFoundStats = await stat(notFoundPath).catch(() => null);
     if (notFoundStats?.isFile()) {
-      await sendFile(request, response, notFoundPath, notFoundStats, 404);
+      await sendFile(request, response, notFoundPath, notFoundStats, {
+        statusCode: 404,
+        cacheControl: 'no-cache',
+      });
     } else {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -417,15 +426,40 @@ async function serveRequest(request, response) {
     return;
   }
 
-  await sendFile(request, response, filePath, fileStats, 200);
+  await sendFile(request, response, filePath, fileStats, {
+    statusCode: 200,
+    cacheControl: cacheControl(relativePath),
+    contentRevision: relativePath.startsWith('artifacts/')
+      ? artifactRevisions.get(relativePath.slice('artifacts/'.length))
+      : undefined,
+  });
 }
 
-async function sendFile(request, response, filePath, fileStats, statusCode) {
-  response.writeHead(statusCode, {
-    'cache-control': 'no-cache',
+/**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {import('node:http').ServerResponse} response
+ * @param {string} filePath
+ * @param {import('node:fs').Stats} fileStats
+ * @param {{ statusCode: number, cacheControl: string, contentRevision?: string }} options
+ */
+async function sendFile(request, response, filePath, fileStats, options) {
+  const etag = entityTag(fileStats, options.contentRevision);
+  const headers = {
+    'cache-control': options.cacheControl,
+    etag,
+    'x-content-type-options': 'nosniff',
+  };
+
+  if (options.statusCode === 200 && isFresh(request.headers, etag)) {
+    response.writeHead(304, headers);
+    response.end();
+    return;
+  }
+
+  response.writeHead(options.statusCode, {
+    ...headers,
     'content-length': fileStats.size,
     'content-type': contentType(filePath),
-    'x-content-type-options': 'nosniff',
   });
 
   if (request.method === 'HEAD') {
