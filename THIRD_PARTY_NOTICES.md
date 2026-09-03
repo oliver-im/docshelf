@@ -2,8 +2,9 @@
 
 ## Tokyo Night for Obsidian
 
-The color palette and visual direction in
-`public/markdown-tokyo-night.css` are adapted from
+The color palettes and visual direction in
+`public/markdown-tokyo-night.css` and
+`.agents/skills/docshelf/assets/docshelf-theme.css` are adapted from
 [Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight).
 
 MIT License
@@ -31,7 +32,7 @@ SOFTWARE.
 ## matcha.css
 
 The optional DocShelf HTML theme includes
-[matcha.css](https://github.com/lowlighter/matcha) 3.0.0.
+[matcha.css](https://github.com/lowlighter/matcha) 3.0.1.
 
 MIT License
 

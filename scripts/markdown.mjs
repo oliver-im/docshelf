@@ -1,4 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { createMarkdownProcessor, parseFrontmatter } from '@astrojs/markdown-remark';
+
+const themeSyncScript = readFileSync(
+  new URL('../.agents/skills/docshelf/assets/theme-sync.js', import.meta.url),
+  'utf8',
+).trimEnd();
 
 const processorPromise = createMarkdownProcessor({
   gfm: true,
@@ -65,34 +71,7 @@ function markdownDocument(page) {
     <title>${escapeHtml(page.title)}</title>
     <link rel="stylesheet" href="/markdown-tokyo-night.css">
     <script>
-      (() => {
-        const root = document.documentElement;
-        const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
-        let parentRoot;
-
-        try {
-          if (window.parent !== window) parentRoot = window.parent.document.documentElement;
-        } catch {}
-
-        const applyTheme = () => {
-          const parentTheme = parentRoot?.dataset.theme;
-          const theme = parentTheme === 'light' || parentTheme === 'dark'
-            ? parentTheme
-            : colorScheme.matches ? 'dark' : 'light';
-
-          if (root.dataset.theme !== theme) root.dataset.theme = theme;
-        };
-
-        applyTheme();
-        colorScheme.addEventListener('change', applyTheme);
-
-        if (parentRoot) {
-          new MutationObserver(applyTheme).observe(parentRoot, {
-            attributes: true,
-            attributeFilter: ['data-theme'],
-          });
-        }
-      })();
+${themeSyncScript}
     </script>
   </head>
   <body>
