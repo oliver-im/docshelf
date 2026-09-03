@@ -48,6 +48,7 @@ try {
 // exits, the signal handlers run a graceful shutdown that releases as soon as this process can no
 // longer touch the runtime directories.
 let syncLock = null;
+const shutdownController = new AbortController();
 process.on('exit', releaseLocks);
 installShutdownSignals(shutdown, {
   onError: (error) => console.error(`[shutdown] ${formatError(error)}`),
@@ -149,13 +150,17 @@ async function rebuild(reasons) {
     // Hold the sync lock for the whole rebuild so `npm run sync`, `build`, `check`, `dev`, and
     // `preview` cannot replace public/artifacts or delete this build's artifact root mid-build.
     syncLock = await acquireSyncLock(runtimeRoot, {
+      signal: shutdownController.signal,
       onWait: (owner) => {
         console.log(`[build] Waiting for ${describeLockOwner(owner)} to finish synchronizing.`);
       },
     });
+    // A signal that arrived while waiting for the lock must not start a sync or a build now.
+    throwIfShuttingDown();
     const manifest = await loadArtifactManifest();
     const revisionState = await syncArtifacts(manifest, { lock: false });
     await rm(buildRoot, { recursive: true, force: true });
+    throwIfShuttingDown();
 
     const exitCode = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
@@ -187,10 +192,18 @@ async function rebuild(reasons) {
     }
   } catch (error) {
     await rm(buildRoot, { recursive: true, force: true });
-    console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
+    if (shuttingDown) {
+      console.log('[build] Stopped by shutdown.');
+    } else {
+      console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
+    }
   } finally {
     releaseSyncLock();
   }
+}
+
+function throwIfShuttingDown() {
+  if (shuttingDown) throw new Error('The watcher is shutting down.');
 }
 
 function requestFreshBuild(reason) {
@@ -387,15 +400,20 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`\n[shutdown] ${signal}`);
   clearTimeout(debounceTimer);
+  shutdownController.abort();
   await watcher.close();
   await stopBuild();
   await new Promise((resolve) => server.close(resolve));
-  // Nothing can mutate the runtime directories from here on, so let a successor start now
-  // rather than when the last in-flight response ends.
+  // The rebuild has settled, so nothing can mutate the runtime directories from here on; let a
+  // successor start now rather than when the last in-flight response ends.
   releaseLocks();
 }
 
-/** Stop the Astro child and wait for the in-flight rebuild to settle. */
+/**
+ * Stop the Astro child and wait for the in-flight rebuild to settle. A rebuild that will not
+ * settle ends the process instead: releasing the locks while it still runs would let a successor
+ * work beside it, whereas the 'exit' handler releases them after this process's last write.
+ */
 async function stopBuild() {
   const buildProcess = currentBuildProcess;
   if (buildProcess && buildProcess.exitCode === null && buildProcess.signalCode === null) {
@@ -411,7 +429,14 @@ async function stopBuild() {
     }
   }
   if (activeDrain) {
-    await Promise.race([activeDrain, sleep(10_000, undefined, { ref: false })]);
+    const settled = await Promise.race([
+      activeDrain.then(() => true),
+      sleep(10_000, false, { ref: false }),
+    ]);
+    if (!settled) {
+      console.error('[shutdown] The rebuild did not stop within 10 seconds; exiting.');
+      process.exit(1);
+    }
   }
 }
 

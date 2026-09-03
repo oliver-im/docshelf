@@ -401,6 +401,30 @@ test('two processes contending for the sync lock serialize', async (t) => {
   assert.equal(await lockExists(runtimeRoot, syncLockPath), false);
 });
 
+test('a pending wait for the sync lock can be aborted and leaves nothing behind', async (t) => {
+  const runtimeRoot = await temporaryRuntime(t);
+  const holder = await acquireSyncLock(runtimeRoot);
+  t.after(() => holder.release());
+
+  const controller = new AbortController();
+  const waiting = acquireSyncLock(runtimeRoot, { signal: controller.signal });
+  await delay(100);
+  controller.abort();
+  await assert.rejects(waiting, { code: 'DOCSHELF_LOCK_ABORTED' });
+  assert.deepEqual(await leftovers(runtimeRoot), ['sync.lock'], 'the aborted wait removed its candidate');
+
+  // An already-aborted signal is refused before anything is created.
+  await assert.rejects(acquireSyncLock(runtimeRoot, { signal: AbortSignal.abort() }), {
+    code: 'DOCSHELF_LOCK_ABORTED',
+  });
+  assert.deepEqual(await leftovers(runtimeRoot), ['sync.lock']);
+
+  holder.release();
+  const next = await acquireSyncLock(runtimeRoot);
+  next.release();
+  assert.equal(await lockExists(runtimeRoot, syncLockPath), false);
+});
+
 function temporaryRuntime(t) {
   return temporaryDirectory(t, tmpdir(), 'docshelf-watch-lock-');
 }

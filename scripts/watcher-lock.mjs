@@ -66,7 +66,7 @@ export function syncLockPath(runtimeRoot) {
  * Take the watcher lock or fail if a live DocShelf watcher already holds it.
  *
  * @param {string} runtimeRoot
- * @param {{ timeoutMs?: number }} [options]
+ * @param {{ timeoutMs?: number, signal?: AbortSignal }} [options]
  */
 export function acquireWatcherLock(runtimeRoot, options = {}) {
   return acquireLock('watcher', watcherLockPath(runtimeRoot), options);
@@ -76,7 +76,7 @@ export function acquireWatcherLock(runtimeRoot, options = {}) {
  * Take the artifact-sync lock, waiting for a live holder to finish.
  *
  * @param {string} runtimeRoot
- * @param {{ timeoutMs?: number, onWait?: (owner: LockOwner) => void }} [options]
+ * @param {{ timeoutMs?: number, onWait?: (owner: LockOwner) => void, signal?: AbortSignal }} [options]
  */
 export function acquireSyncLock(runtimeRoot, options = {}) {
   return acquireLock('sync', syncLockPath(runtimeRoot), { timeoutMs: syncLockTimeoutMs, ...options });
@@ -107,12 +107,15 @@ export function inspectWatcherLock(runtimeRoot) {
 /**
  * @param {'watcher' | 'sync'} kind
  * @param {string} lockPath
- * @param {{ timeoutMs?: number, onWait?: (owner: LockOwner) => void }} options
+ * @param {{ timeoutMs?: number, onWait?: (owner: LockOwner) => void, signal?: AbortSignal }} options
+ *   `signal` cancels a pending wait; the rejection carries the code DOCSHELF_LOCK_ABORTED.
  * @returns {Promise<LockHandle>}
  */
 async function acquireLock(kind, lockPath, options) {
   const { wait } = kinds[kind];
+  const { signal } = options;
   const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+  if (signal?.aborted) throw abortError(kind, lockPath, signal);
   await mkdir(path.dirname(lockPath), { recursive: true });
 
   // Read-only pre-check: the refused path must not touch the filesystem.
@@ -140,6 +143,7 @@ async function acquireLock(kind, lockPath, options) {
     let waitReported = false;
 
     for (;;) {
+      if (signal?.aborted) throw abortError(kind, lockPath, signal);
       if (await claim(candidatePath, lockPath)) {
         return createHandle(lockPath, owner);
       }
@@ -149,7 +153,7 @@ async function acquireLock(kind, lockPath, options) {
 
       if (inspection.state === 'free') {
         if (Date.now() > deadline) throw timeoutError(kind, lockPath, timeoutMs, null);
-        await backoff();
+        await backoff(signal);
         continue;
       }
 
@@ -160,14 +164,14 @@ async function acquireLock(kind, lockPath, options) {
           waitReported = true;
           options.onWait?.(inspection.owner);
         }
-        await backoff(150, 150);
+        await backoff(signal, 150, 150);
         continue;
       }
 
       if (inspection.state === 'transition') {
         transitionSince ??= Date.now();
         if (Date.now() - transitionSince < transitionGraceMs && Date.now() < deadline) {
-          await backoff();
+          await backoff(signal);
           continue;
         }
       }
@@ -185,11 +189,12 @@ async function acquireLock(kind, lockPath, options) {
       const result = await reclaim(lockPath, inspection);
       lastReclaimError = result.error ?? lastReclaimError;
       transitionSince = null;
-      if (result.outcome === 'retry') await backoff();
+      if (result.outcome === 'retry') await backoff(signal);
     }
   } catch (error) {
     unregisterToken(lockPath, owner.token);
-    throw error;
+    // A backoff interrupted by the signal rejects with an AbortError; report it as a lock error.
+    throw signal?.aborted && error?.name === 'AbortError' ? abortError(kind, lockPath, signal) : error;
   } finally {
     activeTemporaries.delete(candidatePath);
     await rm(candidatePath, rmOptions);
@@ -656,6 +661,15 @@ function timeoutError(kind, lockPath, timeoutMs, owner) {
   );
 }
 
+/** @param {'watcher' | 'sync'} kind @param {string} lockPath @param {AbortSignal} signal */
+function abortError(kind, lockPath, signal) {
+  return lockError(
+    'DOCSHELF_LOCK_ABORTED',
+    `Stopped waiting for the ${kinds[kind].label} lock at ${lockPath}.`,
+    { cause: signal.reason },
+  );
+}
+
 /** @param {LockOwner} owner */
 export function describeLockOwner(owner) {
   const script = owner.script ? path.basename(owner.script) : null;
@@ -734,9 +748,9 @@ function directoryIsEmpty(directory) {
   }
 }
 
-/** @param {number} [baseMs] @param {number} [jitterMs] */
-function backoff(baseMs = 10, jitterMs = 40) {
-  return delay(baseMs + Math.random() * jitterMs);
+/** @param {AbortSignal | undefined} signal @param {number} [baseMs] @param {number} [jitterMs] */
+function backoff(signal, baseMs = 10, jitterMs = 40) {
+  return delay(baseMs + Math.random() * jitterMs, undefined, { signal });
 }
 
 /** @param {number} ms */
