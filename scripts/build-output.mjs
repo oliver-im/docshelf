@@ -136,7 +136,9 @@ export function viewerFrameUrl(artifact) {
 
 /**
  * Fingerprint the files that shape Astro's output besides the artifacts. A full build is required
- * whenever it changes; while it is unchanged, a source-only change can reuse the active build.
+ * whenever it changes; while it is unchanged, a source-only change can reuse the active build. The
+ * signature covers file contents, not sizes and timestamps: the inputs are small, and an edit that
+ * keeps a file's length and modification time would otherwise go unnoticed.
  *
  * @param {string} docShelfRoot
  */
@@ -150,20 +152,26 @@ export async function siteInputsSignature(docShelfRoot) {
 
 /** @param {import('node:crypto').Hash} hash @param {string} docShelfRoot @param {string} input */
 async function hashSiteInput(hash, docShelfRoot, input) {
-  if (ignoredSiteInputs.has(input) || path.basename(input).startsWith('.')) return;
+  if (ignoredSiteInputs.has(input)) return;
 
-  const stats = await stat(path.join(docShelfRoot, input)).catch(() => null);
+  const inputPath = path.join(docShelfRoot, input);
+  const stats = await stat(inputPath).catch(() => null);
   if (!stats) return;
 
   if (stats.isDirectory()) {
-    const entries = await readdir(path.join(docShelfRoot, input));
+    const entries = await readdir(inputPath);
     for (const entry of entries.sort()) {
       await hashSiteInput(hash, docShelfRoot, `${input}/${entry}`);
     }
     return;
   }
 
-  hash.update(`${input}\0${stats.size}\0${stats.mtimeMs}\n`);
+  // A file removed since the listing is left out, as if it had never existed.
+  const contents = stats.isFile() ? await readFile(inputPath).catch(() => null) : null;
+  if (contents === null) return;
+
+  hash.update(`${input}\0${contents.length}\0`);
+  hash.update(contents);
 }
 
 /** @param {unknown} node @param {(node: any) => boolean} matches @returns {any} */

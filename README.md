@@ -176,9 +176,9 @@ revision state, rewrites the revisions the viewer page embeds, and rebuilds the
 search index. Everything else runs a full Astro build: the first build after a
 start, a manifest change that alters the catalog, and any change to DocShelf's
 own files (`astro.config.mjs`, `package-lock.json`, `tsconfig.json`,
-`public/`, `scripts/`, and `src/`), which the watcher checks before each
-rebuild rather than watching. Astro's output is printed only when a build
-fails; set `DOCSHELF_VERBOSE=1` to stream it.
+`public/`, `scripts/`, and `src/`), whose contents the watcher fingerprints
+before each rebuild rather than watching. Astro's output is printed only when
+a build fails; set `DOCSHELF_VERBOSE=1` to stream it.
 
 Files beneath `_astro/` are served as immutable because Astro names them by
 content hash. Everything else is served with `no-cache` and an `ETag`, so a

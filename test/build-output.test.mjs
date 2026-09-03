@@ -177,6 +177,29 @@ test('the site signature follows DocShelf files and ignores generated output', a
   assert.notEqual(await siteInputsSignature(root), edited);
 });
 
+test('the site signature hashes contents rather than sizes and timestamps', async (t) => {
+  const root = await temporaryDirectory(t, tmpdir(), 'docshelf-site-');
+  const stylesPath = path.join(root, 'src', 'styles.css');
+  const frozen = new Date('2026-01-01T00:00:00Z');
+  await mkdir(path.join(root, 'src'), { recursive: true });
+  await mkdir(path.join(root, 'public', '.well-known'), { recursive: true });
+  await writeFile(stylesPath, 'body { color: red; }\n');
+  await utimes(stylesPath, frozen, frozen);
+  const initial = await siteInputsSignature(root);
+  const before = await stat(stylesPath);
+
+  await writeFile(stylesPath, 'body { color: tan; }\n');
+  await utimes(stylesPath, frozen, frozen);
+  const after = await stat(stylesPath);
+  assert.equal(after.size, before.size);
+  assert.equal(after.mtimeMs, before.mtimeMs);
+  const edited = await siteInputsSignature(root);
+  assert.notEqual(edited, initial);
+
+  await writeFile(path.join(root, 'public', '.well-known', 'security.txt'), 'Contact: x\n');
+  assert.notEqual(await siteInputsSignature(root), edited);
+});
+
 /** @param {string} revision */
 function artifact(revision) {
   return {
