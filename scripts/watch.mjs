@@ -396,10 +396,12 @@ async function serveRequest(request, response) {
     return;
   }
 
-  const relativePath = pathname.replace(/^\/+/, '') || 'index.html';
-  let filePath = path.resolve(buildRoot, relativePath);
+  const requestPath = pathname.replace(/^\/+/, '') || 'index.html';
+  let filePath = path.resolve(buildRoot, requestPath);
 
-  if (!isWithin(buildRoot, filePath)) {
+  // The URL parser collapses every `..` a browser would send; one survives only behind a
+  // percent-encoded slash, so refuse it rather than serve a file under a misleading name.
+  if (requestPath.split('/').includes('..') || !isWithin(buildRoot, filePath)) {
     response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('Forbidden\n');
     return;
@@ -426,11 +428,14 @@ async function serveRequest(request, response) {
     return;
   }
 
+  // Classify the file being served rather than the request: the two differ once `.` segments are
+  // collapsed or a directory falls through to its index.html.
+  const servedPath = path.relative(buildRoot, filePath).split(path.sep).join('/');
   await sendFile(request, response, filePath, fileStats, {
     statusCode: 200,
-    cacheControl: cacheControl(relativePath),
-    contentRevision: relativePath.startsWith('artifacts/')
-      ? artifactRevisions.get(relativePath.slice('artifacts/'.length))
+    cacheControl: cacheControl(servedPath),
+    contentRevision: servedPath.startsWith('artifacts/')
+      ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
       : undefined,
   });
 }

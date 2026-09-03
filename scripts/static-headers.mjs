@@ -3,7 +3,7 @@
  * as they like. Everything else lives at a stable URL that a rebuild replaces in place, so it must
  * be revalidated on every use.
  *
- * @param {string} relativePath the requested path without its leading slash
+ * @param {string} relativePath the served file's path relative to the build root, `/`-separated
  */
 export function cacheControl(relativePath) {
   return relativePath.startsWith('_astro/') ? 'public, max-age=31536000, immutable' : 'no-cache';
