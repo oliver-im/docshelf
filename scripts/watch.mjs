@@ -11,11 +11,15 @@ import {
   artifactSourcesMatch,
   docShelfRoot,
   defaultManifestPath,
+  generatedArtifactsRoot,
+  generatedManifestPath,
   loadArtifactManifest,
   localManifestPath,
   runtimeRoot,
   syncArtifacts,
 } from './artifacts.mjs';
+import { assembleIncrementalBuild, siteInputsSignature } from './build-output.mjs';
+import { writeSearchIndex } from './search-index.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import {
   acquireSyncLock,
@@ -55,6 +59,10 @@ installShutdownSignals(shutdown, {
 });
 
 let activeBuildRoot = null;
+// Set only by builds this process published. An incremental build reuses the active build, so it
+// must know exactly which catalog and which DocShelf site files that build embodies.
+let activeRevisionState = null;
+let activeSiteSignature = null;
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -144,6 +152,7 @@ async function drainBuildQueue() {
 async function rebuild(reasons) {
   const buildName = `build-${Date.now()}-${++buildSequence}`;
   const buildRoot = path.join(runtimeRoot, buildName);
+  const startedAt = performance.now();
   console.log(`[build] ${reasons.join(', ') || 'change detected'}`);
 
   try {
@@ -162,16 +171,41 @@ async function rebuild(reasons) {
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
 
-    const exitCode = await runAstroBuild(buildRoot);
-    if (exitCode !== 0) {
-      if (!(await artifactSourcesMatch(manifest, revisionState))) {
-        requestFreshBuild('registered source changed during build');
+    const siteSignature = await siteInputsSignature(docShelfRoot);
+    let mode = canReuseActiveBuild(revisionState, siteSignature) ? 'incremental' : 'full';
+
+    if (mode === 'incremental') {
+      try {
+        await assembleIncrementalBuild({
+          activeBuildRoot,
+          buildRoot,
+          artifactsRoot: generatedArtifactsRoot,
+          generatedManifestPath,
+          revisionState,
+        });
+        await writeSearchIndex(buildRoot);
+      } catch (error) {
+        console.error(
+          `[build] Could not reuse the active build; running Astro instead. ${formatError(error)}`,
+        );
+        await rm(buildRoot, { recursive: true, force: true });
+        throwIfShuttingDown();
+        mode = 'full';
       }
-      throw new Error(`Astro exited with code ${exitCode}.`);
+    }
+
+    if (mode === 'full') {
+      const exitCode = await runAstroBuild(buildRoot);
+      if (exitCode !== 0) {
+        if (!(await artifactSourcesMatch(manifest, revisionState))) {
+          requestFreshBuild('registered source changed during build');
+        }
+        throw new Error(`Astro exited with code ${exitCode}.`);
+      }
     }
 
     if (!(await isSuccessfulBuild(buildRoot))) {
-      throw new Error('Astro completed without producing index.html.');
+      throw new Error('The build did not produce index.html.');
     }
     if (!(await artifactSourcesMatch(manifest, revisionState))) {
       requestFreshBuild('registered source changed during build');
@@ -181,7 +215,13 @@ async function rebuild(reasons) {
     const previousBuildRoot = activeBuildRoot;
     await refreshSourceWatches(manifest);
     activeBuildRoot = buildRoot;
-    console.log(`[build] Published ${manifest.artifacts.length} artifacts.`);
+    activeRevisionState = revisionState;
+    if (mode === 'full') activeSiteSignature = siteSignature;
+    const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
+    const kind = mode === 'full' ? 'a full' : 'an incremental';
+    console.log(
+      `[build] Published ${manifest.artifacts.length} artifacts from ${kind} build in ${seconds}s.`,
+    );
 
     if (previousBuildRoot && isWithin(runtimeRoot, previousBuildRoot)) {
       setTimeout(() => {
@@ -200,6 +240,23 @@ async function rebuild(reasons) {
   } finally {
     releaseSyncLock();
   }
+}
+
+/**
+ * A change that left the catalog and DocShelf's own site files untouched only needs fresh artifact
+ * snapshots, so the active build's Astro output can be reused. Anything else, including the first
+ * build after startup, runs Astro.
+ *
+ * @param {import('./artifacts.mjs').ArtifactRevisionState} revisionState
+ * @param {string} siteSignature
+ */
+function canReuseActiveBuild(revisionState, siteSignature) {
+  return (
+    activeBuildRoot !== null &&
+    activeRevisionState !== null &&
+    activeRevisionState.catalogRevision === revisionState.catalogRevision &&
+    activeSiteSignature === siteSignature
+  );
 }
 
 function throwIfShuttingDown() {

@@ -165,10 +165,19 @@ npm run watch
 ```
 
 The watcher is available at `http://shelf.localhost:4321/`, binds to
-`127.0.0.1` by default, and observes only the manifest
-files and registered artifact sources, and switches to a new isolated build
-only after it succeeds. An invalid manifest or failed build leaves the previous
-site online.
+`127.0.0.1` by default, observes only the manifest files and registered
+artifact sources, and switches to a new isolated build only after it succeeds.
+An invalid manifest or failed build leaves the previous site online.
+
+A change that leaves the catalog as it was (the projects, routes, titles, and
+descriptions in the manifest) is published without running Astro: the watcher
+reuses the active build's site, replaces the artifact snapshots and their
+revision state, rewrites the revisions the viewer page embeds, and rebuilds the
+search index. Everything else runs a full Astro build: the first build after a
+start, a manifest change that alters the catalog, and any change to DocShelf's
+own files (`astro.config.mjs`, `package-lock.json`, `tsconfig.json`,
+`public/`, `scripts/`, and `src/`), which the watcher checks before each
+rebuild rather than watching.
 
 Set a different port when needed:
 

@@ -12,13 +12,13 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as pagefind from 'pagefind';
 import {
   artifactRevisionFile,
   contentRevision,
   rewriteArtifactLinks,
 } from './artifact-html.mjs';
 import { renderMarkdownArtifact } from './markdown.mjs';
+import { writeSearchIndex } from './search-index.mjs';
 import { acquireSyncLock, describeLockOwner, isProcessAlive } from './watcher-lock.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -26,8 +26,8 @@ export const docShelfRoot = path.resolve(scriptsDirectory, '..');
 const workspaceRoot = path.resolve(docShelfRoot, '..');
 export const defaultManifestPath = path.join(docShelfRoot, 'artifacts.json');
 export const localManifestPath = path.join(docShelfRoot, 'artifacts.local.json');
-const generatedRoot = path.join(docShelfRoot, 'public', 'artifacts');
-const generatedManifestPath = path.join(docShelfRoot, 'src', 'generated', 'artifacts.json');
+export const generatedArtifactsRoot = path.join(docShelfRoot, 'public', 'artifacts');
+export const generatedManifestPath = path.join(docShelfRoot, 'src', 'generated', 'artifacts.json');
 export const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
 const artifactRootPrefix = 'artifacts-';
 const artifactOutputMarker = '.docshelf-artifact-output';
@@ -236,11 +236,11 @@ async function replaceGeneratedArtifacts(manifest) {
       'file',
     );
 
-    await assertSymlinkTree(generatedRoot);
+    await assertSymlinkTree(generatedArtifactsRoot);
     const staleArtifactRoots = await findGeneratedArtifactRoots(artifactBuildRoot);
     await writeGeneratedManifest(manifest, revisionState);
-    await rm(generatedRoot, { recursive: true, force: true });
-    await rename(stagingRoot, generatedRoot);
+    await rm(generatedArtifactsRoot, { recursive: true, force: true });
+    await rename(stagingRoot, generatedArtifactsRoot);
     published = true;
 
     for (const staleRoot of staleArtifactRoots) {
@@ -362,33 +362,8 @@ export function artifactSearchIntegration() {
     name: 'docshelf-artifact-search',
     hooks: {
       'astro:build:done': async ({ dir, logger }) => {
-        const outputRoot = fileURLToPath(dir);
-        const searchOutput = path.join(outputRoot, 'pagefind');
-
-        try {
-          // Starlight has already built its default language-detected Pagefind output at this
-          // point. Rebuild it as one English-base index so the same search UI can find mixed-
-          // language artifact content instead of loading only the page's detected language.
-          const response = await pagefind.createIndex({ forceLanguage: 'en' });
-          if (!response.index || response.errors.length > 0) {
-            throw new Error(response.errors.join('\n') || 'Pagefind did not create an index.');
-          }
-
-          const indexed = await response.index.addDirectory({ path: outputRoot });
-          if (indexed.errors.length > 0) {
-            throw new Error(indexed.errors.join('\n'));
-          }
-
-          await rm(searchOutput, { recursive: true, force: true });
-          const written = await response.index.writeFiles({ outputPath: searchOutput });
-          if (written.errors.length > 0) {
-            throw new Error(written.errors.join('\n'));
-          }
-
-          logger.info(`Built one search index for ${indexed.page_count ?? 0} HTML files.`);
-        } finally {
-          await pagefind.close();
-        }
+        const pageCount = await writeSearchIndex(fileURLToPath(dir));
+        logger.info(`Built one search index for ${pageCount} HTML files.`);
       },
     },
   };
@@ -412,7 +387,9 @@ async function assertSymlinkTree(root) {
     }
 
     if (!entry.isSymbolicLink()) {
-      throw new Error(`Refusing to replace non-symlink content in ${generatedRoot}: ${entryPath}`);
+      throw new Error(
+        `Refusing to replace non-symlink content in ${generatedArtifactsRoot}: ${entryPath}`,
+      );
     }
   }
 }
