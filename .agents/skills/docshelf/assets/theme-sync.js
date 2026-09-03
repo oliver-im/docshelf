@@ -13,7 +13,7 @@
       ? parentTheme
       : colorScheme.matches ? 'dark' : 'light';
 
-    if (root.dataset.colorScheme === theme) return;
+    if (root.dataset.colorScheme === theme && root.dataset.theme === theme) return;
 
     root.dataset.colorScheme = theme;
     root.dataset.theme = theme;

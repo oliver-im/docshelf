@@ -41,8 +41,22 @@ test('standalone theme synchronization follows system preference changes', () =>
   assert.deepEqual(harness.themes, ['light', 'dark']);
 });
 
-function runThemeSync({ parentTheme, systemDark }) {
-  const root = { dataset: {} };
+test('theme synchronization repairs a missing data-theme attribute', () => {
+  const harness = runThemeSync({
+    parentTheme: 'light',
+    rootDataset: { colorScheme: 'light' },
+    systemDark: true,
+  });
+
+  assert.deepEqual(harness.root.dataset, {
+    colorScheme: 'light',
+    theme: 'light',
+  });
+  assert.deepEqual(harness.themes, ['light']);
+});
+
+function runThemeSync({ parentTheme, rootDataset = {}, systemDark }) {
+  const root = { dataset: { ...rootDataset } };
   const parentRoot = { dataset: {} };
   if (parentTheme) parentRoot.dataset.theme = parentTheme;
 
