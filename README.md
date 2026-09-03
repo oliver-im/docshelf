@@ -111,6 +111,20 @@ document needs custom markup or scripts. Remote images work, but relative images
 do not yet: DocShelf exposes only registered files and does not serve neighboring
 project directories.
 
+## Agent skill
+
+This repository includes a `docshelf` agent skill for registering HTML and
+Markdown artifacts. Install it globally when you want to say “add this to
+DocShelf” from any project:
+
+```sh
+npx skills add oliver-im/docshelf --skill docshelf -g
+```
+
+The skill also provides an optional DocShelf HTML theme. Ask for the “DocShelf
+theme” when creating a standalone HTML artifact; registering existing HTML does
+not alter its styles.
+
 ## Security
 
 Registered HTML is treated as trusted content and may execute scripts with the
@@ -215,5 +229,6 @@ commit and creates the corresponding GitHub Release.
 
 MIT
 
-The Markdown theme is adapted from Tokyo Night for Obsidian. See
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for its MIT notice.
+The Markdown and optional HTML themes adapt colors from Tokyo Night for Obsidian,
+and the optional HTML theme includes matcha.css. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for their MIT notices.

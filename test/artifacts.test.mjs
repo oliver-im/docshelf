@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -66,6 +66,12 @@ test('manifest loading identifies a Markdown source', async (t) => {
 });
 
 test('Markdown rendering creates a themed standalone document', async () => {
+  const expectedThemeSync = (
+    await readFile(
+      new URL('../.agents/skills/docshelf/assets/theme-sync.js', import.meta.url),
+      'utf8',
+    )
+  ).trimEnd();
   const html = await renderMarkdownArtifact(
     {
       title: 'Research & notes',
@@ -96,6 +102,7 @@ const ready = true;
   assert.match(html, /<title>Research &amp; notes<\/title>/);
   assert.match(html, /content="A &lt;local&gt; document\."/);
   assert.match(html, /href="\/markdown-tokyo-night\.css"/);
+  assert.equal(html.match(/<script>\n([\s\S]*?)\n    <\/script>/)?.[1], expectedThemeSync);
   assert.match(html, /<h1 id="context-window">Context window<\/h1>/);
   assert.match(html, /class="contains-task-list"/);
   assert.match(html, /<table>/);

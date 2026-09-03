@@ -1,9 +1,17 @@
 ---
 name: docshelf
-description: Add an HTML or Markdown file to DocShelf when the user says "add this to DocShelf" or asks to make a document available there.
+description: Register HTML or Markdown artifacts with DocShelf, or create self-contained HTML with the optional DocShelf theme, when the user asks to add something to DocShelf or use the "DocShelf theme".
 ---
 
 # DocShelf
+
+## Optional HTML theme
+
+- When the user explicitly asks for the “DocShelf theme,” read
+  [references/theme.md](references/theme.md) and use the supplied theme assets.
+- Do not restyle an existing HTML artifact merely because it is being registered.
+- When creation and registration are requested together, finish and verify the source
+  artifact before registering it.
 
 ## Find DocShelf
 
