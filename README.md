@@ -222,9 +222,14 @@ npm run daemon:status
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
 It records the current Node executable, DocShelf path, host, and port, so rerun the
-installer if any of them change. `daemon:status` reports the values loaded by
+installer if any of them change, and after updating DocShelf so the loaded
+service definition is current. `daemon:status` reports the values loaded by
 `launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
 directory.
+
+The agent runs at standard priority. As a `Background` process type, launchd
+would confine it and the Astro builds it spawns to efficiency cores with
+throttled I/O, and every rebuild would take several times longer.
 
 The installer refuses to run while a watcher that `launchd` does not manage
 holds the watcher lock, because the agent would fail to start and be relaunched
