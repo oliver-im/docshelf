@@ -19,6 +19,7 @@ import {
   syncArtifacts,
 } from './artifacts.mjs';
 import { assembleIncrementalBuild, siteInputsSignature } from './build-output.mjs';
+import { standardStreamIs, trimLog, watcherLogPaths } from './log-trim.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import {
@@ -32,6 +33,7 @@ const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
 const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
+const verboseBuilds = process.env.DOCSHELF_VERBOSE === '1';
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
@@ -108,6 +110,7 @@ await new Promise((resolve, reject) => {
 });
 
 activeBuildRoot = await findLatestBuild();
+await trimWatcherLogs();
 console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
 if (activeBuildRoot) {
   console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
@@ -195,8 +198,9 @@ async function rebuild(reasons) {
     }
 
     if (mode === 'full') {
-      const exitCode = await runAstroBuild(buildRoot);
+      const { exitCode, output } = await runAstroBuild(buildRoot);
       if (exitCode !== 0) {
+        process.stderr.write(output);
         if (!(await artifactSourcesMatch(manifest, revisionState))) {
           requestFreshBuild('registered source changed during build');
         }
@@ -239,6 +243,7 @@ async function rebuild(reasons) {
     }
   } finally {
     releaseSyncLock();
+    await trimWatcherLogs();
   }
 }
 
@@ -268,26 +273,37 @@ function requestFreshBuild(reason) {
   buildRequested = true;
 }
 
-/** @param {string} buildRoot */
+/**
+ * Run `astro build` into `buildRoot`. Astro's output is collected instead of streamed so a
+ * successful build adds one line to the log rather than a screenful; the collected output is
+ * printed when the build fails. `DOCSHELF_VERBOSE=1` streams it as it happens.
+ *
+ * @param {string} buildRoot
+ * @returns {Promise<{ exitCode: number, output: string }>}
+ */
 function runAstroBuild(buildRoot) {
   return new Promise((resolve, reject) => {
+    const chunks = [];
     currentBuildProcess = spawn(process.execPath, [astroCli, 'build'], {
       cwd: docShelfRoot,
       env: {
         ...process.env,
         DOCSHELF_WATCH_OUT_DIR: buildRoot,
       },
-      stdio: 'inherit',
+      stdio: verboseBuilds ? 'inherit' : ['ignore', 'pipe', 'pipe'],
     });
 
+    currentBuildProcess.stdout?.on('data', (chunk) => chunks.push(chunk));
+    currentBuildProcess.stderr?.on('data', (chunk) => chunks.push(chunk));
     currentBuildProcess.once('error', reject);
-    currentBuildProcess.once('exit', (code, signal) => {
+    // 'close' rather than 'exit': the output streams have ended by then.
+    currentBuildProcess.once('close', (code, signal) => {
       currentBuildProcess = null;
       if (signal && !shuttingDown) {
         reject(new Error(`Astro was terminated by ${signal}.`));
         return;
       }
-      resolve(code ?? 1);
+      resolve({ exitCode: code ?? 1, output: Buffer.concat(chunks).toString('utf8') });
     });
   });
 }
@@ -504,6 +520,23 @@ function releaseSyncLock() {
     lock?.release();
   } catch (error) {
     console.error(`[shutdown] ${formatError(error)}`);
+  }
+}
+
+/**
+ * Bound the launchd log files. Only a stream that actually points at its log is trimmed, so a
+ * watcher started in a terminal never touches the service's logs.
+ */
+async function trimWatcherLogs() {
+  const logs = watcherLogPaths(runtimeRoot);
+  for (const [fd, filePath] of [
+    [1, logs.stdout],
+    [2, logs.stderr],
+  ]) {
+    if (!standardStreamIs(fd, filePath)) continue;
+    await trimLog(filePath).catch((error) => {
+      console.error(`[log] Could not trim ${path.basename(filePath)}: ${formatError(error)}`);
+    });
   }
 }
 

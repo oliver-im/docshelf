@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { docShelfRoot, runtimeRoot } from './artifacts.mjs';
+import { watcherLogPaths } from './log-trim.mjs';
 import { browserHost } from './server-security.mjs';
 import { inspectWatcherLock, watcherLockPath } from './watcher-lock.mjs';
 
@@ -14,8 +15,7 @@ const userHome = homedir();
 const launchAgentsDirectory = path.join(userHome, 'Library', 'LaunchAgents');
 const plistPath = path.join(launchAgentsDirectory, `${label}.plist`);
 const serviceTarget = `gui/${userId}/${label}`;
-const standardOutputPath = path.join(runtimeRoot, 'docshelf.stdout.log');
-const standardErrorPath = path.join(runtimeRoot, 'docshelf.stderr.log');
+const { stdout: standardOutputPath, stderr: standardErrorPath } = watcherLogPaths(runtimeRoot);
 const watchScript = path.join(docShelfRoot, 'scripts', 'watch.mjs');
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
