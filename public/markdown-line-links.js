@@ -137,12 +137,19 @@
       sizeLineControls(entry, position.top, bottom, rootTop);
     }
   };
-  const resizeObserver = new ResizeObserver(() => {
-    window.requestAnimationFrame(positionLineControls);
-  });
+  let repositionScheduled = false;
+  const scheduleLineControlPositioning = () => {
+    if (repositionScheduled) return;
+    repositionScheduled = true;
+    window.requestAnimationFrame(() => {
+      repositionScheduled = false;
+      positionLineControls();
+    });
+  };
+  const resizeObserver = new ResizeObserver(scheduleLineControlPositioning);
   resizeObserver.observe(root);
-  window.addEventListener('resize', positionLineControls);
-  void document.fonts?.ready.then(positionLineControls);
+  window.addEventListener('resize', scheduleLineControlPositioning);
+  void document.fonts?.ready.then(scheduleLineControlPositioning);
   positionLineControls();
 
   function createLineControl(line) {

@@ -59,6 +59,7 @@ export default defineConfig({
       title: 'DocShelf',
       sidebar,
       components: {
+        Hero: './src/components/DocShelfHero.astro',
         SiteTitle: './src/components/DocShelfSiteTitle.astro',
       },
     }),
