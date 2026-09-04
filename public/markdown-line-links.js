@@ -94,9 +94,22 @@
     )}px`;
     const rootRect = root.getBoundingClientRect();
     const contentInsetStart = Number.parseFloat(rootStyle.paddingInlineStart) || 0;
+    const firstControl = lineControls[0]?.button;
+    const firstControlRect = firstControl?.getBoundingClientRect();
+    const selectionInsetStart = firstControl
+      ? Number.parseFloat(window.getComputedStyle(firstControl, '::after').insetInlineStart)
+      : Number.NaN;
+    const controlInsetStart = firstControlRect
+      ? rootStyle.direction === 'rtl'
+        ? rootRect.right - firstControlRect.right
+        : firstControlRect.left - rootRect.left
+      : 0;
+    const selectionStart = Number.isFinite(selectionInsetStart)
+      ? controlInsetStart + selectionInsetStart
+      : contentInsetStart;
     root.style.setProperty(
       '--docshelf-content-width',
-      `${Math.max(0, rootRect.width - contentInsetStart)}px`,
+      `${Math.max(0, rootRect.width - selectionStart)}px`,
     );
     const rootTop = rootRect.top;
     const positions = lineGroups.map((entry) => {

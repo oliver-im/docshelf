@@ -83,7 +83,11 @@ body {
 }
 
 .markdown-document {
-  --docshelf-content-inset-start: clamp(4.25rem, 6vw, 5rem);
+  --docshelf-line-gutter-width: 2.75rem;
+  --docshelf-line-gutter-gap: 0.55rem;
+  --docshelf-content-inset-start: calc(
+    var(--docshelf-line-gutter-width) + var(--docshelf-line-gutter-gap)
+  );
   --docshelf-content-inset-end: clamp(1.25rem, 3vw, 2.5rem);
 
   box-sizing: border-box;
@@ -460,9 +464,10 @@ mark {
   position: absolute;
   z-index: 2;
   inset-block-start: 0;
-  inset-inline-start: calc(var(--docshelf-content-inset-start) - 3.75rem);
+  inset-inline-start: 0;
   display: flex;
-  min-width: 3.2rem;
+  inline-size: var(--docshelf-line-gutter-width);
+  min-width: var(--docshelf-line-gutter-width);
   flex-direction: column;
   align-items: stretch;
   overflow: visible;
@@ -474,9 +479,9 @@ mark {
 .docshelf-line-control {
   position: relative;
   min-block-size: 0;
-  min-width: 3.2rem;
+  min-width: 0;
   flex: 0 0 auto;
-  padding: 0 0.45rem;
+  padding: 0 0.35rem;
   border: 1px solid transparent;
   border-inline-end-width: 2px;
   border-radius: 0;
@@ -499,7 +504,7 @@ mark {
   position: absolute;
   z-index: -1;
   inset-block: 0;
-  inset-inline-start: calc(100% + 0.55rem);
+  inset-inline-start: calc(100% + var(--docshelf-line-gutter-gap));
   inline-size: var(--docshelf-content-width, 74ch);
   background: color-mix(in srgb, var(--md-selection) 52%, transparent);
   content: '';
@@ -569,7 +574,8 @@ summary {
   }
 
   .markdown-document {
-    --docshelf-content-inset-start: 4.25rem;
+    --docshelf-line-gutter-width: 2.5rem;
+    --docshelf-line-gutter-gap: 0.45rem;
     --docshelf-content-inset-end: 1.25rem;
 
     padding-block: 2rem 3.5rem;
@@ -580,12 +586,7 @@ summary {
     border-radius: 0.3rem;
   }
 
-  .docshelf-line-controls {
-    inset-inline-start: calc(var(--docshelf-content-inset-start) - 3.45rem);
-  }
-
   .docshelf-line-control {
-    min-width: 3rem;
     padding-inline: 0.3rem;
     font-size: 0.68rem;
   }
