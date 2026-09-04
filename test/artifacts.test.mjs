@@ -3,7 +3,11 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { contentRevision, rewriteArtifactLinks } from '../scripts/artifact-html.mjs';
+import {
+  artifactViewerUrl,
+  contentRevision,
+  rewriteArtifactLinks,
+} from '../scripts/artifact-html.mjs';
 import {
   artifactSourcesMatch,
   docShelfRoot,
@@ -12,6 +16,7 @@ import {
   validateSource,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
+import { normalizeBasePath, sitePath } from '../scripts/site-path.mjs';
 import {
   createLineFragment,
   parseLineFragment,
@@ -67,6 +72,20 @@ test('manifest loading identifies a Markdown source', async (t) => {
 
   const manifest = await loadArtifactManifestFrom(manifestPath);
 
+  assert.equal(manifest.artifacts[0].format, 'markdown');
+});
+
+test('the Pages demo manifest publishes only the repository README', async () => {
+  const manifest = await loadArtifactManifestFrom(
+    path.join(docShelfRoot, '.github', 'pages-artifacts.json'),
+  );
+
+  assert.equal(manifest.artifacts.length, 1);
+  assert.equal(
+    manifest.artifacts[0].sourcePath,
+    await realpath(path.join(docShelfRoot, 'README.md')),
+  );
+  assert.equal(manifest.artifacts[0].route, 'docshelf/readme.html');
   assert.equal(manifest.artifacts[0].format, 'markdown');
 });
 
@@ -132,6 +151,34 @@ const ready = true;
   assert.match(html, /class="language-js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
+});
+
+test('hosted Markdown assets use the configured DocShelf base path', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Hosted notes',
+      description: 'A hosted document.',
+      sourcePath: '/workspace/hosted.md',
+    },
+    '# Hosted notes\n',
+    { basePath: '/docshelf/' },
+  );
+
+  assert.match(html, /href="\/docshelf\/markdown-tokyo-night\.css"/);
+  assert.match(html, /src="\/docshelf\/markdown-line-links\.js" defer/);
+});
+
+test('site paths support a validated deployment base', () => {
+  assert.equal(normalizeBasePath(undefined), '/');
+  assert.equal(normalizeBasePath('docshelf'), '/docshelf/');
+  assert.equal(normalizeBasePath('/projects/docshelf/'), '/projects/docshelf/');
+  assert.equal(sitePath('/artifacts/example.html', '/docshelf'), '/docshelf/artifacts/example.html');
+  assert.equal(
+    artifactViewerUrl('example/report.html', '', '#L4-L8', '/docshelf/'),
+    '/docshelf/?artifact=example%2Freport.html#L4-L8',
+  );
+  assert.throws(() => normalizeBasePath('/docshelf/../private'), /Invalid/);
+  assert.throws(() => normalizeBasePath('/docshelf?preview=true'), /Invalid/);
 });
 
 test('line permalink helpers accept only canonical, ordered source ranges', () => {

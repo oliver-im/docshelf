@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createMarkdownProcessor, parseFrontmatter } from '@astrojs/markdown-remark';
+import { sitePath } from './site-path.mjs';
 
 const themeSyncScript = readFileSync(
   new URL('../.agents/skills/docshelf/assets/theme-sync.js', import.meta.url),
@@ -37,8 +38,9 @@ const fallbackSelectableTags = new Set(['blockquote', 'li']);
  *
  * @param {{ title: string, description: string, sourcePath: string }} artifact
  * @param {string} source
+ * @param {{ basePath?: string }} [options]
  */
-export async function renderMarkdownArtifact(artifact, source) {
+export async function renderMarkdownArtifact(artifact, source, options = {}) {
   let parsed;
   try {
     parsed = parseFrontmatter(source);
@@ -66,6 +68,7 @@ export async function renderMarkdownArtifact(artifact, source) {
     title: artifact.title,
     description: artifact.description,
     language,
+    basePath: options.basePath || '/',
     content: rendered.code,
   });
 }
@@ -160,7 +163,7 @@ function markdownLanguage(frontmatter) {
 }
 
 /**
- * @param {{ title: string, description: string, language: string, content: string }} page
+ * @param {{ title: string, description: string, language: string, basePath: string, content: string }} page
  */
 function markdownDocument(page) {
   return `<!doctype html>
@@ -171,8 +174,8 @@ function markdownDocument(page) {
     <meta name="color-scheme" content="light dark">
     <meta name="description" content="${escapeHtml(page.description)}">
     <title>${escapeHtml(page.title)}</title>
-    <link rel="stylesheet" href="/markdown-tokyo-night.css">
-    <script src="/markdown-line-links.js" defer></script>
+    <link rel="stylesheet" href="${sitePath('/markdown-tokyo-night.css', page.basePath)}">
+    <script src="${sitePath('/markdown-line-links.js', page.basePath)}" defer></script>
     <script>
 ${themeSyncScript}
     </script>

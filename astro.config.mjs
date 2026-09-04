@@ -6,6 +6,7 @@ import {
   artifactBuildIntegration,
   artifactSearchIntegration,
   artifactUrl,
+  docshelfBasePath,
   loadArtifactManifest,
   runtimeRoot,
 } from './scripts/artifacts.mjs';
@@ -21,7 +22,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
-const site = `http://${browserHost(host)}:${port}`;
+const site = process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`;
 
 if (outDir) {
   const relativeOutput = path.relative(runtimeRoot, outDir);
@@ -46,6 +47,7 @@ const sidebar = Array.from(
 
 export default defineConfig({
   site,
+  base: docshelfBasePath,
   outDir,
   build: {
     format: 'file',

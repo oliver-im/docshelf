@@ -5,6 +5,8 @@ artifacts. Source projects keep ownership of their files; DocShelf provides
 navigation, stable local URLs, and search without exposing the surrounding
 workspace.
 
+[Open the README in the live DocShelf demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html).
+
 ## Why DocShelf exists
 
 HTML is useful for visual reports and interactive explanations, while Markdown
@@ -130,6 +132,17 @@ npx skills add oliver-im/docshelf --skill docshelf -g
 The skill also provides an optional DocShelf HTML theme. Ask for the “DocShelf
 theme” when creating a standalone HTML artifact; registering existing HTML does
 not alter its styles.
+
+## GitHub Pages demo
+
+Pushes to `main` rebuild the public demo from this README and deploy the generated
+site to GitHub Pages. The workflow copies `.github/pages-artifacts.json` to the
+ignored local manifest during the build, so the README remains the single source
+of truth and generated HTML is never committed.
+
+The hosted build sets `DOCSHELF_SITE` and `DOCSHELF_BASE` from GitHub Pages and
+disables the local watcher's live-update polling. Only the README registered by
+the demo manifest is published; machine-local registrations remain ignored.
 
 ## Security
 

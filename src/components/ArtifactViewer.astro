@@ -9,8 +9,10 @@ interface Artifact {
 
 const artifacts = manifest.artifacts as Artifact[];
 const initialArtifact = artifacts[0];
+const basePath = import.meta.env.BASE_URL;
+const liveUpdatesEnabled = import.meta.env.DOCSHELF_LIVE_UPDATES !== 'false';
 const initialFrameUrl = initialArtifact
-  ? `/artifacts/${initialArtifact.route}?__docshelf_revision=${initialArtifact.revision}`
+  ? `${basePath}artifacts/${initialArtifact.route}?__docshelf_revision=${initialArtifact.revision}`
   : '';
 ---
 
@@ -19,17 +21,22 @@ const initialFrameUrl = initialArtifact
   data-docshelf-viewer
   data-artifacts={JSON.stringify(artifacts)}
   data-catalog-revision={manifest.catalogRevision}
+  data-docshelf-live-updates={String(liveUpdatesEnabled)}
 >
-  <div
-    class="build-status-banner"
-    data-docshelf-build-status
-    role="alert"
-    aria-atomic="true"
-    hidden
-  >
-    <strong>Rebuild failed.</strong>
-    <span data-docshelf-build-status-message></span>
-  </div>
+  {
+    liveUpdatesEnabled && (
+      <div
+        class="build-status-banner"
+        data-docshelf-build-status
+        role="alert"
+        aria-atomic="true"
+        hidden
+      >
+        <strong>Rebuild failed.</strong>
+        <span data-docshelf-build-status-message></span>
+      </div>
+    )
+  }
   {
     initialArtifact ? (
       <section class="document-pane" aria-label="Document viewer" aria-busy="false">
@@ -95,8 +102,10 @@ const initialFrameUrl = initialArtifact
     error: { message: string; details: string | null } | null;
   }
 
-  const revisionStateUrl = '/artifacts/.docshelf-revisions.json';
-  const buildStatusUrl = '/__docshelf/status';
+  const basePath = import.meta.env.BASE_URL;
+  const artifactRootPath = `${basePath}artifacts/`;
+  const revisionStateUrl = `${artifactRootPath}.docshelf-revisions.json`;
+  const buildStatusUrl = `${basePath}__docshelf/status`;
   const revisionParameter = '__docshelf_revision';
   const revisionPollInterval = 3_000;
 
@@ -217,13 +226,15 @@ const initialFrameUrl = initialArtifact
       selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
     });
     window.addEventListener('message', handleFrameMessage);
-    window.addEventListener('focus', () => void checkForArtifactUpdates());
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void checkForArtifactUpdates();
-    });
-    window.setInterval(() => {
-      if (document.visibilityState === 'visible') void checkForArtifactUpdates();
-    }, revisionPollInterval);
+    if (root.dataset.docshelfLiveUpdates === 'true') {
+      window.addEventListener('focus', () => void checkForArtifactUpdates());
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+      });
+      window.setInterval(() => {
+        if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+      }, revisionPollInterval);
+    }
 
     selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
 
@@ -632,7 +643,7 @@ const initialFrameUrl = initialArtifact
 
   function artifactRouteFromLink(link: HTMLAnchorElement) {
     const pathname = new URL(link.href, window.location.href).pathname;
-    const prefix = '/artifacts/';
+    const prefix = artifactRootPath;
     return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
   }
 
@@ -685,7 +696,7 @@ const initialFrameUrl = initialArtifact
   }
 
   function artifactFrameUrl(artifact: Artifact, selection: ArtifactSelection) {
-    const url = new URL(`/artifacts/${artifact.route}`, window.location.href);
+    const url = new URL(`${artifactRootPath}${artifact.route}`, window.location.href);
     url.search = selection.query ? `?${selection.query}` : '';
     url.searchParams.set(revisionParameter, artifact.revision);
     url.hash = selection.hash;
@@ -693,7 +704,7 @@ const initialFrameUrl = initialArtifact
   }
 
   function artifactViewerUrl(selection: ArtifactSelection) {
-    const url = new URL('/', window.location.href);
+    const url = new URL(basePath, window.location.href);
     url.searchParams.set('artifact', selection.route);
     if (selection.query) url.searchParams.set('artifact-query', selection.query);
     url.hash = selection.hash;
