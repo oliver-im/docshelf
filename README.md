@@ -165,10 +165,21 @@ npm run watch
 ```
 
 The watcher is available at `http://shelf.localhost:4321/`, binds to
-`127.0.0.1` by default, and observes only the manifest
-files and registered artifact sources, and switches to a new isolated build
-only after it succeeds. An invalid manifest or failed build leaves the previous
-site online.
+`127.0.0.1` by default, observes only the manifest files and registered
+artifact sources, and switches to a new isolated build only after it succeeds.
+An invalid manifest or failed build leaves the previous site online. The watcher
+writes its latest attempt to `.docshelf-runtime/build-status.json` and serves the
+same state without caching at `/__docshelf/status`. Each attempt has a generation
+and watcher-instance ID so automated clients can distinguish it from an earlier
+success. The viewer polls this endpoint and shows a banner when a rebuild fails.
+Diagnostic output in the status file is bounded; the watcher log receives the
+detailed failed Astro build output. Every update runs a full Astro build into
+an isolated directory, then publishes it only after the build succeeds and its
+registered sources and DocShelf-owned inputs are still current. Files with
+content-hash names beneath `_astro/` are served as immutable. Everything else
+uses `no-cache` with an `ETag`, allowing unchanged files to receive a
+`304 Not Modified` response. Set `DOCSHELF_VERBOSE=1` to stream Astro's output
+for every build.
 
 Set a different port when needed:
 
@@ -222,9 +233,14 @@ npm run daemon:status
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
 It records the current Node executable, DocShelf path, host, and port, so rerun the
-installer if any of them change. `daemon:status` reports the values loaded by
+installer if any of them change, and after updating DocShelf so the loaded
+service definition is current. `daemon:status` reports the values loaded by
 `launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
 directory.
+
+The agent runs at standard priority. As a `Background` process type, launchd
+would confine it and the Astro builds it spawns to efficiency cores with
+throttled I/O, and every rebuild would take several times longer.
 
 The installer refuses to run while a watcher that `launchd` does not manage
 holds the watcher lock, because the agent would fail to start and be relaunched

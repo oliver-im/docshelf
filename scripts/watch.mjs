@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
-import { readdir, rm, stat } from 'node:fs/promises';
+import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -16,7 +16,10 @@ import {
   runtimeRoot,
   syncArtifacts,
 } from './artifacts.mjs';
+import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
+import { siteInputsSignature } from './site-inputs.mjs';
+import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
   acquireWatcherLock,
@@ -28,6 +31,8 @@ const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
 const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
+const verboseBuilds = process.env.DOCSHELF_VERBOSE === '1';
+const buildStatus = new BuildStatusReporter(runtimeRoot);
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
@@ -55,6 +60,7 @@ installShutdownSignals(shutdown, {
 });
 
 let activeBuildRoot = null;
+let activeArtifactRevisions = new Map();
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -81,6 +87,9 @@ watcher.on('error', (error) => {
   console.error(`[watch] ${formatError(error)}`);
 });
 
+activeBuildRoot = await findLatestBuild();
+await reportBuildStatus(buildStatus.starting(Boolean(activeBuildRoot)));
+
 const server = createServer((request, response) => {
   serveRequest(request, response).catch((error) => {
     console.error(`[server] ${formatError(error)}`);
@@ -99,7 +108,6 @@ await new Promise((resolve, reject) => {
   });
 });
 
-activeBuildRoot = await findLatestBuild();
 console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
 if (activeBuildRoot) {
   console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
@@ -144,6 +152,8 @@ async function drainBuildQueue() {
 async function rebuild(reasons) {
   const buildName = `build-${Date.now()}-${++buildSequence}`;
   const buildRoot = path.join(runtimeRoot, buildName);
+  const startedAt = performance.now();
+  await reportBuildStatus(buildStatus.building(reasons, Boolean(activeBuildRoot)));
   console.log(`[build] ${reasons.join(', ') || 'change detected'}`);
 
   try {
@@ -162,26 +172,38 @@ async function rebuild(reasons) {
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
 
-    const exitCode = await runAstroBuild(buildRoot);
+    const siteSignature = await siteInputsSignature(docShelfRoot);
+    const { exitCode, output } = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
+      process.stderr.write(output);
       if (!(await artifactSourcesMatch(manifest, revisionState))) {
         requestFreshBuild('registered source changed during build');
       }
-      throw new Error(`Astro exited with code ${exitCode}.`);
+      throw Object.assign(new Error(`Astro exited with code ${exitCode}.`), { details: output });
     }
 
     if (!(await isSuccessfulBuild(buildRoot))) {
-      throw new Error('Astro completed without producing index.html.');
+      throw new Error('The build did not produce index.html.');
     }
     if (!(await artifactSourcesMatch(manifest, revisionState))) {
       requestFreshBuild('registered source changed during build');
       throw new Error('Registered sources changed during the build.');
     }
 
-    const previousBuildRoot = activeBuildRoot;
     await refreshSourceWatches(manifest);
+    if ((await siteInputsSignature(docShelfRoot)) !== siteSignature) {
+      requestFreshBuild('DocShelf site files changed during build');
+      throw new Error('DocShelf site files changed during the build.');
+    }
+
+    const previousBuildRoot = activeBuildRoot;
     activeBuildRoot = buildRoot;
-    console.log(`[build] Published ${manifest.artifacts.length} artifacts.`);
+    activeArtifactRevisions = new Map(
+      revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
+    );
+    await reportBuildStatus(buildStatus.ready(true));
+    const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
+    console.log(`[build] Published ${manifest.artifacts.length} artifacts in ${seconds}s.`);
 
     if (previousBuildRoot && isWithin(runtimeRoot, previousBuildRoot)) {
       setTimeout(() => {
@@ -195,6 +217,7 @@ async function rebuild(reasons) {
     if (shuttingDown) {
       console.log('[build] Stopped by shutdown.');
     } else {
+      await reportBuildStatus(buildStatus.failed(error, Boolean(activeBuildRoot)));
       console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
     }
   } finally {
@@ -211,26 +234,37 @@ function requestFreshBuild(reason) {
   buildRequested = true;
 }
 
-/** @param {string} buildRoot */
+/**
+ * Run `astro build` into `buildRoot`. Astro's output is collected instead of streamed so a
+ * successful build adds one line to the log rather than a screenful; the collected output is
+ * printed when the build fails. `DOCSHELF_VERBOSE=1` streams it as it happens.
+ *
+ * @param {string} buildRoot
+ * @returns {Promise<{ exitCode: number, output: string }>}
+ */
 function runAstroBuild(buildRoot) {
   return new Promise((resolve, reject) => {
+    const chunks = [];
     currentBuildProcess = spawn(process.execPath, [astroCli, 'build'], {
       cwd: docShelfRoot,
       env: {
         ...process.env,
         DOCSHELF_WATCH_OUT_DIR: buildRoot,
       },
-      stdio: 'inherit',
+      stdio: verboseBuilds ? 'inherit' : ['ignore', 'pipe', 'pipe'],
     });
 
+    currentBuildProcess.stdout?.on('data', (chunk) => chunks.push(chunk));
+    currentBuildProcess.stderr?.on('data', (chunk) => chunks.push(chunk));
     currentBuildProcess.once('error', reject);
-    currentBuildProcess.once('exit', (code, signal) => {
+    // 'close' rather than 'exit': the output streams have ended by then.
+    currentBuildProcess.once('close', (code, signal) => {
       currentBuildProcess = null;
       if (signal && !shuttingDown) {
         reject(new Error(`Astro was terminated by ${signal}.`));
         return;
       }
-      resolve(code ?? 1);
+      resolve({ exitCode: code ?? 1, output: Buffer.concat(chunks).toString('utf8') });
     });
   });
 }
@@ -297,7 +331,22 @@ async function serveRequest(request, response) {
     return;
   }
 
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
+  } catch {
+    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('Bad request\n');
+    return;
+  }
+
+  if (pathname === buildStatusRoute) {
+    await serveBuildStatus(request, response);
+    return;
+  }
+
   const buildRoot = activeBuildRoot;
+  const artifactRevisions = activeArtifactRevisions;
   if (!buildRoot) {
     response.writeHead(503, {
       'cache-control': 'no-store',
@@ -308,19 +357,12 @@ async function serveRequest(request, response) {
     return;
   }
 
-  let pathname;
-  try {
-    pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
-  } catch {
-    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
-    response.end('Bad request\n');
-    return;
-  }
+  const requestPath = pathname.replace(/^\/+/, '') || 'index.html';
+  let filePath = path.resolve(buildRoot, requestPath);
 
-  const relativePath = pathname.replace(/^\/+/, '') || 'index.html';
-  let filePath = path.resolve(buildRoot, relativePath);
-
-  if (!isWithin(buildRoot, filePath)) {
+  // The URL parser collapses every `..` a browser would send; one survives only behind a
+  // percent-encoded slash, so refuse it rather than serve a file under a misleading name.
+  if (requestPath.split('/').includes('..') || !isWithin(buildRoot, filePath)) {
     response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('Forbidden\n');
     return;
@@ -336,7 +378,10 @@ async function serveRequest(request, response) {
     const notFoundPath = path.join(buildRoot, '404.html');
     const notFoundStats = await stat(notFoundPath).catch(() => null);
     if (notFoundStats?.isFile()) {
-      await sendFile(request, response, notFoundPath, notFoundStats, 404);
+      await sendFile(request, response, notFoundPath, notFoundStats, {
+        statusCode: 404,
+        cacheControl: 'no-cache',
+      });
     } else {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -344,15 +389,68 @@ async function serveRequest(request, response) {
     return;
   }
 
-  await sendFile(request, response, filePath, fileStats, 200);
+  // Classify the file being served rather than the request: the two differ once `.` segments are
+  // collapsed or a directory falls through to its index.html.
+  const servedPath = path.relative(buildRoot, filePath).split(path.sep).join('/');
+  await sendFile(request, response, filePath, fileStats, {
+    statusCode: 200,
+    cacheControl: cacheControl(servedPath),
+    contentRevision: servedPath.startsWith('artifacts/')
+      ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
+      : undefined,
+  });
 }
 
-async function sendFile(request, response, filePath, fileStats, statusCode) {
-  response.writeHead(statusCode, {
-    'cache-control': 'no-cache',
+async function serveBuildStatus(request, response) {
+  const contents = await readFile(buildStatus.filePath).catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!contents) {
+    response.writeHead(503, {
+      'cache-control': 'no-store',
+      'content-type': 'application/json; charset=utf-8',
+      'retry-after': '1',
+      'x-content-type-options': 'nosniff',
+    });
+    response.end('{"error":"Build status is not available."}\n');
+    return;
+  }
+
+  response.writeHead(200, {
+    'cache-control': 'no-store',
+    'content-length': contents.length,
+    'content-type': 'application/json; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+  });
+  response.end(request.method === 'HEAD' ? undefined : contents);
+}
+
+/**
+ * @param {import('node:http').IncomingMessage} request
+ * @param {import('node:http').ServerResponse} response
+ * @param {string} filePath
+ * @param {import('node:fs').Stats} fileStats
+ * @param {{ statusCode: number, cacheControl: string, contentRevision?: string }} options
+ */
+async function sendFile(request, response, filePath, fileStats, options) {
+  const etag = entityTag(fileStats, options.contentRevision);
+  const headers = {
+    'cache-control': options.cacheControl,
+    etag,
+    'x-content-type-options': 'nosniff',
+  };
+
+  if (options.statusCode === 200 && isFresh(request.headers, etag)) {
+    response.writeHead(304, headers);
+    response.end();
+    return;
+  }
+
+  response.writeHead(options.statusCode, {
+    ...headers,
     'content-length': fileStats.size,
     'content-type': contentType(filePath),
-    'x-content-type-options': 'nosniff',
   });
 
   if (request.method === 'HEAD') {
@@ -461,4 +559,10 @@ function releaseLocks() {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function reportBuildStatus(statusPromise) {
+  await statusPromise.catch((error) => {
+    console.error(`[status] Could not write build status: ${formatError(error)}`);
+  });
 }
