@@ -190,7 +190,6 @@
     if (window.parent === window) {
       const url = new URL(window.location.href);
       url.searchParams.delete('__docshelf_revision');
-      url.searchParams.delete('rev');
       url.hash = hash;
       window.history[historyMode === 'replace' ? 'replaceState' : 'pushState'](
         null,
@@ -256,7 +255,6 @@
     }
 
     url.searchParams.delete('__docshelf_revision');
-    url.searchParams.delete('rev');
     url.hash = hash;
     return url.href;
   }

@@ -444,6 +444,8 @@ mark {
   background: color-mix(in srgb, var(--md-bg-deep) 94%, transparent);
   color: var(--md-text-faint);
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
   font-family: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.72rem;
   font-weight: 650;
