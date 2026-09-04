@@ -120,7 +120,9 @@ const initialFrameUrl = initialArtifact
         if (!validBuildStatus(status)) return;
 
         if (status.state === 'failed' && status.error) {
-          message.textContent = status.error.message;
+          message.textContent = status.error.details
+            ? `${status.error.message}: ${status.error.details}`
+            : status.error.message;
           banner.hidden = false;
         } else {
           message.textContent = '';
@@ -650,7 +652,9 @@ const initialFrameUrl = initialArtifact
     return (
       status?.version === 1 &&
       ['starting', 'building', 'ready', 'failed'].includes(status.state) &&
-      (status.error === null || typeof status.error?.message === 'string')
+      (status.error === null ||
+        (typeof status.error?.message === 'string' &&
+          (status.error.details === null || typeof status.error.details === 'string')))
     );
   }
 </script>

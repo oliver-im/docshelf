@@ -174,9 +174,12 @@ and watcher-instance ID so automated clients can distinguish it from an earlier
 success. The viewer polls this endpoint and shows a banner when a rebuild fails.
 Diagnostic output in the status file is bounded; the watcher log receives the
 detailed failed Astro build output. Every update runs a full Astro build into
-an isolated directory, then publishes it only after the build succeeds and the
-registered sources are still current. Static files are served with `no-cache`.
-Set `DOCSHELF_VERBOSE=1` to stream Astro's output for every build.
+an isolated directory, then publishes it only after the build succeeds and its
+registered sources and DocShelf-owned inputs are still current. Files with
+content-hash names beneath `_astro/` are served as immutable. Everything else
+uses `no-cache` with an `ETag`, allowing unchanged files to receive a
+`304 Not Modified` response. Set `DOCSHELF_VERBOSE=1` to stream Astro's output
+for every build.
 
 Set a different port when needed:
 

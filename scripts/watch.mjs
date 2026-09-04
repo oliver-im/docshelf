@@ -18,6 +18,8 @@ import {
 } from './artifacts.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
+import { siteInputsSignature } from './site-inputs.mjs';
+import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
   acquireWatcherLock,
@@ -58,6 +60,7 @@ installShutdownSignals(shutdown, {
 });
 
 let activeBuildRoot = null;
+let activeArtifactRevisions = new Map();
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -169,6 +172,7 @@ async function rebuild(reasons) {
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
 
+    const siteSignature = await siteInputsSignature(docShelfRoot);
     const { exitCode, output } = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
       process.stderr.write(output);
@@ -186,9 +190,17 @@ async function rebuild(reasons) {
       throw new Error('Registered sources changed during the build.');
     }
 
-    const previousBuildRoot = activeBuildRoot;
     await refreshSourceWatches(manifest);
+    if ((await siteInputsSignature(docShelfRoot)) !== siteSignature) {
+      requestFreshBuild('DocShelf site files changed during build');
+      throw new Error('DocShelf site files changed during the build.');
+    }
+
+    const previousBuildRoot = activeBuildRoot;
     activeBuildRoot = buildRoot;
+    activeArtifactRevisions = new Map(
+      revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
+    );
     await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     console.log(`[build] Published ${manifest.artifacts.length} artifacts in ${seconds}s.`);
@@ -334,6 +346,7 @@ async function serveRequest(request, response) {
   }
 
   const buildRoot = activeBuildRoot;
+  const artifactRevisions = activeArtifactRevisions;
   if (!buildRoot) {
     response.writeHead(503, {
       'cache-control': 'no-store',
@@ -365,7 +378,10 @@ async function serveRequest(request, response) {
     const notFoundPath = path.join(buildRoot, '404.html');
     const notFoundStats = await stat(notFoundPath).catch(() => null);
     if (notFoundStats?.isFile()) {
-      await sendFile(request, response, notFoundPath, notFoundStats, 404);
+      await sendFile(request, response, notFoundPath, notFoundStats, {
+        statusCode: 404,
+        cacheControl: 'no-cache',
+      });
     } else {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -373,7 +389,16 @@ async function serveRequest(request, response) {
     return;
   }
 
-  await sendFile(request, response, filePath, fileStats, 200);
+  // Classify the file being served rather than the request: the two differ once `.` segments are
+  // collapsed or a directory falls through to its index.html.
+  const servedPath = path.relative(buildRoot, filePath).split(path.sep).join('/');
+  await sendFile(request, response, filePath, fileStats, {
+    statusCode: 200,
+    cacheControl: cacheControl(servedPath),
+    contentRevision: servedPath.startsWith('artifacts/')
+      ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
+      : undefined,
+  });
 }
 
 async function serveBuildStatus(request, response) {
@@ -406,14 +431,26 @@ async function serveBuildStatus(request, response) {
  * @param {import('node:http').ServerResponse} response
  * @param {string} filePath
  * @param {import('node:fs').Stats} fileStats
- * @param {number} statusCode
+ * @param {{ statusCode: number, cacheControl: string, contentRevision?: string }} options
  */
-async function sendFile(request, response, filePath, fileStats, statusCode) {
-  response.writeHead(statusCode, {
-    'cache-control': 'no-cache',
+async function sendFile(request, response, filePath, fileStats, options) {
+  const etag = entityTag(fileStats, options.contentRevision);
+  const headers = {
+    'cache-control': options.cacheControl,
+    etag,
+    'x-content-type-options': 'nosniff',
+  };
+
+  if (options.statusCode === 200 && isFresh(request.headers, etag)) {
+    response.writeHead(304, headers);
+    response.end();
+    return;
+  }
+
+  response.writeHead(options.statusCode, {
+    ...headers,
     'content-length': fileStats.size,
     'content-type': contentType(filePath),
-    'x-content-type-options': 'nosniff',
   });
 
   if (request.method === 'HEAD') {
