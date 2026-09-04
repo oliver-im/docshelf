@@ -92,9 +92,12 @@
       defaultPaddingEnd,
       trailingLineCount * defaultLineHeight,
     )}px`;
-    root.style.setProperty('--docshelf-content-width', `${root.getBoundingClientRect().width}px`);
-
     const rootRect = root.getBoundingClientRect();
+    const contentInsetStart = Number.parseFloat(rootStyle.paddingInlineStart) || 0;
+    root.style.setProperty(
+      '--docshelf-content-width',
+      `${Math.max(0, rootRect.width - contentInsetStart)}px`,
+    );
     const rootTop = rootRect.top;
     const positions = lineGroups.map((entry) => {
       const blockTop = entry.block

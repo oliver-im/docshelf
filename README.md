@@ -115,8 +115,8 @@ documents that contain one of these blocks. YAML or TOML frontmatter is removed
 from the rendered document; a valid `lang` frontmatter value sets the HTML
 document language.
 
-Rendered Markdown uses an adapted Tokyo Night reading theme with a constrained
-line length. Its light or dark appearance follows DocShelf, including theme changes
+Rendered Markdown uses an adapted Tokyo Night reading theme that fills the available
+viewer width. Its light or dark appearance follows DocShelf, including theme changes
 made while the document is open. Existing HTML artifacts retain their own
 styles.
 

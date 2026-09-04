@@ -83,10 +83,14 @@ body {
 }
 
 .markdown-document {
+  --docshelf-content-inset-start: clamp(4.25rem, 6vw, 5rem);
+  --docshelf-content-inset-end: clamp(1.25rem, 3vw, 2.5rem);
+
+  box-sizing: border-box;
   position: relative;
-  width: auto;
-  margin-inline-start: clamp(4.25rem, 6vw, 5rem);
-  margin-inline-end: clamp(1.25rem, 3vw, 2.5rem);
+  width: 100%;
+  margin: 0;
+  padding-inline: var(--docshelf-content-inset-start) var(--docshelf-content-inset-end);
   padding-block: clamp(2.5rem, 7vw, 6rem);
 }
 
@@ -456,7 +460,7 @@ mark {
   position: absolute;
   z-index: 2;
   inset-block-start: 0;
-  inset-inline-end: calc(100% + 0.55rem);
+  inset-inline-start: calc(var(--docshelf-content-inset-start) - 3.75rem);
   display: flex;
   min-width: 3.2rem;
   flex-direction: column;
@@ -565,9 +569,9 @@ summary {
   }
 
   .markdown-document {
-    width: calc(100% - 5.5rem);
-    margin-inline-start: 4.25rem;
-    margin-inline-end: 1.25rem;
+    --docshelf-content-inset-start: 4.25rem;
+    --docshelf-content-inset-end: 1.25rem;
+
     padding-block: 2rem 3.5rem;
   }
 
@@ -577,7 +581,7 @@ summary {
   }
 
   .docshelf-line-controls {
-    inset-inline-end: calc(100% + 0.45rem);
+    inset-inline-start: calc(var(--docshelf-content-inset-start) - 3.45rem);
   }
 
   .docshelf-line-control {
