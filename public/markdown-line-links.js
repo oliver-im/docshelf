@@ -27,31 +27,64 @@
   let selection = null;
   let copyResetTimer = 0;
   const siblingControls = [];
+  const lineControls = [];
 
   const actions = createActions();
   root.append(actions.container);
 
   for (const block of blocks) {
-    const button = document.createElement('button');
-    const label = lineLabel(block.start, block.end);
-    button.type = 'button';
-    button.className = 'docshelf-line-control';
-    button.textContent = label;
-    button.setAttribute(
-      'aria-label',
-      `Select source ${lineDescription(block.start, block.end)}. Hold Shift to extend the selection.`,
-    );
-    button.setAttribute('aria-pressed', 'false');
+    const controls = document.createElement('div');
+    controls.className = 'docshelf-line-controls';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute('aria-label', `Source ${lineDescription(block.start, block.end)}`);
+    block.buttons = [];
 
-    button.addEventListener('click', (event) => {
-      selectBlock(block, event.shiftKey, event.shiftKey ? 'replace' : 'push');
-    });
-    button.addEventListener('keydown', (event) => {
-      if ((event.key === 'Enter' || event.key === ' ') && event.shiftKey) {
-        event.preventDefault();
-        selectBlock(block, true, 'replace');
-      }
-    });
+    for (let line = block.start; line <= block.end; line += 1) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'docshelf-line-control';
+      button.dataset.docshelfSourceLine = String(line);
+      button.textContent = String(line);
+      button.tabIndex = lineControls.length === 0 ? 0 : -1;
+      button.setAttribute(
+        'aria-label',
+        `Select source line ${line}. Hold Shift to extend the selection.`,
+      );
+      button.setAttribute('aria-pressed', 'false');
+
+      const entry = { line, button };
+      lineControls.push(entry);
+
+      button.addEventListener('click', (event) => {
+        setRovingControl(entry, false);
+        selectLine(line, event.shiftKey, event.shiftKey ? 'replace' : 'push');
+      });
+      button.addEventListener('keydown', (event) => {
+        const currentIndex = lineControls.indexOf(entry);
+        const destination =
+          event.key === 'ArrowUp'
+            ? lineControls[currentIndex - 1]
+            : event.key === 'ArrowDown'
+              ? lineControls[currentIndex + 1]
+              : event.key === 'Home'
+                ? lineControls[0]
+                : event.key === 'End'
+                  ? lineControls.at(-1)
+                  : null;
+        if (destination) {
+          event.preventDefault();
+          setRovingControl(destination, true);
+          return;
+        }
+        if ((event.key === 'Enter' || event.key === ' ') && event.shiftKey) {
+          event.preventDefault();
+          selectLine(line, true, 'replace');
+        }
+      });
+
+      controls.append(button);
+      block.buttons.push(entry);
+    }
 
     const parent = block.element.parentElement;
     const requiresContainedControl =
@@ -67,25 +100,18 @@
       if (block.element.tagName === 'TR') {
         controlHost.classList.add('docshelf-line-control-host-table');
       }
-      controlHost.prepend(button);
+      controlHost.prepend(controls);
     } else {
       parent.classList.add('docshelf-line-control-container');
-      button.classList.add('docshelf-line-control-sibling');
-      block.element.before(button);
-      siblingControls.push({ block: block.element, button });
+      controls.classList.add('docshelf-line-controls-sibling');
+      block.element.before(controls);
+      siblingControls.push({ block: block.element, controls });
     }
-    block.element.addEventListener('pointerenter', () => {
-      button.classList.add('docshelf-line-control-hovered');
-    });
-    block.element.addEventListener('pointerleave', () => {
-      button.classList.remove('docshelf-line-control-hovered');
-    });
-    block.button = button;
   }
 
   const positionSiblingControls = () => {
     for (const entry of siblingControls) {
-      entry.button.style.insetBlockStart = `${entry.block.offsetTop - 7}px`;
+      entry.controls.style.insetBlockStart = `${entry.block.offsetTop}px`;
     }
   };
   const resizeObserver = new ResizeObserver(() => {
@@ -113,15 +139,15 @@
 
   applyHash(window.location.hash, true);
 
-  function selectBlock(block, extend, historyMode) {
-    let start = block.start;
-    let end = block.end;
+  function selectLine(line, extend, historyMode) {
+    let start = line;
+    let end = line;
 
-    if (extend && anchor) {
-      start = Math.min(anchor.start, block.start);
-      end = Math.max(anchor.end, block.end);
+    if (extend && anchor !== null) {
+      start = Math.min(anchor, line);
+      end = Math.max(anchor, line);
     } else {
-      anchor = { start: block.start, end: block.end };
+      anchor = line;
     }
 
     setSelection({ start, end }, false);
@@ -139,7 +165,7 @@
       return;
     }
 
-    anchor = { ...range };
+    anchor = range.start;
     setSelection(range, scroll);
     replaceFrameHash(lineFragment(range.start, range.end));
   }
@@ -147,15 +173,24 @@
   function setSelection(range, scroll) {
     selection = range;
     let firstSelected = null;
+    let firstSelectedControl = null;
 
     for (const block of blocks) {
       const selected = Boolean(
         range && block.end >= range.start && block.start <= range.end,
       );
       block.element.toggleAttribute('data-docshelf-line-selected', selected);
-      block.button?.setAttribute('aria-pressed', String(selected));
+      for (const entry of block.buttons || []) {
+        const lineSelected = Boolean(
+          range && entry.line >= range.start && entry.line <= range.end,
+        );
+        entry.button.setAttribute('aria-pressed', String(lineSelected));
+        if (lineSelected && !firstSelectedControl) firstSelectedControl = entry;
+      }
       if (selected && !firstSelected) firstSelected = block.element;
     }
+
+    if (firstSelectedControl) setRovingControl(firstSelectedControl, false);
 
     actions.container.hidden = !range;
     if (!range) {
@@ -184,6 +219,13 @@
     replaceFrameHash('');
     notifyParent('', historyMode);
     if (announce) actions.status.textContent = 'Line selection cleared.';
+  }
+
+  function setRovingControl(active, focus) {
+    for (const entry of lineControls) {
+      entry.button.tabIndex = entry === active ? 0 : -1;
+    }
+    if (focus) active.button.focus();
   }
 
   function notifyParent(hash, historyMode) {
