@@ -63,11 +63,18 @@ html {
   scrollbar-width: thin;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: contain;
+}
+
 body {
   min-width: 0;
   min-height: 100vh;
   margin: 0;
-  overflow-wrap: break-word;
   background: var(--md-bg);
   color: var(--md-text);
   font-family:
@@ -83,8 +90,19 @@ body {
 }
 
 .markdown-document {
-  width: min(100% - clamp(2.5rem, 9vw, 9rem), 74ch);
-  margin-inline: auto;
+  --docshelf-line-gutter-width: 2.75rem;
+  --docshelf-line-gutter-gap: 0.55rem;
+  --docshelf-content-inset-start: calc(
+    var(--docshelf-line-gutter-width) + var(--docshelf-line-gutter-gap)
+  );
+  --docshelf-content-inset-end: clamp(1.25rem, 3vw, 2.5rem);
+
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding-inline: var(--docshelf-content-inset-start) var(--docshelf-content-inset-end);
   padding-block: clamp(2.5rem, 7vw, 6rem);
 }
 
@@ -256,6 +274,8 @@ samp {
 pre {
   max-width: 100%;
   overflow: auto;
+  overflow-wrap: normal;
+  overscroll-behavior-x: contain;
   padding: 1rem 1.15rem;
   border: 1px solid var(--md-border);
   border-radius: 0.45rem;
@@ -273,6 +293,7 @@ pre code {
 .mermaid-diagram {
   max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding: 1rem;
   margin: 0 auto 1.35rem;
   color: var(--md-text);
@@ -382,6 +403,8 @@ table {
   width: max-content;
   max-width: 100%;
   overflow-x: auto;
+  overflow-wrap: normal;
+  overscroll-behavior-x: contain;
   border-spacing: 0;
   border-collapse: collapse;
   font-size: 0.94rem;
@@ -435,6 +458,94 @@ mark {
   color: inherit;
 }
 
+.docshelf-line-block {
+  position: relative;
+  scroll-margin-block: 5rem;
+}
+
+.docshelf-line-controls {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  display: flex;
+  inline-size: var(--docshelf-line-gutter-width);
+  min-width: var(--docshelf-line-gutter-width);
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+  background: color-mix(in srgb, var(--md-bg-deep) 72%, transparent);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.docshelf-line-control {
+  position: relative;
+  min-block-size: 0;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 0 0.35rem;
+  border: 1px solid transparent;
+  border-inline-end-width: 2px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--md-text-faint);
+  cursor: pointer;
+  font-family: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: end;
+  white-space: nowrap;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.docshelf-line-control::after {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline-start: calc(100% + var(--docshelf-line-gutter-gap));
+  inline-size: var(--docshelf-content-width, 74ch);
+  background: color-mix(in srgb, var(--md-selection) 52%, transparent);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.docshelf-line-control:hover {
+  border-inline-end-color: var(--md-cyan);
+  background: var(--md-bg-highlight);
+  color: var(--md-cyan);
+}
+
+.docshelf-line-control[aria-pressed='true'] {
+  border-inline-end-color: var(--md-cyan);
+  background: color-mix(in srgb, var(--md-selection) 62%, transparent);
+  color: var(--md-text);
+}
+
+.docshelf-line-control[aria-pressed='true']::after {
+  opacity: 1;
+}
+
+.docshelf-line-control:focus-visible {
+  outline: 2px solid var(--md-cyan);
+  outline-offset: 2px;
+}
+
+.docshelf-line-status {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 del {
   color: var(--md-text-faint);
 }
@@ -466,7 +577,10 @@ summary {
   }
 
   .markdown-document {
-    width: calc(100% - 2.25rem);
+    --docshelf-line-gutter-width: 2.5rem;
+    --docshelf-line-gutter-gap: 0.45rem;
+    --docshelf-content-inset-end: 1.25rem;
+
     padding-block: 2rem 3.5rem;
   }
 
@@ -474,11 +588,23 @@ summary {
     margin-inline: -0.35rem;
     border-radius: 0.3rem;
   }
+
+  .docshelf-line-control {
+    padding-inline: 0.3rem;
+    font-size: 0.68rem;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .docshelf-line-controls,
+  .docshelf-line-control,
+  .docshelf-line-control::after {
+    transition: none;
   }
 }
 
@@ -497,10 +623,15 @@ summary {
 
   .markdown-document {
     width: 100%;
+    margin: 0;
     padding: 0;
   }
 
   a {
     color: inherit;
+  }
+
+  .docshelf-line-controls {
+    display: none;
   }
 }

@@ -1,5 +1,6 @@
 ---
-const showSidebarToggle = ['/', '/index.html'].includes(Astro.url.pathname);
+const basePath = import.meta.env.BASE_URL;
+const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url.pathname);
 ---
 
 {

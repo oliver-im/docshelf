@@ -4,8 +4,10 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import {
   artifactBuildIntegration,
+  artifactFileName,
   artifactSearchIntegration,
   artifactUrl,
+  docshelfBasePath,
   loadArtifactManifest,
   runtimeRoot,
 } from './scripts/artifacts.mjs';
@@ -21,7 +23,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
 }
 
-const site = `http://${browserHost(host)}:${port}`;
+const site = process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`;
 
 if (outDir) {
   const relativeOutput = path.relative(runtimeRoot, outDir);
@@ -38,7 +40,7 @@ const sidebar = Array.from(
   ([label, artifacts]) => ({
     label,
     items: artifacts.map((artifact) => ({
-      label: artifact.title,
+      label: artifactFileName(artifact),
       link: artifactUrl(artifact),
     })),
   }),
@@ -46,6 +48,7 @@ const sidebar = Array.from(
 
 export default defineConfig({
   site,
+  base: docshelfBasePath,
   outDir,
   build: {
     format: 'file',
@@ -56,6 +59,7 @@ export default defineConfig({
       title: 'DocShelf',
       sidebar,
       components: {
+        Hero: './src/components/DocShelfHero.astro',
         SiteTitle: './src/components/DocShelfSiteTitle.astro',
       },
     }),

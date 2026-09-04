@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "project": "DocShelf",
+      "source": "README.md",
+      "route": "docshelf/readme.html",
+      "title": "DocShelf README",
+      "description": "DocShelf setup, viewer behavior, and Markdown rendering documentation."
+    }
+  ]
+}

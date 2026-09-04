@@ -3,8 +3,13 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { contentRevision, rewriteArtifactLinks } from '../scripts/artifact-html.mjs';
 import {
+  artifactViewerUrl,
+  contentRevision,
+  rewriteArtifactLinks,
+} from '../scripts/artifact-html.mjs';
+import {
+  artifactFileName,
   artifactSourcesMatch,
   docShelfRoot,
   loadArtifactManifestFrom,
@@ -12,6 +17,11 @@ import {
   validateSource,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
+import { normalizeBasePath, sitePath } from '../scripts/site-path.mjs';
+import {
+  createLineFragment,
+  parseLineFragment,
+} from '../src/lib/line-permalinks.js';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 test('route validation accepts a nested HTML route', () => {
@@ -40,6 +50,13 @@ test('source validation accepts relative HTML and Markdown paths', () => {
   });
 });
 
+test('artifact filenames use the registered source basename', () => {
+  assert.equal(
+    artifactFileName({ source: '../example/docs/README.md' }),
+    'README.md',
+  );
+});
+
 test('manifest loading resolves a valid source inside the workspace', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const sourcePath = path.join(fixtureRoot, 'report.html');
@@ -66,6 +83,20 @@ test('manifest loading identifies a Markdown source', async (t) => {
   assert.equal(manifest.artifacts[0].format, 'markdown');
 });
 
+test('the Pages demo manifest publishes only the repository README', async () => {
+  const manifest = await loadArtifactManifestFrom(
+    path.join(docShelfRoot, '.github', 'pages-artifacts.json'),
+  );
+
+  assert.equal(manifest.artifacts.length, 1);
+  assert.equal(
+    manifest.artifacts[0].sourcePath,
+    await realpath(path.join(docShelfRoot, 'README.md')),
+  );
+  assert.equal(manifest.artifacts[0].route, 'docshelf/readme.html');
+  assert.equal(manifest.artifacts[0].format, 'markdown');
+});
+
 test('Markdown rendering creates a themed standalone document', async () => {
   const expectedThemeSync = (
     await readFile(
@@ -73,13 +104,7 @@ test('Markdown rendering creates a themed standalone document', async () => {
       'utf8',
     )
   ).trimEnd();
-  const html = await renderMarkdownArtifact(
-    {
-      title: 'Research & notes',
-      description: 'A <local> document.',
-      sourcePath: '/workspace/research.md',
-    },
-    `---
+  const source = `---
 lang: ko-KR
 private: true
 ---
@@ -96,15 +121,40 @@ const ready = true;
 \`\`\`
 
 <script>window.shouldNotRun = true;</script>
-`,
+`;
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Research & notes',
+      description: 'A <local> document.',
+      sourcePath: '/workspace/research.md',
+    },
+    source,
   );
 
   assert.match(html, /<html lang="ko-KR">/);
+  assert.doesNotMatch(html, /data-docshelf-source-revision/);
   assert.match(html, /<title>Research &amp; notes<\/title>/);
   assert.match(html, /content="A &lt;local&gt; document\."/);
   assert.match(html, /href="\/markdown-tokyo-night\.css"/);
+  assert.match(html, /src="\/markdown-line-links\.js" defer/);
+  assert.match(html, /data-docshelf-source-line-count="17"/);
   assert.equal(html.match(/<script>\n([\s\S]*?)\n    <\/script>/)?.[1], expectedThemeSync);
-  assert.match(html, /<h1 id="context-window">Context window<\/h1>/);
+  assert.match(
+    html,
+    /<h1 data-docshelf-line-start="5" data-docshelf-line-end="5" id="context-window">/,
+  );
+  assert.match(
+    html,
+    /<li class="task-list-item" data-docshelf-line-start="7" data-docshelf-line-end="7">/,
+  );
+  assert.match(
+    html,
+    /<tr data-docshelf-line-start="11" data-docshelf-line-end="11">/,
+  );
+  assert.match(
+    html,
+    /<pre class="language-js" data-language="js" data-docshelf-line-start="13" data-docshelf-line-end="15">/,
+  );
   assert.match(html, /class="contains-task-list"/);
   assert.match(html, /<table>/);
   assert.match(html, /class="language-js"/);
@@ -112,6 +162,78 @@ const ready = true;
   assert.doesNotMatch(html, /src="\/markdown-mermaid\.js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
+});
+
+test('Markdown rendering preserves soft and hard source-line breaks', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Line breaks',
+      description: 'Source-aligned rendering.',
+      sourcePath: '/workspace/line-breaks.md',
+    },
+    `---
+title: Line breaks
+---
+alpha
+beta *spans
+lines*\\
+gamma
+`,
+  );
+
+  assert.match(
+    html,
+    /<p data-docshelf-line-start="4" data-docshelf-line-end="7">alpha<br data-docshelf-line-break-after="4">\n/,
+  );
+  assert.match(html, /<em>spans<br data-docshelf-line-break-after="5">\nlines<\/em>/);
+  assert.match(html, /<br data-docshelf-line-break-after="6">\ngamma<\/p>/);
+});
+
+test('hosted Markdown assets use the configured DocShelf base path', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Hosted notes',
+      description: 'A hosted document.',
+      sourcePath: '/workspace/hosted.md',
+    },
+    `# Hosted notes
+
+\`\`\`mermaid
+flowchart LR
+  README --> Pages
+\`\`\`
+`,
+    { basePath: '/docshelf/' },
+  );
+
+  assert.match(html, /href="\/docshelf\/markdown-tokyo-night\.css"/);
+  assert.match(html, /src="\/docshelf\/markdown-line-links\.js" defer/);
+  assert.match(html, /src="\/docshelf\/mermaid\.min\.js" defer/);
+  assert.match(html, /src="\/docshelf\/markdown-mermaid\.js" defer/);
+});
+
+test('site paths support a validated deployment base', () => {
+  assert.equal(normalizeBasePath(undefined), '/');
+  assert.equal(normalizeBasePath('docshelf'), '/docshelf/');
+  assert.equal(normalizeBasePath('/projects/docshelf/'), '/projects/docshelf/');
+  assert.equal(sitePath('/artifacts/example.html', '/docshelf'), '/docshelf/artifacts/example.html');
+  assert.equal(
+    artifactViewerUrl('example/report.html', '', '#L4-L8', '/docshelf/'),
+    '/docshelf/?artifact=example%2Freport.html#L4-L8',
+  );
+  assert.throws(() => normalizeBasePath('/docshelf/../private'), /Invalid/);
+  assert.throws(() => normalizeBasePath('/docshelf?preview=true'), /Invalid/);
+});
+
+test('line permalink helpers accept only canonical, ordered source ranges', () => {
+  assert.deepEqual(parseLineFragment('#L14'), { start: 14, end: 14 });
+  assert.deepEqual(parseLineFragment('#L14-L20'), { start: 14, end: 20 });
+  assert.equal(parseLineFragment('#L20-L14'), null);
+  assert.equal(parseLineFragment('#L0'), null);
+  assert.equal(parseLineFragment('#context'), null);
+  assert.equal(createLineFragment(14), '#L14');
+  assert.equal(createLineFragment(14, 20), '#L14-L20');
+  assert.throws(() => createLineFragment(0), /positive/);
 });
 
 test('Markdown rendering enables local Mermaid rendering for Mermaid fences', async () => {

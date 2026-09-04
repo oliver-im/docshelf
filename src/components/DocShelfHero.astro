@@ -1,0 +1,17 @@
+---
+import Hero from '@astrojs/starlight/components/Hero.astro';
+
+const { entry } = Astro.locals.starlightRoute;
+
+if (entry.id === '404' && entry.data.hero) {
+  entry.data.hero = {
+    ...entry.data.hero,
+    actions: entry.data.hero.actions.map((action) => ({
+      ...action,
+      link: action.link === '/' ? import.meta.env.BASE_URL : action.link,
+    })),
+  };
+}
+---
+
+<Hero />

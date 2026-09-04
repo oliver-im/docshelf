@@ -5,6 +5,8 @@ artifacts. Source projects keep ownership of their files; DocShelf provides
 navigation, stable local URLs, and search without exposing the surrounding
 workspace.
 
+[Open the README in the live DocShelf demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html).
+
 ## Why DocShelf exists
 
 HTML is useful for visual reports and interactive explanations, while Markdown
@@ -94,6 +96,15 @@ document is ready. While `npm run watch` is running, content revisions are
 checked when the window regains focus and every few seconds while it remains
 visible.
 
+Rendered Markdown also supports source-line links. Its gutter shows every source
+line, including blank lines and lines omitted from the rendered document. Click
+a number to select that exact source line, then Shift-click another number to
+extend the range. DocShelf paints each selected source line as a horizontal
+band; when the range covers an entire rendered element, it outlines that element
+as additional context. The range is written to the URL using the familiar
+`#L14-L20` form. Use **Copy link** in the selection bar to share the exact
+artifact and range.
+
 ## Markdown rendering
 
 Markdown artifacts support GitHub-flavored tables, task lists, strikethrough,
@@ -104,8 +115,8 @@ documents that contain one of these blocks. YAML or TOML frontmatter is removed
 from the rendered document; a valid `lang` frontmatter value sets the HTML
 document language.
 
-Rendered Markdown uses an adapted Tokyo Night reading theme with a constrained
-line length. Its light or dark appearance follows DocShelf, including theme changes
+Rendered Markdown uses an adapted Tokyo Night reading theme that fills the available
+viewer width. Its light or dark appearance follows DocShelf, including theme changes
 made while the document is open. Existing HTML artifacts retain their own
 styles.
 
@@ -127,6 +138,17 @@ npx skills add oliver-im/docshelf --skill docshelf -g
 The skill also provides an optional DocShelf HTML theme. Ask for the “DocShelf
 theme” when creating a standalone HTML artifact; registering existing HTML does
 not alter its styles.
+
+## GitHub Pages demo
+
+Pushes to `main` rebuild the public demo from this README and deploy the generated
+site to GitHub Pages. The workflow copies `.github/pages-artifacts.json` to the
+ignored local manifest during the build, so the README remains the single source
+of truth and generated HTML is never committed.
+
+The hosted build sets `DOCSHELF_SITE` and `DOCSHELF_BASE` from GitHub Pages and
+disables the local watcher's live-update polling. Only the README registered by
+the demo manifest is published; machine-local registrations remain ignored.
 
 ## Security
 

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { parse, serialize } from 'parse5';
+import { sitePath } from './site-path.mjs';
 
 export const artifactRevisionFile = '.docshelf-revisions.json';
 
@@ -12,8 +13,9 @@ export const artifactRevisionFile = '.docshelf-revisions.json';
  * @param {string} html
  * @param {import('./artifacts.mjs').Artifact} artifact
  * @param {import('./artifacts.mjs').ArtifactManifest} manifest
+ * @param {{ basePath?: string }} [options]
  */
-export async function rewriteArtifactLinks(html, artifact, manifest) {
+export async function rewriteArtifactLinks(html, artifact, manifest, options = {}) {
   const artifactsBySource = new Map(
     manifest.artifacts.map((candidate) => [candidate.sourcePath, candidate]),
   );
@@ -35,7 +37,12 @@ export async function rewriteArtifactLinks(html, artifact, manifest) {
     );
     if (!target) continue;
 
-    hrefAttribute.value = artifactViewerUrl(target.route, reference.query, reference.hash);
+    hrefAttribute.value = artifactViewerUrl(
+      target.route,
+      reference.query,
+      reference.hash,
+      options.basePath,
+    );
     setAttribute(link, 'data-docshelf-artifact', target.route);
 
     const targetAttribute = link.attrs.find((attribute) => attribute.name === 'target');
@@ -58,11 +65,12 @@ export function contentRevision(contents) {
  * @param {string} route
  * @param {string} query Query without its leading question mark.
  * @param {string} hash Hash including its leading number sign.
+ * @param {string} [basePath]
  */
-export function artifactViewerUrl(route, query = '', hash = '') {
+export function artifactViewerUrl(route, query = '', hash = '', basePath = '/') {
   const parameters = new URLSearchParams({ artifact: route });
   if (query) parameters.set('artifact-query', query);
-  return `/?${parameters}${hash}`;
+  return `${sitePath('/', basePath)}?${parameters}${hash}`;
 }
 
 /** @param {unknown} node @param {Array<{ attrs: Array<{ name: string, value: string }> }>} links */
