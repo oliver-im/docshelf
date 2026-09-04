@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
-import { readdir, rm, stat } from 'node:fs/promises';
+import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -19,6 +19,7 @@ import {
   syncArtifacts,
 } from './artifacts.mjs';
 import { assembleIncrementalBuild, siteInputsSignature } from './build-output.mjs';
+import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { standardStreamIs, trimLog, watcherLogPaths } from './log-trim.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
@@ -35,6 +36,7 @@ const port = Number(process.env.DOCSHELF_PORT || 4321);
 const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
 const verboseBuilds = process.env.DOCSHELF_VERBOSE === '1';
+const buildStatus = new BuildStatusReporter(runtimeRoot);
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
@@ -93,6 +95,9 @@ watcher.on('error', (error) => {
   console.error(`[watch] ${formatError(error)}`);
 });
 
+activeBuildRoot = await findLatestBuild();
+await reportBuildStatus(buildStatus.starting(Boolean(activeBuildRoot)));
+
 const server = createServer((request, response) => {
   serveRequest(request, response).catch((error) => {
     console.error(`[server] ${formatError(error)}`);
@@ -111,7 +116,6 @@ await new Promise((resolve, reject) => {
   });
 });
 
-activeBuildRoot = await findLatestBuild();
 await trimWatcherLogs();
 console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
 if (activeBuildRoot) {
@@ -158,6 +162,7 @@ async function rebuild(reasons) {
   const buildName = `build-${Date.now()}-${++buildSequence}`;
   const buildRoot = path.join(runtimeRoot, buildName);
   const startedAt = performance.now();
+  await reportBuildStatus(buildStatus.building(reasons, Boolean(activeBuildRoot)));
   console.log(`[build] ${reasons.join(', ') || 'change detected'}`);
 
   try {
@@ -206,7 +211,7 @@ async function rebuild(reasons) {
         if (!(await artifactSourcesMatch(manifest, revisionState))) {
           requestFreshBuild('registered source changed during build');
         }
-        throw new Error(`Astro exited with code ${exitCode}.`);
+        throw Object.assign(new Error(`Astro exited with code ${exitCode}.`), { details: output });
       }
     }
 
@@ -226,6 +231,7 @@ async function rebuild(reasons) {
       revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
     );
     if (mode === 'full') activeSiteSignature = siteSignature;
+    await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     const kind = mode === 'full' ? 'a full' : 'an incremental';
     console.log(
@@ -244,6 +250,7 @@ async function rebuild(reasons) {
     if (shuttingDown) {
       console.log('[build] Stopped by shutdown.');
     } else {
+      await reportBuildStatus(buildStatus.failed(error, Boolean(activeBuildRoot)));
       console.error(`[build] Failed; continuing to serve the previous build. ${formatError(error)}`);
     }
   } finally {
@@ -375,6 +382,20 @@ async function serveRequest(request, response) {
     return;
   }
 
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
+  } catch {
+    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('Bad request\n');
+    return;
+  }
+
+  if (pathname === buildStatusRoute) {
+    await serveBuildStatus(request, response);
+    return;
+  }
+
   const buildRoot = activeBuildRoot;
   const artifactRevisions = activeArtifactRevisions;
   if (!buildRoot) {
@@ -384,15 +405,6 @@ async function serveRequest(request, response) {
       'retry-after': '1',
     });
     response.end('DocShelf is building\n');
-    return;
-  }
-
-  let pathname;
-  try {
-    pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
-  } catch {
-    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
-    response.end('Bad request\n');
     return;
   }
 
@@ -438,6 +450,31 @@ async function serveRequest(request, response) {
       ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
       : undefined,
   });
+}
+
+async function serveBuildStatus(request, response) {
+  const contents = await readFile(buildStatus.filePath).catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!contents) {
+    response.writeHead(503, {
+      'cache-control': 'no-store',
+      'content-type': 'application/json; charset=utf-8',
+      'retry-after': '1',
+      'x-content-type-options': 'nosniff',
+    });
+    response.end('{"error":"Build status is not available."}\n');
+    return;
+  }
+
+  response.writeHead(200, {
+    'cache-control': 'no-store',
+    'content-length': contents.length,
+    'content-type': 'application/json; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+  });
+  response.end(request.method === 'HEAD' ? undefined : contents);
 }
 
 /**
@@ -590,4 +627,10 @@ function releaseLocks() {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function reportBuildStatus(statusPromise) {
+  await statusPromise.catch((error) => {
+    console.error(`[status] Could not write build status: ${formatError(error)}`);
+  });
 }

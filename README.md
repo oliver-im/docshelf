@@ -167,7 +167,13 @@ npm run watch
 The watcher is available at `http://shelf.localhost:4321/`, binds to
 `127.0.0.1` by default, observes only the manifest files and registered
 artifact sources, and switches to a new isolated build only after it succeeds.
-An invalid manifest or failed build leaves the previous site online.
+An invalid manifest or failed build leaves the previous site online. The watcher
+writes its latest attempt to `.docshelf-runtime/build-status.json` and serves the
+same state without caching at `/__docshelf/status`. Each attempt has a generation
+and watcher-instance ID so automated clients can distinguish it from an earlier
+success. The viewer polls this endpoint and shows a banner when a rebuild fails.
+Diagnostic output in the status file is bounded; the watcher log receives the
+detailed failed Astro build output and is trimmed as described below.
 
 A change that leaves the catalog as it was (the projects, routes, titles, and
 descriptions in the manifest) is published without running Astro: the watcher

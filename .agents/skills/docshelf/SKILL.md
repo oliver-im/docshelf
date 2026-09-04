@@ -33,12 +33,23 @@ description: Register HTML or Markdown artifacts with DocShelf, or create self-c
   - take `title` from the document title or primary heading, falling back to a humanized filename;
   - write a short factual `description` based on the document's purpose.
 - Ask only when the source or required metadata cannot be inferred safely.
-- Do not modify the source artifact, commit machine-local registrations, or edit generated DocShelf files.
+- Before changing the manifest, probe
+  `http://shelf.localhost:<port>/__docshelf/status`. If it is available, record
+  its `instanceId` and `generation` so the resulting rebuild can be identified.
+- Do not modify the source artifact, commit machine-local registrations, or edit
+  generated DocShelf files.
 
 ## Verify the result
 
 - If the DocShelf watcher is running, let it rebuild; never start a second watcher for verification.
-- Wait until the registered route is available and reflects the current source. If no watcher is running, validate with DocShelf's sync and build commands without installing or starting a daemon unless requested.
+- When a watcher status was recorded before registration, poll the status endpoint
+  for up to 150 seconds. Wait for a terminal `ready` or `failed` state from a newer
+  generation of the same instance, or from a replacement instance. On `failed`,
+  stop waiting and report `error.message`, using the bounded `error.details` when
+  useful for diagnosis. Do not mistake the older `ready` state for this rebuild.
+- After a `ready` result, confirm that the registered route is available and
+  reflects the current source. If no watcher is running, validate with DocShelf's
+  sync and build commands without installing or starting a daemon unless requested.
 - Return the stable URL in the form
   `http://shelf.localhost:4321/?artifact=<encoded-route>` at the default port;
   when `DOCSHELF_PORT` is set, use its value instead of `4321`.
