@@ -108,8 +108,31 @@ const ready = true;
   assert.match(html, /class="contains-task-list"/);
   assert.match(html, /<table>/);
   assert.match(html, /class="language-js"/);
+  assert.doesNotMatch(html, /src="\/mermaid\.min\.js"/);
+  assert.doesNotMatch(html, /src="\/markdown-mermaid\.js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
+});
+
+test('Markdown rendering enables local Mermaid rendering for Mermaid fences', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'System diagram',
+      description: 'A Mermaid diagram.',
+      sourcePath: '/workspace/diagram.md',
+    },
+    `# System
+
+\`\`\`mermaid
+flowchart LR
+  Browser --> DocShelf
+\`\`\`
+`,
+  );
+
+  assert.match(html, /<code class="language-mermaid">/);
+  assert.match(html, /<script src="\/mermaid\.min\.js" defer><\/script>/);
+  assert.match(html, /<script src="\/markdown-mermaid\.js" defer><\/script>/);
 });
 
 test('generated HTML rewrites only links to registered source artifacts', async (t) => {
