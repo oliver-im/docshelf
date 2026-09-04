@@ -825,9 +825,15 @@ const initialFrameUrl = initialArtifact
   }
 
   .docshelf-viewer {
+    /* Match the Markdown document canvas across the iframe boundary. */
+    --docshelf-artifact-background: #1a1b26;
     position: relative;
     overflow: hidden;
-    background: var(--sl-color-bg-nav);
+    background: var(--docshelf-artifact-background);
+  }
+
+  :global(html[data-theme='light']) .docshelf-viewer {
+    --docshelf-artifact-background: #d5d6db;
   }
 
   .build-status-banner {
@@ -856,8 +862,9 @@ const initialFrameUrl = initialArtifact
   .document-pane {
     position: relative;
     min-width: 0;
+    margin: 0;
     overflow: hidden;
-    background: var(--sl-color-bg);
+    background: var(--docshelf-artifact-background);
   }
 
   .document-pane iframe {
@@ -869,7 +876,7 @@ const initialFrameUrl = initialArtifact
     height: 100%;
     border: 0;
     opacity: 0;
-    background: var(--sl-color-bg);
+    background: var(--docshelf-artifact-background);
     pointer-events: none;
   }
 
