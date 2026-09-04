@@ -4,6 +4,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import {
   artifactBuildIntegration,
+  artifactFileName,
   artifactSearchIntegration,
   artifactUrl,
   docshelfBasePath,
@@ -39,7 +40,7 @@ const sidebar = Array.from(
   ([label, artifacts]) => ({
     label,
     items: artifacts.map((artifact) => ({
-      label: artifact.title,
+      label: artifactFileName(artifact),
       link: artifactUrl(artifact),
     })),
   }),

@@ -144,6 +144,11 @@ export function artifactUrl(artifact) {
   return `/artifacts/${artifact.route}`;
 }
 
+/** @param {{ source: string }} artifact */
+export function artifactFileName(artifact) {
+  return path.basename(artifact.source);
+}
+
 /**
  * Regenerate public/artifacts and the generated manifest from the registered sources.
  *

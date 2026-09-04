@@ -9,6 +9,7 @@ import {
   rewriteArtifactLinks,
 } from '../scripts/artifact-html.mjs';
 import {
+  artifactFileName,
   artifactSourcesMatch,
   docShelfRoot,
   loadArtifactManifestFrom,
@@ -47,6 +48,13 @@ test('source validation accepts relative HTML and Markdown paths', () => {
   assert.throws(() => validateSource('../project/report.txt', 0), {
     message: /HTML or Markdown file/,
   });
+});
+
+test('artifact filenames use the registered source basename', () => {
+  assert.equal(
+    artifactFileName({ source: '../example/docs/README.md' }),
+    'README.md',
+  );
 });
 
 test('manifest loading resolves a valid source inside the workspace', async (t) => {
