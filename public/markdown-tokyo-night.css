@@ -84,8 +84,9 @@ body {
 
 .markdown-document {
   position: relative;
-  width: min(100% - clamp(7.5rem, 12vw, 9rem), 74ch);
-  margin-inline: auto;
+  width: auto;
+  margin-inline-start: clamp(4.25rem, 6vw, 5rem);
+  margin-inline-end: clamp(1.25rem, 3vw, 2.5rem);
   padding-block: clamp(2.5rem, 7vw, 6rem);
 }
 
@@ -614,6 +615,7 @@ summary {
 
   .markdown-document {
     width: 100%;
+    margin: 0;
     padding: 0;
   }
 
