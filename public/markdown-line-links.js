@@ -32,15 +32,14 @@
   root.dataset.docshelfLineLinks = 'true';
   let anchor = null;
   let selection = null;
-  let copyResetTimer = 0;
   const lineGroups = [];
   const lineControls = [];
   const rootStyle = window.getComputedStyle(root);
   const defaultPaddingStart = Number.parseFloat(rootStyle.paddingBlockStart) || 0;
   const defaultPaddingEnd = Number.parseFloat(rootStyle.paddingBlockEnd) || 0;
 
-  const actions = createActions();
-  root.append(actions.container);
+  const status = createStatus();
+  root.append(status);
 
   let nextUnassignedLine = 1;
   for (const [index, block] of blocks.entries()) {
@@ -267,8 +266,6 @@
     return measurements;
   }
 
-  actions.copy.addEventListener('click', () => void copyLineLink());
-  actions.clear.addEventListener('click', () => clearSelection('push', true));
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && selection) clearSelection('push', true);
   });
@@ -341,14 +338,12 @@
 
     if (firstSelectedControl) setRovingControl(firstSelectedControl, false);
 
-    actions.container.hidden = !range;
     if (!range) {
-      actions.status.textContent = '';
+      status.textContent = '';
       return;
     }
 
-    actions.range.textContent = lineLabel(range.start, range.end);
-    actions.status.textContent = firstSelected
+    status.textContent = firstSelected
       ? `Selected source ${lineDescription(range.start, range.end)}.`
       : `Source ${lineDescription(range.start, range.end)} is not visible in the rendered document.`;
 
@@ -368,7 +363,7 @@
     setSelection(null, false);
     replaceFrameHash('');
     notifyParent('', historyMode);
-    if (announce) actions.status.textContent = 'Line selection cleared.';
+    if (announce) status.textContent = 'Line selection cleared.';
   }
 
   function setRovingControl(active, focus) {
@@ -408,72 +403,12 @@
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
-  async function copyLineLink() {
-    if (!selection) return;
-
-    const hash = lineFragment(selection.start, selection.end);
-    const url = lineLinkUrl(hash);
-    let copied = false;
-
-    try {
-      await navigator.clipboard.writeText(url);
-      copied = true;
-    } catch {
-      const fallback = document.createElement('textarea');
-      fallback.value = url;
-      fallback.setAttribute('readonly', '');
-      fallback.className = 'docshelf-copy-fallback';
-      document.body.append(fallback);
-      fallback.select();
-      const legacyCopy = Reflect.get(document, 'execCommand');
-      copied = typeof legacyCopy === 'function' && legacyCopy.call(document, 'copy');
-      fallback.remove();
-    }
-
-    window.clearTimeout(copyResetTimer);
-    actions.copy.textContent = copied ? 'Copied' : 'Copy failed';
-    actions.status.textContent = copied ? 'Line link copied.' : 'Could not copy the line link.';
-    copyResetTimer = window.setTimeout(() => {
-      actions.copy.textContent = 'Copy link';
-    }, 2_000);
-  }
-
-  function lineLinkUrl(hash) {
-    let url;
-    try {
-      url = new URL(window.parent === window ? window.location.href : window.parent.location.href);
-    } catch {
-      url = new URL(window.location.href);
-    }
-
-    url.searchParams.delete('__docshelf_revision');
-    url.hash = hash;
-    return url.href;
-  }
-
-  function createActions() {
-    const container = document.createElement('aside');
-    const range = document.createElement('strong');
-    const copy = document.createElement('button');
-    const clear = document.createElement('button');
+  function createStatus() {
     const status = document.createElement('span');
-
-    container.className = 'docshelf-line-actions';
-    container.hidden = true;
-    container.setAttribute('aria-label', 'Source line selection');
-    range.className = 'docshelf-line-actions-range';
-    copy.type = 'button';
-    copy.className = 'docshelf-line-action';
-    copy.textContent = 'Copy link';
-    clear.type = 'button';
-    clear.className = 'docshelf-line-action';
-    clear.textContent = 'Clear';
     status.className = 'docshelf-line-status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    container.append(range, copy, clear, status);
-
-    return { container, range, copy, clear, status };
+    return status;
   }
 
   function parseLineFragment(hash) {
@@ -488,10 +423,6 @@
 
   function lineFragment(start, end) {
     return start === end ? `#L${start}` : `#L${start}-L${end}`;
-  }
-
-  function lineLabel(start, end) {
-    return start === end ? `L${start}` : `L${start}\u2013L${end}`;
   }
 
   function lineDescription(start, end) {
