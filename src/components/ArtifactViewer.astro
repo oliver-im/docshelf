@@ -20,6 +20,16 @@ const initialFrameUrl = initialArtifact
   data-artifacts={JSON.stringify(artifacts)}
   data-catalog-revision={manifest.catalogRevision}
 >
+  <div
+    class="build-status-banner"
+    data-docshelf-build-status
+    role="alert"
+    aria-atomic="true"
+    hidden
+  >
+    <strong>Rebuild failed.</strong>
+    <span data-docshelf-build-status-message></span>
+  </div>
   {
     initialArtifact ? (
       <section class="document-pane" aria-label="Document viewer" aria-busy="false">
@@ -75,7 +85,14 @@ const initialFrameUrl = initialArtifact
     artifacts: Array<{ route: string; revision: string }>;
   }
 
+  interface BuildStatus {
+    version: number;
+    state: 'starting' | 'building' | 'ready' | 'failed';
+    error: { message: string; details: string | null } | null;
+  }
+
   const revisionStateUrl = '/artifacts/.docshelf-revisions.json';
+  const buildStatusUrl = '/__docshelf/status';
   const revisionParameter = '__docshelf_revision';
   const revisionPollInterval = 3_000;
 
@@ -83,7 +100,49 @@ const initialFrameUrl = initialArtifact
 
   if (viewer && viewer.dataset.initialized !== 'true') {
     viewer.dataset.initialized = 'true';
+    initializeBuildStatus(viewer);
     initializeViewer(viewer);
+  }
+
+  function initializeBuildStatus(root: HTMLElement) {
+    const banner = root.querySelector<HTMLElement>('[data-docshelf-build-status]');
+    const message = root.querySelector<HTMLElement>('[data-docshelf-build-status-message]');
+    if (!banner || !message) return;
+
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const response = await fetch(buildStatusUrl, { cache: 'no-store' });
+        if (!response.ok) return;
+        const status = (await response.json()) as BuildStatus;
+        if (!validBuildStatus(status)) return;
+
+        if (status.state === 'failed' && status.error) {
+          message.textContent = status.error.details
+            ? `${status.error.message}: ${status.error.details}`
+            : status.error.message;
+          banner.hidden = false;
+        } else {
+          message.textContent = '';
+          banner.hidden = true;
+        }
+      } catch {
+        // Keep the last known status when the watcher cannot be reached temporarily.
+      } finally {
+        checking = false;
+      }
+    };
+
+    void check();
+    window.addEventListener('focus', () => void check());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void check();
+    });
+    window.setInterval(() => {
+      if (document.visibilityState === 'visible') void check();
+    }, revisionPollInterval);
   }
 
   function initializeViewer(root: HTMLElement) {
@@ -588,6 +647,16 @@ const initialFrameUrl = initialArtifact
       )
     );
   }
+
+  function validBuildStatus(status: BuildStatus) {
+    return (
+      status?.version === 1 &&
+      ['starting', 'building', 'ready', 'failed'].includes(status.state) &&
+      (status.error === null ||
+        (typeof status.error?.message === 'string' &&
+          (status.error.details === null || typeof status.error.details === 'string')))
+    );
+  }
 </script>
 
 <style>
@@ -643,8 +712,32 @@ const initialFrameUrl = initialArtifact
   }
 
   .docshelf-viewer {
+    position: relative;
     overflow: hidden;
     background: var(--sl-color-bg-nav);
+  }
+
+  .build-status-banner {
+    position: absolute;
+    z-index: 3;
+    inset-block-start: 1rem;
+    inset-inline: 1rem;
+    display: flex;
+    gap: 0.45rem;
+    align-items: baseline;
+    max-width: max-content;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--sl-color-red);
+    border-radius: 0.5rem;
+    background: var(--sl-color-red-low);
+    box-shadow: var(--sl-shadow-md);
+    color: var(--sl-color-red-high);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .build-status-banner[hidden] {
+    display: none;
   }
 
   .document-pane {

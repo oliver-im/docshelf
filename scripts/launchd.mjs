@@ -246,6 +246,14 @@ function run(executable, arguments_, capture) {
   });
 }
 
+/**
+ * The agent runs at standard priority. As a `Background` process type it and the Astro builds it
+ * spawns are confined to efficiency cores with throttled I/O, which made every rebuild take five
+ * to six seconds instead of one. The watcher idles between rebuilds, so nothing is gained by
+ * demoting it.
+ */
+const processType = 'Standard';
+
 function renderPlist() {
   const executableDirectory = path.dirname(process.execPath);
   const executablePath = [
@@ -285,7 +293,7 @@ function renderPlist() {
   <key>KeepAlive</key>
   <true/>
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>${processType}</string>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
