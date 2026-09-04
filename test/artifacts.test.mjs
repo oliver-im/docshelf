@@ -156,6 +156,31 @@ const ready = true;
   assert.doesNotMatch(html, /shouldNotRun/);
 });
 
+test('Markdown rendering preserves soft and hard source-line breaks', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Line breaks',
+      description: 'Source-aligned rendering.',
+      sourcePath: '/workspace/line-breaks.md',
+    },
+    `---
+title: Line breaks
+---
+alpha
+beta *spans
+lines*\\
+gamma
+`,
+  );
+
+  assert.match(
+    html,
+    /<p data-docshelf-line-start="4" data-docshelf-line-end="7">alpha<br data-docshelf-line-break-after="4">\n/,
+  );
+  assert.match(html, /<em>spans<br data-docshelf-line-break-after="5">\nlines<\/em>/);
+  assert.match(html, /<br data-docshelf-line-break-after="6">\ngamma<\/p>/);
+});
+
 test('hosted Markdown assets use the configured DocShelf base path', async () => {
   const html = await renderMarkdownArtifact(
     {

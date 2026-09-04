@@ -78,17 +78,25 @@
     lineGroups.push({ block: null, controls, start: 1, end: sourceLineCount });
   }
 
+  const defaultLineHeight = lineControls[0]?.button.getBoundingClientRect().height || 16;
+
   const positionLineControls = () => {
-    const lineHeight = lineControls[0]?.button.getBoundingClientRect().height || 0;
     const leadingLineCount = blocks[0] ? Math.max(0, blocks[0].start - 1) : 0;
     const trailingLineCount = blocks.at(-1)
       ? Math.max(0, sourceLineCount - blocks.at(-1).end)
       : sourceLineCount;
-    root.style.paddingBlockStart = `${Math.max(defaultPaddingStart, leadingLineCount * lineHeight)}px`;
-    root.style.paddingBlockEnd = `${Math.max(defaultPaddingEnd, trailingLineCount * lineHeight)}px`;
+    root.style.paddingBlockStart = `${Math.max(
+      defaultPaddingStart,
+      leadingLineCount * defaultLineHeight,
+    )}px`;
+    root.style.paddingBlockEnd = `${Math.max(
+      defaultPaddingEnd,
+      trailingLineCount * defaultLineHeight,
+    )}px`;
     root.style.setProperty('--docshelf-content-width', `${root.getBoundingClientRect().width}px`);
 
-    const rootTop = root.getBoundingClientRect().top;
+    const rootRect = root.getBoundingClientRect();
+    const rootTop = rootRect.top;
     const positions = lineGroups.map((entry) => {
       const blockTop = entry.block
         ? entry.block.element.getBoundingClientRect().top - rootTop
@@ -107,10 +115,11 @@
       const bottom = nextPosition
         ? nextPosition.top
         : hasTrailingLines || !entry.block
-          ? root.getBoundingClientRect().height
+          ? rootRect.height
           : position.blockBottom;
       entry.controls.style.insetBlockStart = `${position.top}px`;
       entry.controls.style.blockSize = `${Math.max(1, bottom - position.top)}px`;
+      sizeLineControls(entry, position.top, bottom, rootTop);
     }
   };
   const resizeObserver = new ResizeObserver(() => {
@@ -165,6 +174,97 @@
     });
 
     return button;
+  }
+
+  function sizeLineControls(group, groupTop, groupBottom, rootTop) {
+    const heights = new Map();
+
+    if (!group.block) {
+      distributeLineHeights(heights, group.start, group.end, groupTop, groupBottom);
+    } else {
+      const blockRect = group.block.element.getBoundingClientRect();
+      const blockTop = blockRect.top - rootTop;
+      const blockBottom = blockRect.bottom - rootTop;
+      const leadingEnd = Math.min(group.end, group.block.start - 1);
+      const visibleStart = Math.max(group.start, group.block.start);
+      const visibleEnd = Math.min(group.end, group.block.end);
+      const trailingStart = Math.max(group.start, group.block.end + 1);
+
+      distributeLineHeights(heights, group.start, leadingEnd, groupTop, blockTop);
+
+      const measuredLines = measureSourceLines(group.block, rootTop);
+      if (
+        measuredLines &&
+        visibleStart === group.block.start &&
+        visibleEnd === group.block.end
+      ) {
+        const boundaries = [blockTop];
+        for (let line = visibleStart + 1; line <= visibleEnd; line += 1) {
+          const previous = measuredLines.get(line - 1);
+          const current = measuredLines.get(line);
+          boundaries.push((previous.bottom + current.top) / 2);
+        }
+        boundaries.push(blockBottom);
+
+        for (let line = visibleStart; line <= visibleEnd; line += 1) {
+          const index = line - visibleStart;
+          heights.set(line, Math.max(0, boundaries[index + 1] - boundaries[index]));
+        }
+      } else {
+        distributeLineHeights(heights, visibleStart, visibleEnd, blockTop, blockBottom);
+      }
+
+      distributeLineHeights(heights, trailingStart, group.end, blockBottom, groupBottom);
+    }
+
+    for (let line = group.start; line <= group.end; line += 1) {
+      const control = lineControls[line - 1]?.button;
+      if (control) control.style.blockSize = `${Math.max(0, heights.get(line) || 0)}px`;
+    }
+  }
+
+  function distributeLineHeights(heights, start, end, top, bottom) {
+    if (end < start) return;
+    const height = Math.max(0, bottom - top) / (end - start + 1);
+    for (let line = start; line <= end; line += 1) heights.set(line, height);
+  }
+
+  function measureSourceLines(block, rootTop) {
+    const breakByLine = new Map();
+    for (const sourceBreak of block.element.querySelectorAll(
+      'br[data-docshelf-line-break-after]',
+    )) {
+      const line = Number(sourceBreak.dataset.docshelfLineBreakAfter);
+      if (Number.isSafeInteger(line) && line >= block.start && line < block.end) {
+        breakByLine.set(line, sourceBreak);
+      }
+    }
+
+    if (breakByLine.size !== block.end - block.start) return null;
+
+    const measurements = new Map();
+    let previousBreak = null;
+
+    for (let line = block.start; line <= block.end; line += 1) {
+      const range = document.createRange();
+      if (previousBreak) range.setStartAfter(previousBreak);
+      else range.setStart(block.element, 0);
+
+      const nextBreak = breakByLine.get(line);
+      if (nextBreak) range.setEndBefore(nextBreak);
+      else range.setEnd(block.element, block.element.childNodes.length);
+
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);
+      if (rects.length === 0) return null;
+
+      measurements.set(line, {
+        top: Math.min(...rects.map((rect) => rect.top)) - rootTop,
+        bottom: Math.max(...rects.map((rect) => rect.bottom)) - rootTop,
+      });
+      previousBreak = nextBreak || null;
+    }
+
+    return measurements;
   }
 
   actions.copy.addEventListener('click', () => void copyLineLink());
