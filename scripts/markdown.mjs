@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createMarkdownProcessor, parseFrontmatter } from '@astrojs/markdown-remark';
 
@@ -67,7 +66,6 @@ export async function renderMarkdownArtifact(artifact, source) {
     title: artifact.title,
     description: artifact.description,
     language,
-    sourceRevision: createHash('sha256').update(source).digest('hex'),
     content: rendered.code,
   });
 }
@@ -162,11 +160,11 @@ function markdownLanguage(frontmatter) {
 }
 
 /**
- * @param {{ title: string, description: string, language: string, sourceRevision: string, content: string }} page
+ * @param {{ title: string, description: string, language: string, content: string }} page
  */
 function markdownDocument(page) {
   return `<!doctype html>
-<html lang="${escapeHtml(page.language)}" data-docshelf-source-revision="${page.sourceRevision}">
+<html lang="${escapeHtml(page.language)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

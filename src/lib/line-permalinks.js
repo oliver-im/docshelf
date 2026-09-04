@@ -1,7 +1,6 @@
 // @ts-check
 
 const lineFragmentPattern = /^#L([1-9]\d*)(?:-L([1-9]\d*))?$/;
-const sourceRevisionPattern = /^[a-f\d]{12,64}$/;
 
 /**
  * Parse a DocShelf source-line fragment.
@@ -32,11 +31,4 @@ export function createLineFragment(start, end = start) {
   }
 
   return end === start ? `#L${start}` : `#L${start}-L${end}`;
-}
-
-/** @param {unknown} value */
-export function normalizeSourceRevision(value) {
-  return typeof value === 'string' && sourceRevisionPattern.test(value.toLowerCase())
-    ? value.toLowerCase()
-    : '';
 }

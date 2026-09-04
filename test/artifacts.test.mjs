@@ -14,7 +14,6 @@ import {
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
 import {
   createLineFragment,
-  normalizeSourceRevision,
   parseLineFragment,
 } from '../src/lib/line-permalinks.js';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
@@ -105,10 +104,8 @@ const ready = true;
     source,
   );
 
-  assert.match(
-    html,
-    new RegExp(`<html lang="ko-KR" data-docshelf-source-revision="${contentRevision(source)}">`),
-  );
+  assert.match(html, /<html lang="ko-KR">/);
+  assert.doesNotMatch(html, /data-docshelf-source-revision/);
   assert.match(html, /<title>Research &amp; notes<\/title>/);
   assert.match(html, /content="A &lt;local&gt; document\."/);
   assert.match(html, /href="\/markdown-tokyo-night\.css"/);
@@ -146,12 +143,6 @@ test('line permalink helpers accept only canonical, ordered source ranges', () =
   assert.equal(createLineFragment(14), '#L14');
   assert.equal(createLineFragment(14, 20), '#L14-L20');
   assert.throws(() => createLineFragment(0), /positive/);
-});
-
-test('line permalink revisions use validated lowercase SHA prefixes', () => {
-  assert.equal(normalizeSourceRevision('ABCDEF123456'), 'abcdef123456');
-  assert.equal(normalizeSourceRevision('abcdef12345'), '');
-  assert.equal(normalizeSourceRevision('not-a-revision'), '');
 });
 
 test('generated HTML rewrites only links to registered source artifacts', async (t) => {

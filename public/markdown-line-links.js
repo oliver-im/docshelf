@@ -2,10 +2,7 @@
   const root = document.querySelector('.markdown-document');
   if (!root || root.dataset.docshelfLineLinks === 'true') return;
 
-  const sourceRevision = document.documentElement.dataset.docshelfSourceRevision || '';
-  const shortRevision = sourceRevision.slice(0, 12);
   const lineFragmentPattern = /^#L([1-9]\d*)(?:-L([1-9]\d*))?$/;
-  const revisionPattern = /^[a-f\d]{12,64}$/;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const blocks = Array.from(
     root.querySelectorAll('[data-docshelf-line-start][data-docshelf-line-end]'),
@@ -28,7 +25,6 @@
   root.dataset.docshelfLineLinks = 'true';
   let anchor = null;
   let selection = null;
-  let expectedRevision = revisionFromUrl();
   let copyResetTimer = 0;
   const siblingControls = [];
 
@@ -109,14 +105,13 @@
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
     if (event.data?.type !== 'docshelf-apply-line-selection') return;
 
-    const revision = normalizeRevision(event.data.sourceRevision);
-    applyHash(event.data.hash, revision, event.data.scroll !== false);
+    applyHash(event.data.hash, event.data.scroll !== false);
   });
   window.addEventListener('hashchange', () => {
-    applyHash(window.location.hash, expectedRevision, true);
+    applyHash(window.location.hash, true);
   });
 
-  applyHash(window.location.hash, expectedRevision, true);
+  applyHash(window.location.hash, true);
 
   function selectBlock(block, extend, historyMode) {
     let start = block.start;
@@ -129,16 +124,14 @@
       anchor = { start: block.start, end: block.end };
     }
 
-    expectedRevision = shortRevision;
     setSelection({ start, end }, false);
     const hash = lineFragment(start, end);
     replaceFrameHash(hash);
     notifyParent(hash, historyMode);
   }
 
-  function applyHash(hash, revision, scroll) {
+  function applyHash(hash, scroll) {
     const range = parseLineFragment(hash);
-    expectedRevision = revision;
 
     if (!range) {
       setSelection(null, false);
@@ -166,18 +159,11 @@
 
     actions.container.hidden = !range;
     if (!range) {
-      actions.warning.hidden = true;
       actions.status.textContent = '';
       return;
     }
 
     actions.range.textContent = lineLabel(range.start, range.end);
-    const stale = Boolean(
-      expectedRevision &&
-        sourceRevision &&
-        !sourceRevision.startsWith(expectedRevision),
-    );
-    actions.warning.hidden = !stale;
     actions.status.textContent = firstSelected
       ? `Selected source ${lineDescription(range.start, range.end)}.`
       : `Source ${lineDescription(range.start, range.end)} is not visible in the rendered document.`;
@@ -194,7 +180,6 @@
     if (!selection) return;
     selection = null;
     anchor = null;
-    expectedRevision = '';
     setSelection(null, false);
     replaceFrameHash('');
     notifyParent('', historyMode);
@@ -205,8 +190,7 @@
     if (window.parent === window) {
       const url = new URL(window.location.href);
       url.searchParams.delete('__docshelf_revision');
-      if (hash) url.searchParams.set('rev', shortRevision);
-      else url.searchParams.delete('rev');
+      url.searchParams.delete('rev');
       url.hash = hash;
       window.history[historyMode === 'replace' ? 'replaceState' : 'pushState'](
         null,
@@ -220,7 +204,6 @@
       {
         type: 'docshelf-line-selection',
         hash,
-        sourceRevision: hash ? shortRevision : '',
         historyMode,
       },
       window.location.origin,
@@ -273,7 +256,7 @@
     }
 
     url.searchParams.delete('__docshelf_revision');
-    url.searchParams.set('rev', shortRevision);
+    url.searchParams.delete('rev');
     url.hash = hash;
     return url.href;
   }
@@ -281,7 +264,6 @@
   function createActions() {
     const container = document.createElement('aside');
     const range = document.createElement('strong');
-    const warning = document.createElement('span');
     const copy = document.createElement('button');
     const clear = document.createElement('button');
     const status = document.createElement('span');
@@ -290,9 +272,6 @@
     container.hidden = true;
     container.setAttribute('aria-label', 'Source line selection');
     range.className = 'docshelf-line-actions-range';
-    warning.className = 'docshelf-line-warning';
-    warning.textContent = 'Document changed; lines may have moved.';
-    warning.hidden = true;
     copy.type = 'button';
     copy.className = 'docshelf-line-action';
     copy.textContent = 'Copy link';
@@ -302,19 +281,9 @@
     status.className = 'docshelf-line-status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    container.append(range, warning, copy, clear, status);
+    container.append(range, copy, clear, status);
 
-    return { container, range, warning, copy, clear, status };
-  }
-
-  function revisionFromUrl() {
-    return normalizeRevision(new URL(window.location.href).searchParams.get('rev'));
-  }
-
-  function normalizeRevision(value) {
-    return typeof value === 'string' && revisionPattern.test(value.toLowerCase())
-      ? value.toLowerCase()
-      : '';
+    return { container, range, copy, clear, status };
   }
 
   function parseLineFragment(hash) {

@@ -100,10 +100,6 @@ another block to extend the range. The selection is written to the URL using
 the familiar `#L14-L20` form. Use **Copy link** in the selection bar to share
 the exact artifact and range.
 
-Line links carry a source-revision prefix. DocShelf continues to show the
-current document after it changes, but warns that the referenced lines may have
-moved. Historical source snapshots are not retained.
-
 ## Markdown rendering
 
 Markdown artifacts support GitHub-flavored tables, task lists, strikethrough,

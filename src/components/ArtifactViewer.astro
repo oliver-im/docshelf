@@ -69,10 +69,7 @@ const initialFrameUrl = initialArtifact
 </div>
 
 <script>
-  import {
-    normalizeSourceRevision,
-    parseLineFragment,
-  } from '../lib/line-permalinks.js';
+  import { parseLineFragment } from '../lib/line-permalinks.js';
 
   interface Artifact {
     route: string;
@@ -84,7 +81,6 @@ const initialFrameUrl = initialArtifact
     route: string;
     query: string;
     hash: string;
-    sourceRevision: string;
   }
 
   interface RevisionState {
@@ -387,15 +383,9 @@ const initialFrameUrl = initialArtifact
       const hash = typeof event.data.hash === 'string' ? event.data.hash : '';
       if (hash && !parseLineFragment(hash)) return;
 
-      const sourceRevision = hash
-        ? normalizeSourceRevision(event.data.sourceRevision)
-        : '';
-      if (hash && !sourceRevision) return;
-
       const selection = normalizeSelection({
         ...currentSelection,
         hash,
-        sourceRevision,
       });
       if (selectionKey(selection) === selectionKey(currentSelection)) return;
 
@@ -454,7 +444,6 @@ const initialFrameUrl = initialArtifact
             route,
             query: destination.searchParams.get('artifact-query') || '',
             hash: destination.hash,
-            sourceRevision: normalizeSourceRevision(destination.searchParams.get('rev')),
           }),
           'push',
         );
@@ -689,7 +678,6 @@ const initialFrameUrl = initialArtifact
       {
         type: 'docshelf-apply-line-selection',
         hash: selection.hash,
-        sourceRevision: selection.sourceRevision,
         scroll: true,
       },
       window.location.origin,
@@ -708,9 +696,6 @@ const initialFrameUrl = initialArtifact
     const url = new URL('/', window.location.href);
     url.searchParams.set('artifact', selection.route);
     if (selection.query) url.searchParams.set('artifact-query', selection.query);
-    if (selection.sourceRevision && parseLineFragment(selection.hash)) {
-      url.searchParams.set('rev', selection.sourceRevision);
-    }
     url.hash = selection.hash;
     return `${url.pathname}${url.search}${url.hash}`;
   }
@@ -723,12 +708,11 @@ const initialFrameUrl = initialArtifact
       route,
       query: url.searchParams.get('artifact-query') || '',
       hash: url.hash,
-      sourceRevision: normalizeSourceRevision(url.searchParams.get('rev')),
     });
   }
 
   function emptySelection(route: string): ArtifactSelection {
-    return { route, query: '', hash: '', sourceRevision: '' };
+    return { route, query: '', hash: '' };
   }
 
   function normalizeSelection(selection: ArtifactSelection): ArtifactSelection {
@@ -739,9 +723,6 @@ const initialFrameUrl = initialArtifact
       route: selection.route,
       query: selection.query.replace(/^\?/, ''),
       hash,
-      sourceRevision: parseLineFragment(hash)
-        ? normalizeSourceRevision(selection.sourceRevision)
-        : '',
     };
   }
 
@@ -751,7 +732,7 @@ const initialFrameUrl = initialArtifact
 
   function selectionKey(selection: ArtifactSelection | null | undefined) {
     return selection
-      ? `${selection.route}\n${selection.query}\n${selection.hash}\n${selection.sourceRevision}`
+      ? `${selection.route}\n${selection.query}\n${selection.hash}`
       : '';
   }
 
