@@ -1,12 +1,15 @@
 /**
- * Astro names the files beneath `_astro/` by content hash, so browsers may keep those for as long
- * as they like. Everything else lives at a stable URL that a rebuild replaces in place, so it must
- * be revalidated on every use.
+ * Astro gives generated assets beneath `_astro/` a content-hash filename, so browsers may keep
+ * those for as long as they like. An unhashed file can also be copied there from `public/`, so only
+ * filenames with a hash-shaped penultimate segment get the immutable policy. Everything else lives
+ * at a stable URL that a rebuild replaces in place and must be revalidated on every use.
  *
  * @param {string} relativePath the served file's path relative to the build root, `/`-separated
  */
 export function cacheControl(relativePath) {
-  return relativePath.startsWith('_astro/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+  return hasAstroFingerprint(relativePath)
+    ? 'public, max-age=31536000, immutable'
+    : 'no-cache';
 }
 
 /**
@@ -31,8 +34,28 @@ export function entityTag(stats, contentRevision) {
 export function isFresh(headers, etag) {
   const ifNoneMatch = headers['if-none-match'];
   if (!ifNoneMatch) return false;
+  const current = withoutWeakPrefix(etag);
   return ifNoneMatch.split(',').some((candidate) => {
     const value = candidate.trim();
-    return value === '*' || value === etag;
+    return value === '*' || withoutWeakPrefix(value) === current;
   });
+}
+
+/** @param {string} relativePath */
+function hasAstroFingerprint(relativePath) {
+  if (!relativePath.startsWith('_astro/')) return false;
+  const filename = relativePath.slice(relativePath.lastIndexOf('/') + 1);
+  const segments = filename.split('.');
+  if (segments.length < 3) return false;
+  const fingerprint = segments.at(-2);
+  return (
+    fingerprint.length >= 5 &&
+    /^[A-Za-z0-9_-]+$/.test(fingerprint) &&
+    /[A-Z0-9_-]/.test(fingerprint)
+  );
+}
+
+/** @param {string} value */
+function withoutWeakPrefix(value) {
+  return value.startsWith('W/') ? value.slice(2) : value;
 }

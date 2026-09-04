@@ -183,13 +183,13 @@ search index. Everything else runs a full Astro build: the first build after a
 start, a manifest change that alters the catalog, and any change to DocShelf's
 own files (`astro.config.mjs`, `package-lock.json`, `tsconfig.json`,
 `public/`, `scripts/`, and `src/`), whose contents the watcher fingerprints
-before each rebuild rather than watching. Astro's output is printed only when
-a build fails; set `DOCSHELF_VERBOSE=1` to stream it.
+before and after each rebuild rather than watching. Astro's output is printed
+only when a build fails; set `DOCSHELF_VERBOSE=1` to stream it.
 
-Files beneath `_astro/` are served as immutable because Astro names them by
-content hash. Everything else is served with `no-cache` and an `ETag`, so a
-browser revalidates and receives `304 Not Modified` while a file is unchanged;
-artifacts use their content revision as the tag.
+Files with content-hash names beneath `_astro/` are served as immutable.
+Everything else is served with `no-cache` and an `ETag`, so a browser revalidates
+and receives `304 Not Modified` while a file is unchanged; artifacts use their
+content revision as the tag.
 
 Set a different port when needed:
 

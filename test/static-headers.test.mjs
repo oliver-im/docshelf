@@ -4,12 +4,15 @@ import { cacheControl, entityTag, isFresh } from '../scripts/static-headers.mjs'
 
 test('only hashed Astro assets are cached without revalidation', () => {
   assert.equal(cacheControl('_astro/page.Dwipeu-R.js'), 'public, max-age=31536000, immutable');
+  assert.equal(cacheControl('_astro/ec.0vx5m.js'), 'public, max-age=31536000, immutable');
   for (const relativePath of [
     'index.html',
     'artifacts/example/report.html',
     'artifacts/.docshelf-revisions.json',
     'pagefind/pagefind.js',
     '_astro',
+    '_astro/page.js',
+    '_astro/vendor.bundle.js',
     'nested/_astro/page.js',
   ]) {
     assert.equal(cacheControl(relativePath), 'no-cache', relativePath);
@@ -34,5 +37,6 @@ test('freshness follows If-None-Match', () => {
   assert.equal(isFresh({ 'if-none-match': '"xyz", "abc"' }, etag), true);
   assert.equal(isFresh({ 'if-none-match': '*' }, etag), true);
   assert.equal(isFresh({ 'if-none-match': '"xyz"' }, etag), false);
-  assert.equal(isFresh({ 'if-none-match': 'W/"abc"' }, etag), false);
+  assert.equal(isFresh({ 'if-none-match': 'W/"abc"' }, etag), true);
+  assert.equal(isFresh({ 'if-none-match': '"abc"' }, 'W/"abc"'), true);
 });

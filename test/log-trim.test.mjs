@@ -11,8 +11,8 @@ test('logs below the limit are left alone', async (t) => {
   const logPath = path.join(root, 'small.log');
   await writeFile(logPath, 'first line\nsecond line\n');
 
-  assert.equal(await trimLog(logPath, { maxBytes: 1000, keepBytes: 100 }), 0);
-  assert.equal(await trimLog(path.join(root, 'missing.log'), { maxBytes: 1000, keepBytes: 100 }), 0);
+  assert.equal(trimLog(logPath, { maxBytes: 1000, keepBytes: 100 }), 0);
+  assert.equal(trimLog(path.join(root, 'missing.log'), { maxBytes: 1000, keepBytes: 100 }), 0);
   assert.equal(await readFile(logPath, 'utf8'), 'first line\nsecond line\n');
 });
 
@@ -25,7 +25,7 @@ test('trimming keeps whole recent lines and an append-mode writer continues afte
   t.after(() => writer.close());
   const originalSize = (await stat(logPath)).size;
 
-  const removed = await trimLog(logPath, { maxBytes: 1000, keepBytes: 100 });
+  const removed = trimLog(logPath, { maxBytes: 1000, keepBytes: 100 });
   await writer.write('after trim\n');
 
   const contents = await readFile(logPath, 'utf8');
@@ -40,12 +40,33 @@ test('trimming keeps whole recent lines and an append-mode writer continues afte
   assert.ok(!contents.includes('\0'));
 });
 
+test('trimming is synchronous so a queued watcher append cannot race with compaction', async (t) => {
+  const root = await temporaryDirectory(t, tmpdir(), 'docshelf-log-');
+  const logPath = path.join(root, 'racing.log');
+  await writeFile(logPath, 'old line\n'.repeat(200));
+  const writer = await open(logPath, 'a');
+  t.after(() => writer.close());
+
+  let appendStarted = false;
+  const append = Promise.resolve().then(async () => {
+    appendStarted = true;
+    await writer.write('append queued before trim\n');
+  });
+
+  const removed = trimLog(logPath, { maxBytes: 1000, keepBytes: 100 });
+  assert.equal(typeof removed, 'number');
+  assert.equal(appendStarted, false);
+  await append;
+
+  assert.match(await readFile(logPath, 'utf8'), /append queued before trim\n$/);
+});
+
 test('trimming rejects limits that would keep the whole log', async (t) => {
   const root = await temporaryDirectory(t, tmpdir(), 'docshelf-log-');
   const logPath = path.join(root, 'any.log');
   await writeFile(logPath, 'x\n');
 
-  await assert.rejects(trimLog(logPath, { maxBytes: 100, keepBytes: 100 }), {
+  assert.throws(() => trimLog(logPath, { maxBytes: 100, keepBytes: 100 }), {
     message: /keep fewer bytes/,
   });
 });

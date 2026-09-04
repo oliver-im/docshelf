@@ -223,8 +223,12 @@ async function rebuild(reasons) {
       throw new Error('Registered sources changed during the build.');
     }
 
-    const previousBuildRoot = activeBuildRoot;
     await refreshSourceWatches(manifest);
+    if ((await siteInputsSignature(docShelfRoot)) !== siteSignature) {
+      requestFreshBuild('DocShelf site files changed during build');
+      throw new Error('DocShelf site files changed during the build.');
+    }
+    const previousBuildRoot = activeBuildRoot;
     activeBuildRoot = buildRoot;
     activeRevisionState = revisionState;
     activeArtifactRevisions = new Map(
@@ -610,9 +614,11 @@ async function trimWatcherLogs() {
     [2, logs.stderr],
   ]) {
     if (!standardStreamIs(fd, filePath)) continue;
-    await trimLog(filePath).catch((error) => {
+    try {
+      trimLog(filePath);
+    } catch (error) {
       console.error(`[log] Could not trim ${path.basename(filePath)}: ${formatError(error)}`);
-    });
+    }
   }
 }
 
