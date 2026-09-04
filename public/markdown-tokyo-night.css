@@ -436,9 +436,7 @@ mark {
   color: inherit;
 }
 
-.docshelf-line-block,
-.docshelf-line-control-host,
-.docshelf-line-control-container {
+.docshelf-line-block {
   position: relative;
 }
 
@@ -467,16 +465,16 @@ mark {
   flex-direction: column;
   align-items: stretch;
   overflow: hidden;
-  border-radius: 0.3rem;
   background: color-mix(in srgb, var(--md-bg-deep) 72%, transparent);
   -webkit-user-select: none;
   user-select: none;
 }
 
 .docshelf-line-control {
+  min-block-size: 0;
   min-width: 3.2rem;
-  min-height: 1.55rem;
-  padding: 0.15rem 0.45rem;
+  flex: 1 1 0;
+  padding: 0 0.45rem;
   border: 1px solid transparent;
   border-inline-end-width: 2px;
   border-radius: 0;
@@ -505,16 +503,6 @@ mark {
   border-inline-end-color: var(--md-cyan);
   background: color-mix(in srgb, var(--md-selection) 62%, transparent);
   color: var(--md-text);
-}
-
-.docshelf-line-control-host-table {
-  padding-inline-start: 4.35rem;
-}
-
-.docshelf-line-control-host-table > .docshelf-line-controls {
-  inset-block-start: 0.18rem;
-  inset-inline-start: 0.18rem;
-  inset-inline-end: auto;
 }
 
 .docshelf-line-actions {
@@ -626,9 +614,7 @@ summary {
     border-radius: 0.3rem;
   }
 
-  .docshelf-line-controls-sibling,
-  .docshelf-line-control-host:not(.docshelf-line-control-host-table)
-    > .docshelf-line-controls {
+  .docshelf-line-controls {
     inset-inline-end: calc(100% + 0.45rem);
   }
 

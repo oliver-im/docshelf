@@ -70,8 +70,16 @@ export async function renderMarkdownArtifact(artifact, source, options = {}) {
     language,
     basePath: options.basePath || '/',
     content: rendered.code,
+    sourceLineCount: countSourceLines(source),
     hasMermaid: /<code\b[^>]*\bclass="[^"]*\blanguage-mermaid\b/.test(rendered.code),
   });
+}
+
+/** @param {string} source */
+function countSourceLines(source) {
+  if (source.length === 0) return 0;
+  const lines = source.split(/\r\n|\r|\n/);
+  return lines.at(-1) === '' ? lines.length - 1 : lines.length;
 }
 
 /** @param {{ rawFrontmatter?: string }} parsed */
@@ -170,6 +178,7 @@ function markdownLanguage(frontmatter) {
  *   language: string,
  *   basePath: string,
  *   content: string,
+ *   sourceLineCount: number,
  *   hasMermaid: boolean,
  * }} page
  */
@@ -196,7 +205,7 @@ ${themeSyncScript}
 ${mermaidScripts}
   </head>
   <body>
-    <main class="markdown-document">
+    <main class="markdown-document" data-docshelf-source-line-count="${page.sourceLineCount}">
 ${page.content}
     </main>
   </body>

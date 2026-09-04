@@ -129,6 +129,7 @@ const ready = true;
   assert.match(html, /content="A &lt;local&gt; document\."/);
   assert.match(html, /href="\/markdown-tokyo-night\.css"/);
   assert.match(html, /src="\/markdown-line-links\.js" defer/);
+  assert.match(html, /data-docshelf-source-line-count="17"/);
   assert.equal(html.match(/<script>\n([\s\S]*?)\n    <\/script>/)?.[1], expectedThemeSync);
   assert.match(
     html,

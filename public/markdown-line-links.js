@@ -18,109 +18,153 @@
         Number.isSafeInteger(block.end) &&
         block.start > 0 &&
         block.end >= block.start,
-    );
+    )
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const configuredLineCount = Number(root.dataset.docshelfSourceLineCount);
+  const highestRenderedLine = blocks.reduce((highest, block) => Math.max(highest, block.end), 0);
+  const sourceLineCount =
+    Number.isSafeInteger(configuredLineCount) && configuredLineCount >= highestRenderedLine
+      ? configuredLineCount
+      : highestRenderedLine;
 
-  if (blocks.length === 0) return;
+  if (sourceLineCount === 0) return;
 
   root.dataset.docshelfLineLinks = 'true';
   let anchor = null;
   let selection = null;
   let copyResetTimer = 0;
-  const siblingControls = [];
+  const lineGroups = [];
   const lineControls = [];
+  const rootStyle = window.getComputedStyle(root);
+  const defaultPaddingStart = Number.parseFloat(rootStyle.paddingBlockStart) || 0;
+  const defaultPaddingEnd = Number.parseFloat(rootStyle.paddingBlockEnd) || 0;
 
   const actions = createActions();
   root.append(actions.container);
 
-  for (const block of blocks) {
+  let nextUnassignedLine = 1;
+  for (const [index, block] of blocks.entries()) {
+    block.element.classList.add('docshelf-line-block');
+    const nextBlock = blocks[index + 1];
+    const controlStart = nextUnassignedLine;
+    const controlEnd = nextBlock
+      ? Math.min(sourceLineCount, Math.max(block.end, nextBlock.start - 1))
+      : sourceLineCount;
+    if (controlEnd < controlStart) continue;
+
     const controls = document.createElement('div');
     controls.className = 'docshelf-line-controls';
     controls.setAttribute('role', 'group');
-    controls.setAttribute('aria-label', `Source ${lineDescription(block.start, block.end)}`);
-    block.buttons = [];
+    controls.setAttribute('aria-label', `Source ${lineDescription(controlStart, controlEnd)}`);
 
-    for (let line = block.start; line <= block.end; line += 1) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'docshelf-line-control';
-      button.dataset.docshelfSourceLine = String(line);
-      button.textContent = String(line);
-      button.tabIndex = lineControls.length === 0 ? 0 : -1;
-      button.setAttribute(
-        'aria-label',
-        `Select source line ${line}. Hold Shift to extend the selection.`,
-      );
-      button.setAttribute('aria-pressed', 'false');
-
-      const entry = { line, button };
-      lineControls.push(entry);
-
-      button.addEventListener('click', (event) => {
-        setRovingControl(entry, false);
-        selectLine(line, event.shiftKey, event.shiftKey ? 'replace' : 'push');
-      });
-      button.addEventListener('keydown', (event) => {
-        const currentIndex = lineControls.indexOf(entry);
-        const destination =
-          event.key === 'ArrowUp'
-            ? lineControls[currentIndex - 1]
-            : event.key === 'ArrowDown'
-              ? lineControls[currentIndex + 1]
-              : event.key === 'Home'
-                ? lineControls[0]
-                : event.key === 'End'
-                  ? lineControls.at(-1)
-                  : null;
-        if (destination) {
-          event.preventDefault();
-          setRovingControl(destination, true);
-          return;
-        }
-        if ((event.key === 'Enter' || event.key === ' ') && event.shiftKey) {
-          event.preventDefault();
-          selectLine(line, true, 'replace');
-        }
-      });
-
-      controls.append(button);
-      block.buttons.push(entry);
+    for (let line = controlStart; line <= controlEnd; line += 1) {
+      controls.append(createLineControl(line));
     }
 
-    const parent = block.element.parentElement;
-    const requiresContainedControl =
-      !parent || ['OL', 'UL', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR'].includes(parent.tagName);
-    const controlHost = block.element.tagName === 'TR'
-      ? block.element.querySelector('th, td')
-      : block.element;
-    if (!controlHost) continue;
-
-    block.element.classList.add('docshelf-line-block');
-    if (requiresContainedControl) {
-      controlHost.classList.add('docshelf-line-control-host');
-      if (block.element.tagName === 'TR') {
-        controlHost.classList.add('docshelf-line-control-host-table');
-      }
-      controlHost.prepend(controls);
-    } else {
-      parent.classList.add('docshelf-line-control-container');
-      controls.classList.add('docshelf-line-controls-sibling');
-      block.element.before(controls);
-      siblingControls.push({ block: block.element, controls });
-    }
+    root.append(controls);
+    lineGroups.push({ block, controls, start: controlStart, end: controlEnd });
+    nextUnassignedLine = controlEnd + 1;
   }
 
-  const positionSiblingControls = () => {
-    for (const entry of siblingControls) {
-      entry.controls.style.insetBlockStart = `${entry.block.offsetTop}px`;
+  if (blocks.length === 0) {
+    const controls = document.createElement('div');
+    controls.className = 'docshelf-line-controls';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute('aria-label', `Source ${lineDescription(1, sourceLineCount)}`);
+    for (let line = 1; line <= sourceLineCount; line += 1) {
+      controls.append(createLineControl(line));
+    }
+    root.append(controls);
+    lineGroups.push({ block: null, controls, start: 1, end: sourceLineCount });
+  }
+
+  const positionLineControls = () => {
+    const lineHeight = lineControls[0]?.button.getBoundingClientRect().height || 0;
+    const leadingLineCount = blocks[0] ? Math.max(0, blocks[0].start - 1) : 0;
+    const trailingLineCount = blocks.at(-1)
+      ? Math.max(0, sourceLineCount - blocks.at(-1).end)
+      : sourceLineCount;
+    root.style.paddingBlockStart = `${Math.max(defaultPaddingStart, leadingLineCount * lineHeight)}px`;
+    root.style.paddingBlockEnd = `${Math.max(defaultPaddingEnd, trailingLineCount * lineHeight)}px`;
+
+    const rootTop = root.getBoundingClientRect().top;
+    const positions = lineGroups.map((entry) => {
+      const blockTop = entry.block
+        ? entry.block.element.getBoundingClientRect().top - rootTop
+        : defaultPaddingStart;
+      const blockBottom = entry.block
+        ? entry.block.element.getBoundingClientRect().bottom - rootTop
+        : root.getBoundingClientRect().height;
+      const hasLeadingLines = Boolean(entry.block && entry.start < entry.block.start);
+      return { blockTop, blockBottom, top: hasLeadingLines ? 0 : blockTop };
+    });
+
+    for (const [index, entry] of lineGroups.entries()) {
+      const position = positions[index];
+      const nextPosition = positions[index + 1];
+      const hasTrailingLines = Boolean(entry.block && entry.end > entry.block.end);
+      const bottom = nextPosition
+        ? nextPosition.top
+        : hasTrailingLines || !entry.block
+          ? root.getBoundingClientRect().height
+          : position.blockBottom;
+      entry.controls.style.insetBlockStart = `${position.top}px`;
+      entry.controls.style.blockSize = `${Math.max(1, bottom - position.top)}px`;
     }
   };
   const resizeObserver = new ResizeObserver(() => {
-    window.requestAnimationFrame(positionSiblingControls);
+    window.requestAnimationFrame(positionLineControls);
   });
   resizeObserver.observe(root);
-  window.addEventListener('resize', positionSiblingControls);
-  void document.fonts?.ready.then(positionSiblingControls);
-  positionSiblingControls();
+  window.addEventListener('resize', positionLineControls);
+  void document.fonts?.ready.then(positionLineControls);
+  positionLineControls();
+
+  function createLineControl(line) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'docshelf-line-control';
+    button.dataset.docshelfSourceLine = String(line);
+    button.textContent = String(line);
+    button.tabIndex = lineControls.length === 0 ? 0 : -1;
+    button.setAttribute(
+      'aria-label',
+      `Select source line ${line}. Hold Shift to extend the selection.`,
+    );
+    button.setAttribute('aria-pressed', 'false');
+
+    const entry = { line, button };
+    lineControls.push(entry);
+
+    button.addEventListener('click', (event) => {
+      setRovingControl(entry, false);
+      selectLine(line, event.shiftKey, event.shiftKey ? 'replace' : 'push');
+    });
+    button.addEventListener('keydown', (event) => {
+      const currentIndex = lineControls.indexOf(entry);
+      const destination =
+        event.key === 'ArrowUp'
+          ? lineControls[currentIndex - 1]
+          : event.key === 'ArrowDown'
+            ? lineControls[currentIndex + 1]
+            : event.key === 'Home'
+              ? lineControls[0]
+              : event.key === 'End'
+                ? lineControls.at(-1)
+                : null;
+      if (destination) {
+        event.preventDefault();
+        setRovingControl(destination, true);
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === ' ') && event.shiftKey) {
+        event.preventDefault();
+        selectLine(line, true, 'replace');
+      }
+    });
+
+    return button;
+  }
 
   actions.copy.addEventListener('click', () => void copyLineLink());
   actions.clear.addEventListener('click', () => clearSelection('push', true));
@@ -180,14 +224,15 @@
         range && block.end >= range.start && block.start <= range.end,
       );
       block.element.toggleAttribute('data-docshelf-line-selected', selected);
-      for (const entry of block.buttons || []) {
-        const lineSelected = Boolean(
-          range && entry.line >= range.start && entry.line <= range.end,
-        );
-        entry.button.setAttribute('aria-pressed', String(lineSelected));
-        if (lineSelected && !firstSelectedControl) firstSelectedControl = entry;
-      }
       if (selected && !firstSelected) firstSelected = block.element;
+    }
+
+    for (const entry of lineControls) {
+      const lineSelected = Boolean(
+        range && entry.line >= range.start && entry.line <= range.end,
+      );
+      entry.button.setAttribute('aria-pressed', String(lineSelected));
+      if (lineSelected && !firstSelectedControl) firstSelectedControl = entry;
     }
 
     if (firstSelectedControl) setRovingControl(firstSelectedControl, false);
@@ -203,8 +248,9 @@
       ? `Selected source ${lineDescription(range.start, range.end)}.`
       : `Source ${lineDescription(range.start, range.end)} is not visible in the rendered document.`;
 
-    if (scroll && firstSelected) {
-      firstSelected.scrollIntoView({
+    const scrollTarget = firstSelected || firstSelectedControl?.button;
+    if (scroll && scrollTarget) {
+      scrollTarget.scrollIntoView({
         block: 'center',
         behavior: reducedMotion.matches ? 'auto' : 'smooth',
       });
