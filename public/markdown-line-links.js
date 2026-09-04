@@ -147,6 +147,14 @@
 
     button.addEventListener('click', (event) => {
       setRovingControl(entry, false);
+      if (
+        !event.shiftKey &&
+        selection?.start === line &&
+        selection.end === line
+      ) {
+        clearSelection('push', true);
+        return;
+      }
       selectLine(line, event.shiftKey, event.shiftKey ? 'replace' : 'push');
     });
     button.addEventListener('keydown', (event) => {

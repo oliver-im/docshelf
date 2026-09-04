@@ -445,9 +445,6 @@ mark {
   border-radius: 0.3rem;
   outline: 2px solid transparent;
   outline-offset: 0.28rem;
-  transition:
-    background-color 180ms ease,
-    outline-color 180ms ease;
 }
 
 .docshelf-line-block[data-docshelf-line-selected] {
@@ -595,7 +592,6 @@ summary {
     scroll-behavior: auto;
   }
 
-  .docshelf-line-block,
   .docshelf-line-controls,
   .docshelf-line-control,
   .docshelf-line-control::after {
