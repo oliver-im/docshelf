@@ -12,6 +12,11 @@ import {
   validateSource,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
+import {
+  createLineFragment,
+  normalizeSourceRevision,
+  parseLineFragment,
+} from '../src/lib/line-permalinks.js';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 test('route validation accepts a nested HTML route', () => {
@@ -73,13 +78,7 @@ test('Markdown rendering creates a themed standalone document', async () => {
       'utf8',
     )
   ).trimEnd();
-  const html = await renderMarkdownArtifact(
-    {
-      title: 'Research & notes',
-      description: 'A <local> document.',
-      sourcePath: '/workspace/research.md',
-    },
-    `---
+  const source = `---
 lang: ko-KR
 private: true
 ---
@@ -96,20 +95,63 @@ const ready = true;
 \`\`\`
 
 <script>window.shouldNotRun = true;</script>
-`,
+`;
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'Research & notes',
+      description: 'A <local> document.',
+      sourcePath: '/workspace/research.md',
+    },
+    source,
   );
 
-  assert.match(html, /<html lang="ko-KR">/);
+  assert.match(
+    html,
+    new RegExp(`<html lang="ko-KR" data-docshelf-source-revision="${contentRevision(source)}">`),
+  );
   assert.match(html, /<title>Research &amp; notes<\/title>/);
   assert.match(html, /content="A &lt;local&gt; document\."/);
   assert.match(html, /href="\/markdown-tokyo-night\.css"/);
+  assert.match(html, /src="\/markdown-line-links\.js" defer/);
   assert.equal(html.match(/<script>\n([\s\S]*?)\n    <\/script>/)?.[1], expectedThemeSync);
-  assert.match(html, /<h1 id="context-window">Context window<\/h1>/);
+  assert.match(
+    html,
+    /<h1 data-docshelf-line-start="5" data-docshelf-line-end="5" id="context-window">/,
+  );
+  assert.match(
+    html,
+    /<li class="task-list-item" data-docshelf-line-start="7" data-docshelf-line-end="7">/,
+  );
+  assert.match(
+    html,
+    /<tr data-docshelf-line-start="11" data-docshelf-line-end="11">/,
+  );
+  assert.match(
+    html,
+    /<pre class="language-js" data-language="js" data-docshelf-line-start="13" data-docshelf-line-end="15">/,
+  );
   assert.match(html, /class="contains-task-list"/);
   assert.match(html, /<table>/);
   assert.match(html, /class="language-js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
+});
+
+test('line permalink helpers accept only canonical, ordered source ranges', () => {
+  assert.deepEqual(parseLineFragment('#L14'), { start: 14, end: 14 });
+  assert.deepEqual(parseLineFragment('#L14-L20'), { start: 14, end: 20 });
+  assert.equal(parseLineFragment('#L20-L14'), null);
+  assert.equal(parseLineFragment('#L0'), null);
+  assert.equal(parseLineFragment('#context'), null);
+  assert.equal(createLineFragment(14), '#L14');
+  assert.equal(createLineFragment(14, 20), '#L14-L20');
+  assert.throws(() => createLineFragment(0), /positive/);
+});
+
+test('line permalink revisions use validated lowercase SHA prefixes', () => {
+  assert.equal(normalizeSourceRevision('ABCDEF123456'), 'abcdef123456');
+  assert.equal(normalizeSourceRevision('abcdef12345'), '');
+  assert.equal(normalizeSourceRevision('not-a-revision'), '');
 });
 
 test('generated HTML rewrites only links to registered source artifacts', async (t) => {

@@ -94,6 +94,16 @@ document is ready. While `npm run watch` is running, content revisions are
 checked when the window regains focus and every few seconds while it remains
 visible.
 
+Rendered Markdown also supports source-line links. Hover or focus a rendered
+block to reveal its source-line control, click to select it, and Shift-click
+another block to extend the range. The selection is written to the URL using
+the familiar `#L14-L20` form. Use **Copy link** in the selection bar to share
+the exact artifact and range.
+
+Line links carry a source-revision prefix. DocShelf continues to show the
+current document after it changes, but warns that the referenced lines may have
+moved. Historical source snapshots are not retained.
+
 ## Markdown rendering
 
 Markdown artifacts support GitHub-flavored tables, task lists, strikethrough,

@@ -83,6 +83,7 @@ body {
 }
 
 .markdown-document {
+  position: relative;
   width: min(100% - clamp(2.5rem, 9vw, 9rem), 74ch);
   margin-inline: auto;
   padding-block: clamp(2.5rem, 7vw, 6rem);
@@ -408,6 +409,154 @@ mark {
   color: inherit;
 }
 
+.docshelf-line-block,
+.docshelf-line-control-host,
+.docshelf-line-control-container {
+  position: relative;
+}
+
+.docshelf-line-block {
+  scroll-margin-block: 5rem;
+  border-radius: 0.3rem;
+  outline: 2px solid transparent;
+  outline-offset: 0.28rem;
+  transition:
+    background-color 180ms ease,
+    outline-color 180ms ease;
+}
+
+.docshelf-line-block[data-docshelf-line-selected] {
+  outline-color: var(--md-cyan);
+  background: color-mix(in srgb, var(--md-selection) 48%, transparent);
+}
+
+.docshelf-line-control {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: -0.45rem;
+  inset-inline-end: calc(100% + 0.45rem);
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  opacity: 0;
+  background: color-mix(in srgb, var(--md-bg-deep) 94%, transparent);
+  color: var(--md-text-faint);
+  cursor: pointer;
+  font-family: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    opacity 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.docshelf-line-block:hover .docshelf-line-control,
+.docshelf-line-control-hovered,
+.docshelf-line-control:focus-visible,
+.docshelf-line-control[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.docshelf-line-control:hover {
+  border-color: var(--md-border);
+  color: var(--md-cyan);
+}
+
+pre.docshelf-line-block > .docshelf-line-control-host > .docshelf-line-control,
+pre.docshelf-line-block > .docshelf-line-control {
+  inset-block-start: 0.35rem;
+  inset-inline-end: 0.35rem;
+}
+
+.docshelf-line-control-host-table {
+  padding-inline-start: 3.8rem;
+}
+
+.docshelf-line-control-host-table > .docshelf-line-control {
+  inset-block-start: 0.18rem;
+  inset-inline-start: 0.18rem;
+  inset-inline-end: auto;
+}
+
+.docshelf-line-actions {
+  position: fixed;
+  z-index: 10;
+  inset-block-start: 1rem;
+  inset-inline-end: 1rem;
+  display: flex;
+  max-width: min(34rem, calc(100vw - 2rem));
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem;
+  border: 1px solid var(--md-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--md-bg-deep) 96%, transparent);
+  box-shadow: 0 0.55rem 1.5rem var(--md-shadow);
+  color: var(--md-text-muted);
+}
+
+.docshelf-line-actions[hidden] {
+  display: none;
+}
+
+.docshelf-line-actions-range {
+  padding-inline: 0.45rem;
+  color: var(--md-cyan);
+  font-family: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.docshelf-line-warning {
+  max-width: 16rem;
+  color: var(--md-yellow);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.docshelf-line-action {
+  min-height: 2.75rem;
+  padding-inline: 0.8rem;
+  border: 1px solid var(--md-border);
+  border-radius: 0.38rem;
+  background: var(--md-bg-highlight);
+  color: var(--md-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.docshelf-line-action:hover {
+  border-color: var(--md-cyan);
+  color: var(--md-cyan);
+}
+
+.docshelf-line-control:focus-visible,
+.docshelf-line-action:focus-visible {
+  outline: 2px solid var(--md-cyan);
+  outline-offset: 2px;
+}
+
+.docshelf-line-status,
+.docshelf-copy-fallback {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 del {
   color: var(--md-text-faint);
 }
@@ -439,7 +588,9 @@ summary {
   }
 
   .markdown-document {
-    width: calc(100% - 2.25rem);
+    width: calc(100% - 5.5rem);
+    margin-inline-start: 4.25rem;
+    margin-inline-end: 1.25rem;
     padding-block: 2rem 3.5rem;
   }
 
@@ -447,11 +598,44 @@ summary {
     margin-inline: -0.35rem;
     border-radius: 0.3rem;
   }
+
+  .docshelf-line-control {
+    opacity: 0.68;
+  }
+
+  .docshelf-line-control-sibling,
+  .docshelf-line-control-host:not(.docshelf-line-control-host-table)
+    > .docshelf-line-control {
+    inset-inline-end: calc(100% + 0.45rem);
+    padding-inline: 0.25rem;
+    font-size: 0.68rem;
+  }
+
+  .docshelf-line-actions {
+    inset-block-start: auto;
+    inset-block-end: 0.75rem;
+    inset-inline: 0.75rem;
+    max-width: none;
+    flex-wrap: wrap;
+  }
+
+  .docshelf-line-warning {
+    order: 4;
+    width: 100%;
+    max-width: none;
+    padding: 0.1rem 0.45rem 0.3rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .docshelf-line-block,
+  .docshelf-line-control,
+  .docshelf-line-action {
+    transition: none;
   }
 }
 
@@ -475,5 +659,10 @@ summary {
 
   a {
     color: inherit;
+  }
+
+  .docshelf-line-control,
+  .docshelf-line-actions {
+    display: none;
   }
 }
