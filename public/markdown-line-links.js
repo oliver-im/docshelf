@@ -345,10 +345,6 @@
       const intersectsSelection = Boolean(
         range && block.end >= range.start && block.start <= range.end,
       );
-      const fullySelected = Boolean(
-        range && range.start <= block.start && range.end >= block.end,
-      );
-      block.element.toggleAttribute('data-docshelf-line-selected', fullySelected);
       if (intersectsSelection && !firstSelected) firstSelected = block.element;
     }
 

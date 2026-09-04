@@ -801,6 +801,10 @@ const initialFrameUrl = initialArtifact
     border-inline-end-color: transparent;
   }
 
+  :global(html:has(.docshelf-viewer) #starlight__sidebar li) {
+    border-inline-start-color: transparent;
+  }
+
   :global(html:has(.docshelf-viewer) main) {
     height: calc(100vh - var(--sl-nav-height));
     min-width: 0;

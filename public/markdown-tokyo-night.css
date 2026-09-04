@@ -447,17 +447,7 @@ mark {
 
 .docshelf-line-block {
   position: relative;
-}
-
-.docshelf-line-block {
   scroll-margin-block: 5rem;
-  border-radius: 0.3rem;
-  outline: 2px solid transparent;
-  outline-offset: 0.28rem;
-}
-
-.docshelf-line-block[data-docshelf-line-selected] {
-  outline-color: var(--md-cyan);
 }
 
 .docshelf-line-controls {
