@@ -46,6 +46,7 @@ export async function renderMarkdownArtifact(artifact, source) {
     description: artifact.description,
     language,
     content: rendered.code,
+    hasMermaid: /<code\b[^>]*\bclass="[^"]*\blanguage-mermaid\b/.test(rendered.code),
   });
 }
 
@@ -58,9 +59,21 @@ function markdownLanguage(frontmatter) {
 }
 
 /**
- * @param {{ title: string, description: string, language: string, content: string }} page
+ * @param {{
+ *   title: string,
+ *   description: string,
+ *   language: string,
+ *   content: string,
+ *   hasMermaid: boolean,
+ * }} page
  */
 function markdownDocument(page) {
+  const mermaidScripts = page.hasMermaid
+    ? `
+    <script src="/mermaid.min.js" defer></script>
+    <script src="/markdown-mermaid.js" defer></script>`
+    : '';
+
   return `<!doctype html>
 <html lang="${escapeHtml(page.language)}">
   <head>
@@ -73,6 +86,7 @@ function markdownDocument(page) {
     <script>
 ${themeSyncScript}
     </script>
+${mermaidScripts}
   </head>
   <body>
     <main class="markdown-document">

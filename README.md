@@ -97,9 +97,12 @@ visible.
 ## Markdown rendering
 
 Markdown artifacts support GitHub-flavored tables, task lists, strikethrough,
-heading anchors, and syntax-highlighted fenced code. YAML or TOML frontmatter is
-removed from the rendered document; a valid `lang` frontmatter value sets the
-HTML document language.
+heading anchors, syntax-highlighted fenced code, and Mermaid diagrams. Put
+Mermaid syntax in a fenced code block with the `mermaid` language identifier,
+as on GitHub. DocShelf loads its bundled Mermaid runtime only for Markdown
+documents that contain one of these blocks. YAML or TOML frontmatter is removed
+from the rendered document; a valid `lang` frontmatter value sets the HTML
+document language.
 
 Rendered Markdown uses an adapted Tokyo Night reading theme with a constrained
 line length. Its light or dark appearance follows DocShelf, including theme changes
