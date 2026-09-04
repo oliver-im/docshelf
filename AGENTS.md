@@ -22,10 +22,9 @@ ownership of their source projects.
   watcher per checkout holds `.docshelf-runtime/watch.lock`; artifact sync
   (`sync`, `dev`, `check`, `build`, `preview`) serializes on `sync.lock` and
   waits for a rebuilding watcher. Never delete either lock while its owner runs.
-- The watcher publishes a source-only change without running Astro by reusing
-  the active build. A manifest change that alters the catalog, a change to
-  DocShelf's own files, or a restart runs a full Astro build. Astro's output is
-  shown only when a build fails; `DOCSHELF_VERBOSE=1` streams it.
+- Every watcher update runs a full Astro build into an isolated directory and
+  publishes it only after it succeeds. Astro's output is shown only when a
+  build fails; `DOCSHELF_VERBOSE=1` streams it.
 - `npm run dev` is for DocShelf UI development; restart it after manifest changes.
 - Before handing off code changes, run `npm test`, `npm run check`, and
   `npm run build`.

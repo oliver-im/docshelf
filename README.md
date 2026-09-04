@@ -173,23 +173,10 @@ same state without caching at `/__docshelf/status`. Each attempt has a generatio
 and watcher-instance ID so automated clients can distinguish it from an earlier
 success. The viewer polls this endpoint and shows a banner when a rebuild fails.
 Diagnostic output in the status file is bounded; the watcher log receives the
-detailed failed Astro build output and is trimmed as described below.
-
-A change that leaves the catalog as it was (the projects, routes, titles, and
-descriptions in the manifest) is published without running Astro: the watcher
-reuses the active build's site, replaces the artifact snapshots and their
-revision state, rewrites the revisions the viewer page embeds, and rebuilds the
-search index. Everything else runs a full Astro build: the first build after a
-start, a manifest change that alters the catalog, and any change to DocShelf's
-own files (`astro.config.mjs`, `package-lock.json`, `tsconfig.json`,
-`public/`, `scripts/`, and `src/`), whose contents the watcher fingerprints
-before and after each rebuild rather than watching. Astro's output is printed
-only when a build fails; set `DOCSHELF_VERBOSE=1` to stream it.
-
-Files with content-hash names beneath `_astro/` are served as immutable.
-Everything else is served with `no-cache` and an `ETag`, so a browser revalidates
-and receives `304 Not Modified` while a file is unchanged; artifacts use their
-content revision as the tag.
+detailed failed Astro build output. Every update runs a full Astro build into
+an isolated directory, then publishes it only after the build succeeds and the
+registered sources are still current. Static files are served with `no-cache`.
+Set `DOCSHELF_VERBOSE=1` to stream Astro's output for every build.
 
 Set a different port when needed:
 
@@ -246,8 +233,7 @@ It records the current Node executable, DocShelf path, host, and port, so rerun 
 installer if any of them change, and after updating DocShelf so the loaded
 service definition is current. `daemon:status` reports the values loaded by
 `launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
-directory. The watcher trims each service log once it grows past 1 MiB, keeping
-the most recent 256 KiB, so the logs stay bounded without log rotation.
+directory.
 
 The agent runs at standard priority. As a `Background` process type, launchd
 would confine it and the Astro builds it spawns to efficiency cores with

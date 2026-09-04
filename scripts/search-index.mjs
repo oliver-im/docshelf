@@ -6,8 +6,7 @@ import * as pagefind from 'pagefind';
  * Replace the Pagefind output beneath a built site with one English-base index of every HTML file
  * in it. A full build has already produced Starlight's default language-detected index at this
  * point; rebuilding it as a single index lets the same search UI find mixed-language artifact
- * content instead of loading only the page's detected language. The watcher's incremental builds
- * call this directly because they never run Astro.
+ * content instead of loading only the page's detected language.
  *
  * @param {string} outputRoot
  * @returns {Promise<number>} the number of indexed HTML files

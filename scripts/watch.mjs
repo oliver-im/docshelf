@@ -11,19 +11,13 @@ import {
   artifactSourcesMatch,
   docShelfRoot,
   defaultManifestPath,
-  generatedArtifactsRoot,
-  generatedManifestPath,
   loadArtifactManifest,
   localManifestPath,
   runtimeRoot,
   syncArtifacts,
 } from './artifacts.mjs';
-import { assembleIncrementalBuild, siteInputsSignature } from './build-output.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
-import { standardStreamIs, trimLog, watcherLogPaths } from './log-trim.mjs';
-import { writeSearchIndex } from './search-index.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
-import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
   acquireWatcherLock,
@@ -64,11 +58,6 @@ installShutdownSignals(shutdown, {
 });
 
 let activeBuildRoot = null;
-// Set only by builds this process published. An incremental build reuses the active build, so it
-// must know exactly which catalog and which DocShelf site files that build embodies.
-let activeRevisionState = null;
-let activeSiteSignature = null;
-let activeArtifactRevisions = new Map();
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -116,7 +105,6 @@ await new Promise((resolve, reject) => {
   });
 });
 
-await trimWatcherLogs();
 console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
 if (activeBuildRoot) {
   console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
@@ -181,38 +169,13 @@ async function rebuild(reasons) {
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
 
-    const siteSignature = await siteInputsSignature(docShelfRoot);
-    let mode = canReuseActiveBuild(revisionState, siteSignature) ? 'incremental' : 'full';
-
-    if (mode === 'incremental') {
-      try {
-        await assembleIncrementalBuild({
-          activeBuildRoot,
-          buildRoot,
-          artifactsRoot: generatedArtifactsRoot,
-          generatedManifestPath,
-          revisionState,
-        });
-        await writeSearchIndex(buildRoot);
-      } catch (error) {
-        console.error(
-          `[build] Could not reuse the active build; running Astro instead. ${formatError(error)}`,
-        );
-        await rm(buildRoot, { recursive: true, force: true });
-        throwIfShuttingDown();
-        mode = 'full';
+    const { exitCode, output } = await runAstroBuild(buildRoot);
+    if (exitCode !== 0) {
+      process.stderr.write(output);
+      if (!(await artifactSourcesMatch(manifest, revisionState))) {
+        requestFreshBuild('registered source changed during build');
       }
-    }
-
-    if (mode === 'full') {
-      const { exitCode, output } = await runAstroBuild(buildRoot);
-      if (exitCode !== 0) {
-        process.stderr.write(output);
-        if (!(await artifactSourcesMatch(manifest, revisionState))) {
-          requestFreshBuild('registered source changed during build');
-        }
-        throw Object.assign(new Error(`Astro exited with code ${exitCode}.`), { details: output });
-      }
+      throw Object.assign(new Error(`Astro exited with code ${exitCode}.`), { details: output });
     }
 
     if (!(await isSuccessfulBuild(buildRoot))) {
@@ -223,24 +186,12 @@ async function rebuild(reasons) {
       throw new Error('Registered sources changed during the build.');
     }
 
-    await refreshSourceWatches(manifest);
-    if ((await siteInputsSignature(docShelfRoot)) !== siteSignature) {
-      requestFreshBuild('DocShelf site files changed during build');
-      throw new Error('DocShelf site files changed during the build.');
-    }
     const previousBuildRoot = activeBuildRoot;
+    await refreshSourceWatches(manifest);
     activeBuildRoot = buildRoot;
-    activeRevisionState = revisionState;
-    activeArtifactRevisions = new Map(
-      revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
-    );
-    if (mode === 'full') activeSiteSignature = siteSignature;
     await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
-    const kind = mode === 'full' ? 'a full' : 'an incremental';
-    console.log(
-      `[build] Published ${manifest.artifacts.length} artifacts from ${kind} build in ${seconds}s.`,
-    );
+    console.log(`[build] Published ${manifest.artifacts.length} artifacts in ${seconds}s.`);
 
     if (previousBuildRoot && isWithin(runtimeRoot, previousBuildRoot)) {
       setTimeout(() => {
@@ -259,25 +210,7 @@ async function rebuild(reasons) {
     }
   } finally {
     releaseSyncLock();
-    await trimWatcherLogs();
   }
-}
-
-/**
- * A change that left the catalog and DocShelf's own site files untouched only needs fresh artifact
- * snapshots, so the active build's Astro output can be reused. Anything else, including the first
- * build after startup, runs Astro.
- *
- * @param {import('./artifacts.mjs').ArtifactRevisionState} revisionState
- * @param {string} siteSignature
- */
-function canReuseActiveBuild(revisionState, siteSignature) {
-  return (
-    activeBuildRoot !== null &&
-    activeRevisionState !== null &&
-    activeRevisionState.catalogRevision === revisionState.catalogRevision &&
-    activeSiteSignature === siteSignature
-  );
 }
 
 function throwIfShuttingDown() {
@@ -401,7 +334,6 @@ async function serveRequest(request, response) {
   }
 
   const buildRoot = activeBuildRoot;
-  const artifactRevisions = activeArtifactRevisions;
   if (!buildRoot) {
     response.writeHead(503, {
       'cache-control': 'no-store',
@@ -433,10 +365,7 @@ async function serveRequest(request, response) {
     const notFoundPath = path.join(buildRoot, '404.html');
     const notFoundStats = await stat(notFoundPath).catch(() => null);
     if (notFoundStats?.isFile()) {
-      await sendFile(request, response, notFoundPath, notFoundStats, {
-        statusCode: 404,
-        cacheControl: 'no-cache',
-      });
+      await sendFile(request, response, notFoundPath, notFoundStats, 404);
     } else {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       response.end('Not found\n');
@@ -444,16 +373,7 @@ async function serveRequest(request, response) {
     return;
   }
 
-  // Classify the file being served rather than the request: the two differ once `.` segments are
-  // collapsed or a directory falls through to its index.html.
-  const servedPath = path.relative(buildRoot, filePath).split(path.sep).join('/');
-  await sendFile(request, response, filePath, fileStats, {
-    statusCode: 200,
-    cacheControl: cacheControl(servedPath),
-    contentRevision: servedPath.startsWith('artifacts/')
-      ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
-      : undefined,
-  });
+  await sendFile(request, response, filePath, fileStats, 200);
 }
 
 async function serveBuildStatus(request, response) {
@@ -486,26 +406,14 @@ async function serveBuildStatus(request, response) {
  * @param {import('node:http').ServerResponse} response
  * @param {string} filePath
  * @param {import('node:fs').Stats} fileStats
- * @param {{ statusCode: number, cacheControl: string, contentRevision?: string }} options
+ * @param {number} statusCode
  */
-async function sendFile(request, response, filePath, fileStats, options) {
-  const etag = entityTag(fileStats, options.contentRevision);
-  const headers = {
-    'cache-control': options.cacheControl,
-    etag,
-    'x-content-type-options': 'nosniff',
-  };
-
-  if (options.statusCode === 200 && isFresh(request.headers, etag)) {
-    response.writeHead(304, headers);
-    response.end();
-    return;
-  }
-
-  response.writeHead(options.statusCode, {
-    ...headers,
+async function sendFile(request, response, filePath, fileStats, statusCode) {
+  response.writeHead(statusCode, {
+    'cache-control': 'no-cache',
     'content-length': fileStats.size,
     'content-type': contentType(filePath),
+    'x-content-type-options': 'nosniff',
   });
 
   if (request.method === 'HEAD') {
@@ -600,25 +508,6 @@ function releaseSyncLock() {
     lock?.release();
   } catch (error) {
     console.error(`[shutdown] ${formatError(error)}`);
-  }
-}
-
-/**
- * Bound the launchd log files. Only a stream that actually points at its log is trimmed, so a
- * watcher started in a terminal never touches the service's logs.
- */
-async function trimWatcherLogs() {
-  const logs = watcherLogPaths(runtimeRoot);
-  for (const [fd, filePath] of [
-    [1, logs.stdout],
-    [2, logs.stderr],
-  ]) {
-    if (!standardStreamIs(fd, filePath)) continue;
-    try {
-      trimLog(filePath);
-    } catch (error) {
-      console.error(`[log] Could not trim ${path.basename(filePath)}: ${formatError(error)}`);
-    }
   }
 }
 
