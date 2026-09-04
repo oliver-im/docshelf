@@ -149,6 +149,8 @@ const ready = true;
   assert.match(html, /class="contains-task-list"/);
   assert.match(html, /<table>/);
   assert.match(html, /class="language-js"/);
+  assert.doesNotMatch(html, /src="\/mermaid\.min\.js"/);
+  assert.doesNotMatch(html, /src="\/markdown-mermaid\.js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
 });
@@ -160,12 +162,20 @@ test('hosted Markdown assets use the configured DocShelf base path', async () =>
       description: 'A hosted document.',
       sourcePath: '/workspace/hosted.md',
     },
-    '# Hosted notes\n',
+    `# Hosted notes
+
+\`\`\`mermaid
+flowchart LR
+  README --> Pages
+\`\`\`
+`,
     { basePath: '/docshelf/' },
   );
 
   assert.match(html, /href="\/docshelf\/markdown-tokyo-night\.css"/);
   assert.match(html, /src="\/docshelf\/markdown-line-links\.js" defer/);
+  assert.match(html, /src="\/docshelf\/mermaid\.min\.js" defer/);
+  assert.match(html, /src="\/docshelf\/markdown-mermaid\.js" defer/);
 });
 
 test('site paths support a validated deployment base', () => {
@@ -190,6 +200,27 @@ test('line permalink helpers accept only canonical, ordered source ranges', () =
   assert.equal(createLineFragment(14), '#L14');
   assert.equal(createLineFragment(14, 20), '#L14-L20');
   assert.throws(() => createLineFragment(0), /positive/);
+});
+
+test('Markdown rendering enables local Mermaid rendering for Mermaid fences', async () => {
+  const html = await renderMarkdownArtifact(
+    {
+      title: 'System diagram',
+      description: 'A Mermaid diagram.',
+      sourcePath: '/workspace/diagram.md',
+    },
+    `# System
+
+\`\`\`mermaid
+flowchart LR
+  Browser --> DocShelf
+\`\`\`
+`,
+  );
+
+  assert.match(html, /<code class="language-mermaid">/);
+  assert.match(html, /<script src="\/mermaid\.min\.js" defer><\/script>/);
+  assert.match(html, /<script src="\/markdown-mermaid\.js" defer><\/script>/);
 });
 
 test('generated HTML rewrites only links to registered source artifacts', async (t) => {

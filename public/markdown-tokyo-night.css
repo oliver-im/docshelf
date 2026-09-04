@@ -271,6 +271,33 @@ pre code {
   font-size: 0.86rem;
 }
 
+.mermaid-diagram {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1rem;
+  margin: 0 auto 1.35rem;
+  color: var(--md-text);
+}
+
+.mermaid-diagram[hidden] {
+  display: none;
+}
+
+.mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.mermaid-render-error {
+  padding: 0.65rem 0.8rem;
+  border-left: 0.2rem solid var(--md-red);
+  margin-top: -0.65rem;
+  color: var(--md-text-muted);
+  font-size: 0.9rem;
+}
+
 .token.comment,
 .token.prolog,
 .token.doctype,
