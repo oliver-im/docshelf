@@ -452,7 +452,6 @@ mark {
 
 .docshelf-line-block[data-docshelf-line-selected] {
   outline-color: var(--md-cyan);
-  background: color-mix(in srgb, var(--md-selection) 48%, transparent);
 }
 
 .docshelf-line-controls {
@@ -464,13 +463,14 @@ mark {
   min-width: 3.2rem;
   flex-direction: column;
   align-items: stretch;
-  overflow: hidden;
+  overflow: visible;
   background: color-mix(in srgb, var(--md-bg-deep) 72%, transparent);
   -webkit-user-select: none;
   user-select: none;
 }
 
 .docshelf-line-control {
+  position: relative;
   min-block-size: 0;
   min-width: 3.2rem;
   flex: 1 1 0;
@@ -493,6 +493,19 @@ mark {
     color 180ms ease;
 }
 
+.docshelf-line-control::after {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline-start: calc(100% + 0.55rem);
+  inline-size: var(--docshelf-content-width, 74ch);
+  background: color-mix(in srgb, var(--md-selection) 52%, transparent);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
 .docshelf-line-control:hover {
   border-inline-end-color: var(--md-cyan);
   background: var(--md-bg-highlight);
@@ -503,6 +516,10 @@ mark {
   border-inline-end-color: var(--md-cyan);
   background: color-mix(in srgb, var(--md-selection) 62%, transparent);
   color: var(--md-text);
+}
+
+.docshelf-line-control[aria-pressed='true']::after {
+  opacity: 1;
 }
 
 .docshelf-line-actions {
@@ -642,6 +659,7 @@ summary {
   .docshelf-line-block,
   .docshelf-line-controls,
   .docshelf-line-control,
+  .docshelf-line-control::after,
   .docshelf-line-action {
     transition: none;
   }

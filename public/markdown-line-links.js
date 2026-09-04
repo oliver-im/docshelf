@@ -86,6 +86,7 @@
       : sourceLineCount;
     root.style.paddingBlockStart = `${Math.max(defaultPaddingStart, leadingLineCount * lineHeight)}px`;
     root.style.paddingBlockEnd = `${Math.max(defaultPaddingEnd, trailingLineCount * lineHeight)}px`;
+    root.style.setProperty('--docshelf-content-width', `${root.getBoundingClientRect().width}px`);
 
     const rootTop = root.getBoundingClientRect().top;
     const positions = lineGroups.map((entry) => {
@@ -220,11 +221,14 @@
     let firstSelectedControl = null;
 
     for (const block of blocks) {
-      const selected = Boolean(
+      const intersectsSelection = Boolean(
         range && block.end >= range.start && block.start <= range.end,
       );
-      block.element.toggleAttribute('data-docshelf-line-selected', selected);
-      if (selected && !firstSelected) firstSelected = block.element;
+      const fullySelected = Boolean(
+        range && range.start <= block.start && range.end >= block.end,
+      );
+      block.element.toggleAttribute('data-docshelf-line-selected', fullySelected);
+      if (intersectsSelection && !firstSelected) firstSelected = block.element;
     }
 
     for (const entry of lineControls) {

@@ -99,9 +99,11 @@ visible.
 Rendered Markdown also supports source-line links. Its gutter shows every source
 line, including blank lines and lines omitted from the rendered document. Click
 a number to select that exact source line, then Shift-click another number to
-extend the range. DocShelf highlights any rendered elements covered by the
-selection and writes the range to the URL using the familiar `#L14-L20` form.
-Use **Copy link** in the selection bar to share the exact artifact and range.
+extend the range. DocShelf paints each selected source line as a horizontal
+band; when the range covers an entire rendered element, it outlines that element
+as additional context. The range is written to the URL using the familiar
+`#L14-L20` form. Use **Copy link** in the selection bar to share the exact
+artifact and range.
 
 ## Markdown rendering
 
