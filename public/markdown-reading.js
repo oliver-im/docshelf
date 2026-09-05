@@ -2,27 +2,11 @@
   const root = document.querySelector('.markdown-document');
   if (!root || root.dataset.docshelfReading === 'true') return;
   root.dataset.docshelfReading = 'true';
-  const headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-
-  // Keep the native table semantics and confine horizontal scrolling to the table.
-  for (const table of root.querySelectorAll('table')) {
-    const container = document.createElement('div');
-    container.className = 'markdown-table';
-    const scroller = document.createElement('div');
-    scroller.className = 'markdown-table-scroll';
-    scroller.setAttribute('role', 'region');
-    const heading = headings.filter((element) =>
-      element.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).at(-1);
-    scroller.setAttribute('aria-label', heading ? `${heading.textContent} table` : 'Table');
-    const hint = document.createElement('p');
-    hint.className = 'markdown-table-hint';
-    hint.textContent = 'Scroll horizontally to see all columns.';
-    hint.setAttribute('data-pagefind-ignore', '');
-    hint.hidden = true;
-    table.before(container);
-    scroller.append(table);
-    container.append(hint, scroller);
+  // Structure is rendered on the server, before source-line controls are measured.
+  for (const container of root.querySelectorAll('.markdown-table')) {
+    const table = container.querySelector('table');
+    const scroller = container.querySelector('.markdown-table-scroll');
+    const hint = container.querySelector('.markdown-table-hint');
 
     const updateOverflow = () => {
       const overflowing = scroller.scrollWidth > scroller.clientWidth + 1;
@@ -46,6 +30,7 @@
     link,
     heading: document.getElementById(decodeURIComponent(link.hash.slice(1))),
   })).filter((entry) => entry.heading);
+  let clickedEntry = entries.find((entry) => entry.link.hash === window.location.hash) || null;
 
   outline.addEventListener('click', (event) => {
     const link = event.target.closest('a');
@@ -55,16 +40,24 @@
     if (!wide.matches) outline.open = false;
     entry.heading.tabIndex = -1;
     entry.heading.focus({ preventScroll: true });
+    clickedEntry = entry;
+    setCurrentSection(entry);
   });
 
   let scheduled = false;
-  const updateCurrentSection = () => {
-    scheduled = false;
-    const current = entries.filter((entry) => entry.heading.getBoundingClientRect().top <= 120).at(-1);
+  const setCurrentSection = (current) => {
     for (const entry of entries) {
       if (entry === current) entry.link.setAttribute('aria-current', 'location');
       else entry.link.removeAttribute('aria-current');
     }
+  };
+  const updateCurrentSection = () => {
+    scheduled = false;
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    const atEnd = maxScroll > 0 && window.scrollY >= maxScroll - 2;
+    const current = clickedEntry || (atEnd ? entries.at(-1)
+      : entries.filter((entry) => entry.heading.getBoundingClientRect().top <= 120).at(-1));
+    setCurrentSection(current);
   };
   const scheduleUpdate = () => {
     if (scheduled) return;
@@ -73,5 +66,22 @@
   };
   window.addEventListener('scroll', scheduleUpdate, { passive: true });
   window.addEventListener('resize', scheduleUpdate);
+  // Keep an explicit destination highlighted during smooth scrolling, until the
+  // reader takes over. A clamped final section may never reach the top threshold.
+  const resumeScrollTracking = () => { clickedEntry = null; scheduleUpdate(); };
+  window.addEventListener('wheel', resumeScrollTracking, { passive: true });
+  window.addEventListener('touchstart', resumeScrollTracking, { passive: true });
+  window.addEventListener('pointerdown', resumeScrollTracking, { passive: true });
+  window.addEventListener('keydown', (event) => {
+    if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+      resumeScrollTracking();
+    }
+  });
+  const followFragment = () => {
+    clickedEntry = entries.find((entry) => entry.link.hash === window.location.hash) || null;
+    scheduleUpdate();
+  };
+  window.addEventListener('hashchange', followFragment);
+  window.addEventListener('docshelf:fragmentchange', followFragment);
   updateCurrentSection();
 })();

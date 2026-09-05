@@ -76,8 +76,6 @@ const initialFrameUrl = initialArtifact
 </div>
 
 <script>
-  import { parseLineFragment } from '../lib/line-permalinks.js';
-
   interface Artifact {
     route: string;
     title: string;
@@ -332,7 +330,7 @@ const initialFrameUrl = initialArtifact
       }
 
       if (
-        frameCanApplyLineSelection(activeFrame, artifact, selection) &&
+        frameCanApplyFragment(activeFrame, artifact, selection) &&
         activeFrame.dataset.frameReady !== 'false'
       ) {
         activeFrame.dataset.artifactLocation = artifactLocation(selection);
@@ -428,8 +426,14 @@ const initialFrameUrl = initialArtifact
         return;
       }
 
-      const hash = typeof event.data.hash === 'string' ? event.data.hash : '';
-      if (hash && !parseLineFragment(hash)) return;
+      const hash = event.data.hash;
+      if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
+      try {
+        // Ignore a queued message if the frame has already navigated again.
+        if (activeFrame.contentWindow?.location.hash !== hash) return;
+      } catch {
+        return;
+      }
 
       const selection = normalizeSelection({
         ...currentSelection,
@@ -700,26 +704,22 @@ const initialFrameUrl = initialArtifact
     );
   }
 
-  function frameCanApplyLineSelection(
+  function frameCanApplyFragment(
     frame: HTMLIFrameElement,
     artifact: Artifact,
     selection: ArtifactSelection,
   ) {
-    const artifactUrl = frame.dataset.artifactUrl;
-    const currentHash = artifactUrl
-      ? new URL(artifactUrl, window.location.href).hash
-      : '';
-    return (
-      frame.dataset.artifactRoute === artifact.route &&
-      frame.dataset.artifactRevision === artifact.revision &&
-      frame.dataset.artifactQuery === selection.query &&
-      isManagedLineHash(currentHash) &&
-      isManagedLineHash(selection.hash)
-    );
-  }
-
-  function isManagedLineHash(hash: string) {
-    return hash === '' || Boolean(parseLineFragment(hash));
+    try {
+      return (
+        frame.dataset.artifactRoute === artifact.route &&
+        frame.dataset.artifactRevision === artifact.revision &&
+        frame.dataset.artifactQuery === selection.query &&
+        frame.contentDocument?.querySelector<HTMLElement>('.markdown-document')
+          ?.dataset.docshelfLineLinks === 'true'
+      );
+    } catch {
+      return false;
+    }
   }
 
   function applyLineSelectionToFrame(

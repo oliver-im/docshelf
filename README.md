@@ -121,12 +121,14 @@ readable text column. Its light or dark appearance follows DocShelf, including
 theme changes made while the document is open. Existing HTML artifacts retain
 their own styles.
 
-Documents with three or more second-level headings get an **On this page**
-outline, including nested third-level headings. It sits beside the document when
-there is room and collapses into a sticky menu on narrower screens. Wide tables
-scroll independently with a visible hint; focus a scrolling table to move through
-its columns with the arrow keys.
-Source-line breaks and line selections are preserved across these layouts.
+Documents with three or more named, authored second-level headings get an
+**On this page** outline, including nested third-level headings. It sits beside
+the document when there is room and collapses into a sticky menu on narrower
+screens. Wide tables scroll independently with a visible hint; focus a scrolling
+table to move through its columns with the arrow keys.
+Outline links update the viewer URL, so sections can be bookmarked and restored
+with Back and Forward. Source-line breaks and line selections are preserved
+across these layouts.
 
 Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Remote images work, but relative images

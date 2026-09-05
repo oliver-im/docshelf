@@ -88,6 +88,7 @@
       defaultPaddingStart,
       leadingLineCount * defaultLineHeight,
     )}px`;
+    root.parentElement.style.setProperty('--docshelf-document-padding-start', root.style.paddingBlockStart);
     root.style.paddingBlockEnd = `${Math.max(
       defaultPaddingEnd,
       trailingLineCount * defaultLineHeight,
@@ -304,14 +305,28 @@
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
     if (event.data?.type !== 'docshelf-apply-line-selection') return;
 
-    applyHash(event.data.hash, event.data.scroll !== false);
+    const hash = event.data.hash;
+    if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
+    const changed = window.location.hash !== hash;
+    replaceFrameHash(hash);
+    applyHash(hash, event.data.scroll !== false);
+    if (changed && event.data.scroll !== false && !parseLineFragment(hash)) {
+      if (!hash) window.scrollTo({ top: 0 });
+      else {
+        try {
+          document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView();
+        } catch {
+          // Malformed escapes are valid URL fragments but cannot identify a heading.
+        }
+      }
+    }
+    if (changed) window.dispatchEvent(new Event('docshelf:fragmentchange'));
   });
   window.addEventListener('hashchange', () => {
-    const hadSelection = Boolean(selection);
     applyHash(window.location.hash, true);
-    // A heading link leaves source-selection mode. Clear the enclosing viewer's
-    // line permalink too, so it does not describe a selection that is no longer shown.
-    if (hadSelection && !selection) notifyParent('', 'replace');
+    // Native anchors and iframe history traversal already own their history
+    // entry. Mirror its actual fragment without adding or erasing an entry.
+    if (window.parent !== window) notifyParent(window.location.hash, 'replace');
   });
 
   applyHash(window.location.hash, true);
