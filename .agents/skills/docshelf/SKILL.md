@@ -1,17 +1,9 @@
 ---
 name: docshelf
-description: Register local HTML or Markdown and published Claude Artifacts with DocShelf, or create self-contained HTML with the optional DocShelf theme, when the user asks to add something to DocShelf or use the "DocShelf theme".
+description: Register local HTML or Markdown documents and published Claude Artifacts with DocShelf when the user asks to add them to the shelf, preserving their sources and verifying the resulting local URLs.
 ---
 
 # DocShelf
-
-## Optional HTML theme
-
-- When the user explicitly asks for the “DocShelf theme,” read
-  [references/theme.md](references/theme.md) and use the supplied theme assets.
-- Do not restyle an existing HTML artifact merely because it is being registered.
-- When creation and registration are requested together, finish and verify the source
-  artifact before registering it.
 
 ## Find DocShelf
 
@@ -24,6 +16,8 @@ description: Register local HTML or Markdown and published Claude Artifacts with
 - Resolve “this” from an explicitly named, attached, current, or just-created
   file, or from an explicitly supplied published Claude Artifact URL. If more
   than one source is plausible, ask which one.
+- When creation and registration are requested together, register only after the
+  source artifact has been finished and verified by the authoring task.
 - Accept only HTML or Markdown files supported by DocShelf and contained within
   its workspace, or an exact public HTTPS Claude Artifact link of the form
   `claude.ai/public/artifacts/<id>`. Do not register other remote URLs.

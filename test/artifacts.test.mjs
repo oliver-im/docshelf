@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { parse } from 'parse5';
 import {
   artifactViewerUrl,
   contentRevision,
@@ -423,6 +424,33 @@ const ready = true;
   assert.doesNotMatch(html, /shouldNotRun/);
 });
 
+test('long Markdown documents have an outline with valid, unique heading targets', async () => {
+  const artifact = { title: 'Research', description: '', sourcePath: '/workspace/research.md' };
+  const source = '# Research\n\n## Evidence & "limits"\n\nFirst finding.\n\n## Evidence & "limits"\n\nSecond finding.\n\n## 한국어\n\nA third finding.\n\n### Detail\n\nSupporting evidence.\n';
+  const html = await renderMarkdownArtifact(artifact, source, { basePath: '/shelf/' });
+  const elements = [];
+  const visit = (node) => {
+    if (node.tagName) elements.push(node);
+    for (const child of node.childNodes || []) visit(child);
+  };
+  visit(parse(html));
+  const attribute = (node, name) => node.attrs.find((attr) => attr.name === name)?.value;
+  const headings = elements.filter((node) => node.tagName === 'h2');
+  const subheading = elements.find((node) => node.tagName === 'h3');
+  const links = elements.filter((node) => node.tagName === 'a');
+  const ids = headings.map((node) => attribute(node, 'id'));
+  assert.equal(links.length, 4);
+  assert.equal(new Set(ids).size, 3);
+  assert.deepEqual(links.map((node) => decodeURIComponent(attribute(node, 'href').slice(1))), [...ids, attribute(subheading, 'id')]);
+  assert.equal(links[3].parentNode.parentNode.parentNode.tagName, 'li');
+  assert.deepEqual(headings.map((node) => attribute(node, 'data-docshelf-line-start')), ['3', '7', '11']);
+  assert.ok(elements.some((node) => node.tagName === 'nav' && attribute(node, 'aria-label') === 'On this page'));
+  assert.ok(elements.some((node) => node.tagName === 'script' && attribute(node, 'src') === '/shelf/markdown-reading.js'));
+
+  const short = await renderMarkdownArtifact(artifact, '# Note\n\n## One section\n\nA short note.');
+  assert.doesNotMatch(short, /<aside|<nav/);
+});
+
 test('Markdown rendering preserves soft and hard source-line breaks', async () => {
   const html = await renderMarkdownArtifact(
     {
@@ -447,6 +475,82 @@ gamma
   assert.match(html, /<em>spans<br data-docshelf-line-break-after="5">\nlines<\/em>/);
   assert.match(html, /<br data-docshelf-line-break-after="6">\ngamma<\/p>/);
 });
+
+test('outline labels preserve literal braces and omit footnote references', async () => {
+  const html = await renderReviewMarkdown([
+    '# Report', '', '## Use {a} and `{b}` with ${c}[^1]', '',
+    '## Second', '', '## Third', '', '[^1]: A supporting note.',
+  ].join('\n'));
+  const tree = parse(html);
+  const outline = findElements(tree, 'aside')[0];
+  assert.deepEqual(findElements(outline, 'a').map(nodeText), [
+    'Use {a} and {b} with ${c}', 'Second', 'Third', 'Footnotes',
+  ]);
+  const targetIds = new Set(findElements(tree, 'h2').map((node) => attr(node, 'id')));
+  for (const link of findElements(outline, 'a')) {
+    assert.ok(targetIds.has(decodeURIComponent(attr(link, 'href').slice(1))));
+  }
+});
+
+test('only named, targetable authored sections count toward the outline threshold', async () => {
+  const short = await renderReviewMarkdown([
+    '# Report', '', '## Alpha', '', '## Beta[^1]', '', '## ???', '',
+    '## ![](https://example.com/diagram.png)', '', '[^1]: Note.',
+  ].join('\n'));
+  assert.equal(findElements(parse(short), 'aside').length, 0);
+
+  const long = await renderReviewMarkdown([
+    '# Report', '', '## Alpha', '', '## ???', '', '## Beta', '', '## Gamma',
+  ].join('\n'));
+  const outline = findElements(parse(long), 'aside')[0];
+  assert.deepEqual(findElements(outline, 'a').map(nodeText), ['Alpha', 'Beta', 'Gamma']);
+  assert.ok(findElements(outline, 'a').every((link) => attr(link, 'href') !== '#'));
+});
+
+test('reading layout is present before source-line positioning runs', async () => {
+  const source = [
+    '---', 'title: Table test', '---', '# Report', '',
+    '## Use {key}[^1]', '', '| Key | Value |', '| --- | --- |', '| x | 1 |', '',
+    '### Details', '', '| Name | Value |', '| --- | --- |', '| y | 2 |', '',
+    '## Second', '', '## Third', '', '[^1]: A note.',
+  ].join('\n');
+  const tree = parse(await renderReviewMarkdown(source));
+  const outline = findElements(tree, 'aside')[0];
+  assert.equal(attr(findElements(outline, 'details')[0], 'open'), undefined);
+  const scripts = findElements(tree, 'script').map((node) => attr(node, 'src'));
+  assert.ok(scripts.indexOf('/markdown-reading.js') < scripts.indexOf('/markdown-line-links.js'));
+  const tables = findElements(tree, 'table');
+  assert.deepEqual(tables.map((table) => attr(table.parentNode, 'aria-label')), [
+    'Use {key} table', 'Details table',
+  ]);
+  for (const table of tables) {
+    assert.equal(attr(table.parentNode, 'role'), 'region');
+    assert.equal(attr(table.parentNode, 'tabindex'), '-1');
+    const hint = findElements(table.parentNode.parentNode, 'p')[0];
+    assert.equal(attr(hint, 'hidden'), '');
+    assert.equal(attr(hint, 'data-pagefind-ignore'), '');
+  }
+  assert.deepEqual(findElements(tables[0], 'tr').map((row) => attr(row, 'data-docshelf-line-start')), ['8', '10']);
+});
+
+function renderReviewMarkdown(source) {
+  return renderMarkdownArtifact({ title: 'Review', description: '', sourcePath: '/workspace/review.md' }, source);
+}
+
+function findElements(node, tag) {
+  return [
+    ...(node.tagName === tag ? [node] : []),
+    ...(node.childNodes || []).flatMap((child) => findElements(child, tag)),
+  ];
+}
+
+function attr(node, name) {
+  return node.attrs?.find((entry) => entry.name === name)?.value;
+}
+
+function nodeText(node) {
+  return node.nodeName === '#text' ? node.value : (node.childNodes || []).map(nodeText).join('');
+}
 
 test('hosted Markdown assets use the configured DocShelf base path', async () => {
   const html = await renderMarkdownArtifact(

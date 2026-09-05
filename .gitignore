@@ -2,6 +2,7 @@ node_modules/
 dist/
 .astro/
 .docshelf-runtime/
+.playwright-mcp/
 shelf.local.json
 # Keep pre-shelf local registrations private after upgrading.
 artifacts.local.json

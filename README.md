@@ -141,9 +141,10 @@ from its allowed domains makes the embedded content unavailable.
 
 ## Using the viewer
 
-Choose an artifact in the left sidebar to load it inside DocShelf. For local
-artifacts, use a modified click or the browser's link menu when you want to open
-the standalone generated page.
+Choose an artifact in the left sidebar or search results to load it inside
+DocShelf. Search results for a section jump to that heading. For local artifacts,
+use a modified click or the browser's link menu to open the standalone generated
+page.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
 
@@ -180,11 +181,20 @@ is removed from the rendered document; a valid `lang` frontmatter value sets
 the HTML document language.
 
 Both registered and browser-imported Markdown use an adapted Tokyo Night
-reading theme that fills the available viewer width. Its light or dark
-appearance follows DocShelf, including theme changes made while the document
-is open. Browser imports support GitHub-flavored Markdown, heading anchors, and
-source-line links, but do not run Mermaid or syntax-highlighting scripts.
-Existing HTML artifacts retain their own styles.
+reading theme with a centered, readable text column. Its light or dark appearance
+follows DocShelf, including theme changes made while the document is open.
+Browser imports support GitHub-flavored Markdown, heading anchors, and source-line
+links, but do not run Mermaid or syntax-highlighting scripts. Existing HTML
+artifacts retain their own styles.
+
+Registered Markdown documents with three or more named, authored second-level
+headings get an **On this page** outline, including nested third-level headings.
+It sits beside the document when there is room and collapses into a sticky menu
+on narrower screens. Wide tables scroll independently with a visible hint; focus
+a scrolling table to move through its columns with the arrow keys.
+Outline links update the viewer URL, so sections can be bookmarked and restored
+with Back and Forward. Source-line breaks and line selections are preserved
+across these layouts.
 
 Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Browser-imported GitHub Markdown
@@ -202,9 +212,10 @@ say “add this to DocShelf” from any project:
 npx skills add oliver-im/docshelf --skill docshelf -g
 ```
 
-The skill also provides an optional DocShelf HTML theme. Ask for the “DocShelf
-theme” when creating a standalone HTML artifact; registering existing HTML does
-not alter its styles.
+The skill registers completed documents without authoring or restyling them.
+The optional [HTML theme](.agents/skills/docshelf/references/theme.md) remains
+available as a separate authoring resource and is not part of the registration
+workflow.
 
 ## GitHub Pages demo
 

@@ -161,7 +161,6 @@ const blankFrameUrl = 'about:blank';
   import { parseClaudeArtifactUrl } from '../lib/claude-artifacts.js';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '../lib/github-markdown.js';
-  import { parseLineFragment } from '../lib/line-permalinks.js';
 
   interface Artifact {
     route: string;
@@ -349,8 +348,33 @@ const blankFrameUrl = 'about:blank';
 
         event.preventDefault();
         selectArtifact(emptySelection(route), 'push');
+        closeMobileNavigation();
       });
     }
+
+    const search = document.querySelector<HTMLElement>('site-search');
+    search?.addEventListener('click', (event) => {
+      if (
+        event.defaultPrevented || event.button !== 0 ||
+        event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+      ) return;
+
+      const link = event.target instanceof Element
+        ? event.target.closest<HTMLAnchorElement>('a[href]')
+        : null;
+      const route = link && artifactRouteFromLink(link);
+      if (
+        !link || !route || !artifacts.some((artifact) => artifact.route === route) ||
+        link.hasAttribute('download') || (link.target && link.target.toLowerCase() !== '_self')
+      ) return;
+
+      event.preventDefault();
+      const destination = new URL(link.href);
+      selectArtifact({ route, query: destination.search.slice(1), hash: destination.hash }, 'push');
+      search.querySelector<HTMLDialogElement>('dialog[open]')?.close();
+      closeMobileNavigation();
+      search.querySelector<HTMLButtonElement>('button[data-open-modal]')?.focus({ preventScroll: true });
+    });
 
     window.addEventListener('popstate', () => {
       const fallback = artifacts[0];
@@ -563,6 +587,18 @@ const blankFrameUrl = 'about:blank';
       viewerEmptyState.hidden = false;
     }
 
+    function closeMobileNavigation() {
+      // Frame swaps do not navigate the page, so use Starlight's toggle to
+      // dismiss its mobile menu and release the focus trap together.
+      const toggle = document.querySelector<HTMLButtonElement>(
+        'starlight-menu-button[aria-expanded="true"] button',
+      );
+      if (toggle) {
+        toggle.click();
+        toggle.focus({ preventScroll: true });
+      }
+    }
+
     function selectArtifact(
       requested: ArtifactSelection,
       historyMode: 'push' | 'replace' | 'none',
@@ -636,7 +672,7 @@ const blankFrameUrl = 'about:blank';
 
       if (
         supportsLineSelection(artifact) &&
-        frameCanApplyLineSelection(activeFrame, artifact, selection) &&
+        frameCanApplyFragment(activeFrame, artifact, selection) &&
         activeFrame.dataset.frameReady !== 'false'
       ) {
         activeFrame.dataset.artifactLocation = artifactLocation(selection);
@@ -739,8 +775,15 @@ const blankFrameUrl = 'about:blank';
         return;
       }
 
-      const hash = typeof event.data.hash === 'string' ? event.data.hash : '';
-      if (hash && !parseLineFragment(hash)) return;
+      const hash = event.data.hash;
+      if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
+      try {
+        // Ignore a queued message if the frame has already navigated again.
+        // Blob-backed imports keep their selection in the parent URL only.
+        if (!currentArtifact.frameUrl && activeFrame.contentWindow?.location.hash !== hash) return;
+      } catch {
+        return;
+      }
 
       const selection = normalizeSelection({
         ...currentSelection,
@@ -1183,12 +1226,15 @@ const blankFrameUrl = 'about:blank';
 
   function artifactRouteFromLink(link: HTMLAnchorElement) {
     const url = new URL(link.href, window.location.href);
-    const selectedRoute = url.searchParams.get('artifact');
+    if (url.origin !== window.location.origin) return null;
+    const selectedRoute = url.pathname === basePath && url.searchParams.get('artifact');
     if (selectedRoute) return selectedRoute;
-
-    const pathname = url.pathname;
-    const prefix = artifactRootPath;
-    return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
+    if (!url.pathname.startsWith(artifactRootPath)) return null;
+    try {
+      return decodeURIComponent(url.pathname.slice(artifactRootPath.length));
+    } catch {
+      return null;
+    }
   }
 
   function frameMatches(
@@ -1204,27 +1250,23 @@ const blankFrameUrl = 'about:blank';
     );
   }
 
-  function frameCanApplyLineSelection(
+  function frameCanApplyFragment(
     frame: HTMLIFrameElement,
     artifact: Artifact,
     selection: ArtifactSelection,
   ) {
-    const artifactUrl = frame.dataset.artifactUrl;
-    const currentHash = artifactUrl
-      ? new URL(artifactUrl, window.location.href).hash
-      : '';
-    return (
-      frame.dataset.artifactRoute === artifact.route &&
-      frame.dataset.artifactRevision === artifact.revision &&
-      (!artifact.frameUrl || frame.dataset.artifactUrl === artifact.frameUrl) &&
-      frame.dataset.artifactQuery === selection.query &&
-      isManagedLineHash(currentHash) &&
-      isManagedLineHash(selection.hash)
-    );
-  }
-
-  function isManagedLineHash(hash: string) {
-    return hash === '' || Boolean(parseLineFragment(hash));
+    try {
+      return (
+        frame.dataset.artifactRoute === artifact.route &&
+        frame.dataset.artifactRevision === artifact.revision &&
+        (!artifact.frameUrl || frame.dataset.artifactUrl === artifact.frameUrl) &&
+        frame.dataset.artifactQuery === selection.query &&
+        frame.contentDocument?.querySelector<HTMLElement>('.markdown-document')
+          ?.dataset.docshelfLineLinks === 'true'
+      );
+    } catch {
+      return false;
+    }
   }
 
   function applyLineSelectionToFrame(
@@ -1328,18 +1370,47 @@ const blankFrameUrl = 'about:blank';
 
   :global(html:has(.docshelf-viewer)) {
     --docshelf-artifact-background: #1a1b26;
+    --docshelf-navigation-background: var(--docshelf-artifact-background);
+    --sl-nav-height: 3rem;
+    --sl-nav-pad-y: 0.25rem;
     --sl-mobile-toc-height: 0rem;
     background: var(--docshelf-artifact-background);
   }
 
-  :global(html[data-theme='light']:has(.docshelf-viewer)) {
-    --docshelf-artifact-background: #d5d6db;
+  @media (min-width: 50rem) {
+    :global(html:has(.docshelf-viewer)) {
+      --sl-nav-height: 3.5rem;
+      --sl-nav-pad-y: 0.5rem;
+    }
   }
 
-  :global(html:has(.docshelf-viewer) body),
+  :global(html[data-theme='light']:has(.docshelf-viewer)) {
+    /* Match the Markdown paper and accents while keeping navigation recessed. */
+    --docshelf-artifact-background: #fcfcfa;
+    --docshelf-navigation-background: #f2f3f0;
+    --sl-color-white: #20272c;
+    --sl-color-gray-1: #30363b;
+    --sl-color-gray-2: #454e54;
+    --sl-color-gray-3: #586269;
+    --sl-color-gray-4: #646d73;
+    --sl-color-gray-5: #d3d8d4;
+    --sl-color-gray-6: #eef0ed;
+    --sl-color-gray-7: #f5f6f3;
+    --sl-color-black: var(--docshelf-artifact-background);
+    --sl-color-accent-low: #e4ebef;
+    --sl-color-accent: #365e80;
+    --sl-color-accent-high: #284c69;
+    --sl-color-bg-nav: var(--docshelf-navigation-background);
+    --sl-color-bg-sidebar: var(--docshelf-navigation-background);
+  }
+
+  :global(html:has(.docshelf-viewer) body) {
+    background: var(--docshelf-artifact-background);
+  }
+
   :global(html:has(.docshelf-viewer) header.header),
   :global(html:has(.docshelf-viewer) #starlight__sidebar) {
-    background: var(--docshelf-artifact-background);
+    background: var(--docshelf-navigation-background);
   }
 
   :global(html:has(.docshelf-viewer) header.header) {
@@ -1363,6 +1434,7 @@ const blankFrameUrl = 'about:blank';
     height: calc(100vh - var(--sl-nav-height));
     min-width: 0;
     overflow: hidden;
+    padding: 0;
   }
 
   :global(html:has(.docshelf-viewer) .right-sidebar-container) {
@@ -1483,6 +1555,7 @@ const blankFrameUrl = 'about:blank';
     display: block;
     width: 100%;
     height: 100%;
+    margin: 0;
     border: 0;
     opacity: 0;
     background: var(--docshelf-artifact-background);

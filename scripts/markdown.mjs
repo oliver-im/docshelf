@@ -12,13 +12,14 @@ const processorPromise = createMarkdownProcessor({
   smartypants: false,
   syntaxHighlight: 'prism',
   remarkPlugins: [remarkDocShelfSourceBreaks, remarkDocShelfCodeLines],
-  rehypePlugins: [rehypeDocShelfLineMetadata],
+  rehypePlugins: [rehypeDocShelfLineMetadata, rehypeDocShelfReading],
   remarkRehype: {
     allowDangerousHtml: false,
   },
 });
 
 const sourceLineOffsetKey = '__docshelfSourceLineOffset';
+const headingLabelsKey = '__docshelfHeadingLabels';
 const selectableTags = new Set([
   'h1',
   'h2',
@@ -70,6 +71,12 @@ export async function renderMarkdownArtifact(artifact, source, options = {}) {
     language,
     basePath: options.basePath || '/',
     content: rendered.code,
+    // Astro's heading metadata escapes braces for MDX. Keep its stable IDs,
+    // but use the labels collected from the same headings in document order.
+    headings: rendered.metadata.headings.map((heading, index) => ({
+      ...heading,
+      ...rendered.metadata.frontmatter[headingLabelsKey][index],
+    })),
     sourceLineCount: countSourceLines(source),
     hasMermaid: /<code\b[^>]*\bclass="[^"]*\blanguage-mermaid\b/.test(rendered.code),
   });
@@ -96,6 +103,51 @@ function rehypeDocShelfLineMetadata() {
       : [];
     annotateSelectableBlocks(tree, lineOffset, { codeLines, codeIndex: 0 });
   };
+}
+
+function rehypeDocShelfReading() {
+  return (tree, file) => {
+    const labels = [];
+    let precedingHeading = '';
+    const visit = (node) => {
+      if (/^h[1-6]$/.test(node.tagName || '')) {
+        const text = headingText(node).trim();
+        labels.push({ text, authored: Boolean(node.position) });
+        precedingHeading = text;
+      }
+      if (!Array.isArray(node.children)) return;
+      node.children = node.children.map((child) => {
+        if (child.tagName === 'table') {
+          return element('div', { className: ['markdown-table'] }, [
+            element('p', {
+              className: ['markdown-table-hint'], hidden: true, dataPagefindIgnore: true,
+            }, [{ type: 'text', value: 'Scroll horizontally to see all columns.' }]),
+            element('div', {
+              className: ['markdown-table-scroll'],
+              role: 'region',
+              ariaLabel: precedingHeading ? `${precedingHeading} table` : 'Table',
+              tabIndex: -1,
+            }, [child]),
+          ]);
+        }
+        visit(child);
+        return child;
+      });
+    };
+    visit(tree);
+    file.data.astro.frontmatter[headingLabelsKey] = labels;
+  };
+}
+
+function element(tagName, properties, children) {
+  return { type: 'element', tagName, properties, children };
+}
+
+function headingText(node) {
+  if (node.properties?.dataFootnoteRef !== undefined) return '';
+  if (node.type === 'text') return node.value;
+  if (node.tagName === 'img') return node.properties?.alt || '';
+  return (node.children || []).map(headingText).join('');
 }
 
 function remarkDocShelfCodeLines() {
@@ -233,11 +285,39 @@ function markdownLanguage(frontmatter) {
  *   language: string,
  *   basePath: string,
  *   content: string,
+ *   headings: Array<{ depth: number, slug: string, text: string, authored: boolean }>,
  *   sourceLineCount: number,
  *   hasMermaid: boolean,
  * }} page
  */
 function markdownDocument(page) {
+  /** @type {Array<{ slug: string, text: string, authored: boolean, children: Array<{ slug: string, text: string }> }>} */
+  const sections = [];
+  let currentSection;
+  for (const heading of page.headings) {
+    if (heading.depth === 2) currentSection = undefined;
+    if (!heading.slug || !heading.text) continue;
+    if (heading.depth === 2) {
+      currentSection = { ...heading, children: [] };
+      sections.push(currentSection);
+    } else if (heading.depth === 3) currentSection?.children.push(heading);
+  }
+  /** @param {{ slug: string, text: string }} heading */
+  const sectionLink = (heading) => `<a href="#${escapeHtml(encodeURIComponent(heading.slug))}">${escapeHtml(heading.text)}</a>`;
+  const outline = sections.filter((section) => section.authored).length >= 3
+    ? `<aside class="markdown-outline" data-pagefind-ignore>
+      <details>
+        <summary>On this page</summary>
+        <nav aria-label="On this page">
+          <ol>${sections.map((heading) => `
+            <li>${sectionLink(heading)}${heading.children.length
+              ? `<ol>${heading.children.map((child) => `<li>${sectionLink(child)}</li>`).join('')}</ol>`
+              : ''}</li>`).join('')}
+          </ol>
+        </nav>
+      </details>
+    </aside>`
+    : '';
   const mermaidScripts = page.hasMermaid
     ? `
     <script src="${sitePath('/mermaid.min.js', page.basePath)}" defer></script>
@@ -253,6 +333,7 @@ function markdownDocument(page) {
     <meta name="description" content="${escapeHtml(page.description)}">
     <title>${escapeHtml(page.title)}</title>
     <link rel="stylesheet" href="${sitePath('/markdown-tokyo-night.css', page.basePath)}">
+    <script src="${sitePath('/markdown-reading.js', page.basePath)}" defer></script>
     <script src="${sitePath('/markdown-line-links.js', page.basePath)}" defer></script>
     <script>
 ${themeSyncScript}
@@ -260,9 +341,12 @@ ${themeSyncScript}
 ${mermaidScripts}
   </head>
   <body>
+    <div class="markdown-layout${outline ? ' has-outline' : ''}">
+${outline}
     <main class="markdown-document" data-docshelf-source-line-count="${page.sourceLineCount}">
 ${page.content}
     </main>
+    </div>
   </body>
 </html>
 `;
