@@ -218,6 +218,29 @@ test('remote artifact identity deduplicates sources independently of their route
   assert.equal(remoteArtifactIdentity({ route: 'local/report.html' }), null);
 });
 
+test('GitHub identities normalize repository casing but preserve ref and file casing', () => {
+  const artifactFrom = (source) => ({
+    sourceType: 'github-markdown',
+    ...parseGitHubMarkdownUrl(source),
+  });
+  const canonical = artifactFrom('https://github.com/oliver-im/docshelf/blob/Main/Docs/README.md');
+  for (const source of [
+    'https://github.com/Oliver-Im/DocShelf/blob/Main/Docs/README.md',
+    'https://raw.githubusercontent.com/Oliver-Im/DocShelf/Main/Docs/README.md',
+  ]) {
+    const artifact = artifactFrom(source);
+    assert.equal(artifactsShareRemoteSource(canonical, artifact), true);
+    assert.equal(remoteArtifactIdentity(canonical), remoteArtifactIdentity(artifact));
+    assert.equal(artifact.rawUrl, 'https://raw.githubusercontent.com/oliver-im/docshelf/Main/Docs/README.md');
+    assert.ok(artifact.sourceUrl.includes('/oliver-im/docshelf/'));
+    assert.equal(artifact.linkBaseUrl, artifact.sourceUrl);
+  }
+  for (const suffix of ['main/Docs/README.md', 'Main/docs/README.md', 'Main/Docs/readme.md']) {
+    const artifact = artifactFrom(`https://raw.githubusercontent.com/oliver-im/docshelf/${suffix}`);
+    assert.equal(artifactsShareRemoteSource(canonical, artifact), false);
+  }
+});
+
 test('shelf loading supports the legacy local filename and prefers the new name', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const localPath = path.join(fixtureRoot, 'shelf.local.json');

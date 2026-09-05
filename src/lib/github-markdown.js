@@ -4,7 +4,7 @@ const safeRepositorySegmentPattern = /^[a-z0-9_.-]+$/i;
 /**
  * Parse a public GitHub Markdown URL without accepting general remote content.
  * GitHub file-view URLs are converted directly to raw.githubusercontent.com;
- * raw URLs remain unchanged.
+ * owner and repository casing is normalized for both URL forms.
  *
  * @param {string} source
  * @returns {{
@@ -37,8 +37,8 @@ export function parseGitHubMarkdownUrl(source) {
 
   url.hash = '';
   const segments = url.pathname.split('/').filter(Boolean);
-  const owner = segments[0];
-  const repository = segments[1];
+  const owner = segments[0]?.toLowerCase();
+  const repository = segments[1]?.toLowerCase();
   if (
     !owner ||
     !repository ||
@@ -47,6 +47,9 @@ export function parseGitHubMarkdownUrl(source) {
   ) {
     return null;
   }
+
+  segments[0] = owner;
+  segments[1] = repository;
 
   const fileName = decodedFileName(segments.at(-1));
   if (!fileName || !markdownExtensionPattern.test(fileName)) return null;

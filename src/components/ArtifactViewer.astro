@@ -405,15 +405,22 @@ const blankFrameUrl = 'about:blank';
       let importAttempt = 0;
       origin.textContent = window.location.origin;
       forgetButton.hidden = importedArtifacts.length === 0;
+      const closeDialog = () => {
+        if (typeof dialog.close === 'function') dialog.close();
+        else {
+          dialog.removeAttribute('open');
+          dialog.dispatchEvent(new Event('close'));
+        }
+      };
       openButton.addEventListener('click', () => {
         error.hidden = true;
         if (typeof dialog.showModal === 'function') dialog.showModal();
         else dialog.setAttribute('open', '');
         sourceInput.focus();
       });
-      for (const button of closeButtons) button.addEventListener('click', () => dialog.close());
+      for (const button of closeButtons) button.addEventListener('click', closeDialog);
       dialog.addEventListener('click', (event) => {
-        if (event.target === dialog) dialog.close();
+        if (event.target === dialog) closeDialog();
       });
       dialog.addEventListener('close', () => {
         importAttempt += 1;
@@ -480,7 +487,7 @@ const blankFrameUrl = 'about:blank';
             await resolveArtifactFrameUrl(artifact);
           }
 
-          if (attempt !== importAttempt || !dialog.open) {
+          if (attempt !== importAttempt || !dialog.hasAttribute('open')) {
             if (artifact.frameUrl !== existing?.frameUrl) releaseArtifactFrame(artifact);
             return;
           }
@@ -497,11 +504,11 @@ const blankFrameUrl = 'about:blank';
           }
           writeImportedArtifacts(importedArtifacts);
           forgetButton.hidden = false;
-          dialog.close();
+          closeDialog();
           showDocumentPane();
           selectArtifact(emptySelection(artifact.route), 'push', true);
         } catch (caught) {
-          if (attempt !== importAttempt || !dialog.open) return;
+          if (attempt !== importAttempt || !dialog.hasAttribute('open')) return;
           error.textContent = importErrorMessage(caught);
           error.hidden = false;
         } finally {
