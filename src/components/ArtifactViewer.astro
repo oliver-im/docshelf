@@ -1,26 +1,35 @@
 ---
-import manifest from '../generated/artifacts.json';
+import shelf from '../generated/shelf.json';
 
 interface Artifact {
   route: string;
   title: string;
   revision: string;
+  embedUrl?: string;
+  source?: string;
+  sourceType?: 'claude' | 'github-markdown';
+  rawUrl?: string;
+  linkBaseUrl?: string;
+  frameUrl?: string;
+  imported?: boolean;
 }
 
-const artifacts = manifest.artifacts as Artifact[];
+const artifacts = shelf.artifacts as Artifact[];
 const initialArtifact = artifacts[0];
 const basePath = import.meta.env.BASE_URL;
 const liveUpdatesEnabled = import.meta.env.DOCSHELF_LIVE_UPDATES !== 'false';
 const initialFrameUrl = initialArtifact
-  ? `${basePath}artifacts/${initialArtifact.route}?__docshelf_revision=${initialArtifact.revision}`
+  ? initialArtifact.embedUrl ||
+    `${basePath}artifacts/${initialArtifact.route}?__docshelf_revision=${initialArtifact.revision}`
   : '';
+const blankFrameUrl = 'about:blank';
 ---
 
 <div
   class="docshelf-viewer"
   data-docshelf-viewer
   data-artifacts={JSON.stringify(artifacts)}
-  data-catalog-revision={manifest.catalogRevision}
+  data-shelf-revision={shelf.shelfRevision}
   data-docshelf-live-updates={String(liveUpdatesEnabled)}
 >
   {
@@ -37,20 +46,31 @@ const initialFrameUrl = initialArtifact
       </div>
     )
   }
+  <div class="artifact-load-error" data-docshelf-artifact-error role="alert" hidden>
+    <strong>Could not load document.</strong>
+    <span data-docshelf-artifact-error-message></span>
+  </div>
   {
-    initialArtifact ? (
-      <section class="document-pane" aria-label="Document viewer" aria-busy="false">
+    <>
+      <section
+        class="document-pane"
+        aria-label="Document viewer"
+        aria-busy="false"
+        hidden={!initialArtifact}
+      >
         <iframe
           data-document-frame
           data-frame-state="active"
-          data-frame-ready="loading"
-          data-artifact-route={initialArtifact.route}
-          data-artifact-revision={initialArtifact.revision}
+          data-frame-ready={initialArtifact ? 'loading' : 'false'}
+          data-artifact-route={initialArtifact?.route || ''}
+          data-artifact-revision={initialArtifact?.revision || ''}
           data-artifact-query=""
           data-artifact-location=""
           data-artifact-url={initialFrameUrl}
-          src={initialFrameUrl}
-          title={initialArtifact.title}
+          src={initialFrameUrl || blankFrameUrl}
+          title={initialArtifact?.title || 'Document viewer'}
+          allow="clipboard-write"
+          allowfullscreen
         />
         <iframe
           data-document-frame
@@ -64,22 +84,96 @@ const initialFrameUrl = initialArtifact
           title="Document preload"
           aria-hidden="true"
           tabindex="-1"
+          allow="clipboard-write"
+          allowfullscreen
         />
       </section>
-    ) : (
-      <div class="empty-state">
+      <div class="empty-state" hidden={Boolean(initialArtifact)} data-docshelf-empty-state>
         <h2>No artifacts are registered</h2>
-        <p>Add an entry to <code>artifacts.local.json</code> to begin.</p>
+        <p>Add an entry to <code>shelf.local.json</code> or add public GitHub Markdown.</p>
       </div>
-    )
+    </>
   }
+
+  <dialog class="import-dialog" data-docshelf-import-dialog aria-labelledby="import-dialog-title">
+    <form data-docshelf-import-form novalidate>
+      <div class="import-dialog-heading">
+        <div>
+          <h2 id="import-dialog-title">Add to shelf</h2>
+          <p>Paste a public GitHub Markdown or Claude Artifact URL.</p>
+        </div>
+        <button class="dialog-close" type="button" data-docshelf-import-close aria-label="Close">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+
+      <label for="import-document-url">Document URL</label>
+      <input
+        id="import-document-url"
+        name="source"
+        type="url"
+        inputmode="url"
+        autocomplete="url"
+        autocapitalize="off"
+        spellcheck="false"
+        placeholder="https://github.com/owner/repository/blob/main/README.md"
+        aria-describedby="import-document-note import-document-error"
+        required
+      />
+
+      <label for="import-document-title">Name <span>(optional)</span></label>
+      <input
+        id="import-document-title"
+        name="title"
+        type="text"
+        maxlength="120"
+        placeholder="Inferred from the document"
+      />
+
+      <p class="import-note" id="import-document-note">
+        Public GitHub Markdown works immediately. For Claude, the owner must add
+        <strong data-docshelf-import-origin></strong> to the Artifact’s allowed domains. Imports
+        are remembered only in this browser.
+      </p>
+      <p
+        class="import-error"
+        id="import-document-error"
+        data-docshelf-import-error
+        role="alert"
+        hidden
+      ></p>
+
+      <div class="import-dialog-actions">
+        <button class="forget-button" type="button" data-docshelf-import-forget hidden>
+          Forget imported documents
+        </button>
+        <span></span>
+        <button class="cancel-button" type="button" data-docshelf-import-close>Cancel</button>
+        <button class="submit-button" type="submit">Add document</button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <script>
+  import { parseClaudeArtifactUrl } from '../lib/claude-artifacts.js';
+  import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
+  import { parseGitHubMarkdownUrl } from '../lib/github-markdown.js';
+
   interface Artifact {
     route: string;
     title: string;
     revision: string;
+    embedUrl?: string;
+    source?: string;
+    sourceType?: 'claude' | 'github-markdown';
+    rawUrl?: string;
+    linkBaseUrl?: string;
+    frameUrl?: string;
+    framePromise?: Promise<string>;
+    imported?: boolean;
   }
 
   interface ArtifactSelection {
@@ -90,7 +184,7 @@ const initialFrameUrl = initialArtifact
 
   interface RevisionState {
     version: number;
-    catalogRevision: string;
+    shelfRevision: string;
     artifacts: Array<{ route: string; revision: string }>;
   }
 
@@ -106,6 +200,8 @@ const initialFrameUrl = initialArtifact
   const buildStatusUrl = `${basePath}__docshelf/status`;
   const revisionParameter = '__docshelf_revision';
   const revisionPollInterval = 3_000;
+  const importedArtifactsStorageKey = 'docshelf:imported-artifacts';
+  const legacyClaudeArtifactsStorageKey = 'docshelf:claude-artifacts';
 
   const viewer = document.querySelector<HTMLElement>('[data-docshelf-viewer]');
 
@@ -159,15 +255,42 @@ const initialFrameUrl = initialArtifact
   function initializeViewer(root: HTMLElement) {
     const artifacts = JSON.parse(root.dataset.artifacts || '[]') as Artifact[];
     const pane = root.querySelector<HTMLElement>('.document-pane');
+    const emptyState = root.querySelector<HTMLElement>('[data-docshelf-empty-state]');
+    const artifactError = root.querySelector<HTMLElement>('[data-docshelf-artifact-error]');
+    const artifactErrorMessage = root.querySelector<HTMLElement>(
+      '[data-docshelf-artifact-error-message]',
+    );
     const frames = Array.from(
       root.querySelectorAll<HTMLIFrameElement>('[data-document-frame]'),
     );
     const initialActiveFrame = frames.find((frame) => frame.dataset.frameState === 'active');
     const initialStagingFrame = frames.find((frame) => frame !== initialActiveFrame);
 
-    if (artifacts.length === 0 || !pane || !initialActiveFrame || !initialStagingFrame) return;
+    if (
+      !pane ||
+      !emptyState ||
+      !artifactError ||
+      !artifactErrorMessage ||
+      !initialActiveFrame ||
+      !initialStagingFrame
+    ) {
+      return;
+    }
 
     const documentPane: HTMLElement = pane;
+    const viewerEmptyState: HTMLElement = emptyState;
+    const viewerArtifactError: HTMLElement = artifactError;
+    const viewerArtifactErrorMessage: HTMLElement = artifactErrorMessage;
+    const importedArtifacts = readImportedArtifacts().filter(
+      (imported) =>
+        !artifacts.some(
+          (hosted) =>
+            hosted.route === imported.route || artifactsShareRemoteSource(hosted, imported),
+        ),
+    );
+    for (const artifact of importedArtifacts) {
+      artifacts.push(artifact);
+    }
     let activeFrame: HTMLIFrameElement = initialActiveFrame;
     let stagingFrame: HTMLIFrameElement = initialStagingFrame;
 
@@ -184,12 +307,15 @@ const initialFrameUrl = initialArtifact
     const bridgedDocuments = new WeakSet<Document>();
     const pendingRefreshes = new Set<string>();
 
+    initializeImportDialog();
+
     for (const frame of frames) {
       frame.addEventListener('load', () => {
         bridgeFrameLinks(frame);
         if (
-          frame === activeFrame &&
           currentArtifact &&
+          supportsLineSelection(currentArtifact) &&
+          frame === activeFrame &&
           currentSelection &&
           frame.dataset.artifactRoute === currentArtifact.route
         ) {
@@ -203,6 +329,11 @@ const initialFrameUrl = initialArtifact
     }
 
     for (const { link, route } of sidebarLinks) {
+      registerSidebarLink(link, route);
+    }
+    for (const artifact of importedArtifacts) addImportedSidebarLink(artifact);
+
+    function registerSidebarLink(link: HTMLAnchorElement, route: string) {
       link.addEventListener('click', (event) => {
         if (
           event.defaultPrevented ||
@@ -246,7 +377,8 @@ const initialFrameUrl = initialArtifact
     });
 
     window.addEventListener('popstate', () => {
-      selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
+      const fallback = artifacts[0];
+      if (fallback) selectArtifact(requestedSelection() || emptySelection(fallback.route), 'none');
     });
     window.addEventListener('message', handleFrameMessage);
     if (root.dataset.docshelfLiveUpdates === 'true') {
@@ -259,7 +391,201 @@ const initialFrameUrl = initialArtifact
       }, revisionPollInterval);
     }
 
-    selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
+    if (artifacts.length > 0) {
+      showDocumentPane();
+      selectArtifact(requestedSelection() || emptySelection(artifacts[0].route), 'none');
+    } else {
+      showEmptyState();
+    }
+
+    function initializeImportDialog() {
+      const dialog = root.querySelector<HTMLDialogElement>('[data-docshelf-import-dialog]');
+      const form = root.querySelector<HTMLFormElement>('[data-docshelf-import-form]');
+      const sourceInput = form?.elements.namedItem('source');
+      const titleInput = form?.elements.namedItem('title');
+      const error = root.querySelector<HTMLElement>('[data-docshelf-import-error]');
+      const origin = root.querySelector<HTMLElement>('[data-docshelf-import-origin]');
+      const forgetButton = root.querySelector<HTMLButtonElement>('[data-docshelf-import-forget]');
+      const openButton = document.querySelector<HTMLButtonElement>('[data-docshelf-import-open]');
+      const closeButtons = root.querySelectorAll<HTMLButtonElement>('[data-docshelf-import-close]');
+      const submitButton = form?.querySelector<HTMLButtonElement>('[type="submit"]');
+
+      if (
+        !dialog ||
+        !form ||
+        !(sourceInput instanceof HTMLInputElement) ||
+        !(titleInput instanceof HTMLInputElement) ||
+        !error ||
+        !origin ||
+        !forgetButton ||
+        !openButton ||
+        !submitButton
+      ) {
+        return;
+      }
+
+      const importForm: HTMLFormElement = form;
+      const importSubmitButton: HTMLButtonElement = submitButton;
+      let importAttempt = 0;
+      origin.textContent = window.location.origin;
+      forgetButton.hidden = importedArtifacts.length === 0;
+      const closeDialog = () => {
+        if (typeof dialog.close === 'function') dialog.close();
+        else {
+          dialog.removeAttribute('open');
+          dialog.dispatchEvent(new Event('close'));
+        }
+      };
+      openButton.addEventListener('click', () => {
+        error.hidden = true;
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+        else dialog.setAttribute('open', '');
+        sourceInput.focus();
+      });
+      for (const button of closeButtons) button.addEventListener('click', closeDialog);
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) closeDialog();
+      });
+      dialog.addEventListener('close', () => {
+        importAttempt += 1;
+        setImportPending(false);
+        form.reset();
+        error.hidden = true;
+      });
+      forgetButton.addEventListener('click', () => {
+        removeStoredImportedArtifacts();
+        window.location.reload();
+      });
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (importSubmitButton.disabled) return;
+        const attempt = ++importAttempt;
+        const source = sourceInput.value.trim();
+        const claudeSource = parseClaudeArtifactUrl(source);
+        const markdownSource = parseGitHubMarkdownUrl(source);
+        if (!claudeSource && !markdownSource) {
+          error.textContent =
+            'Enter a public GitHub Markdown file or a public Claude Artifact URL.';
+          error.hidden = false;
+          sourceInput.focus();
+          return;
+        }
+
+        const requestedTitle = titleInput.value.trim();
+        const candidate = claudeSource
+          ? importedClaudeArtifact(
+              claudeSource,
+              requestedTitle || `Claude Artifact ${claudeSource.artifactId.slice(0, 8)}`,
+            )
+          : importedGitHubMarkdown(markdownSource!, requestedTitle);
+        const existingBySource = artifacts.find((artifact) =>
+          artifactsShareRemoteSource(artifact, candidate),
+        );
+        if (existingBySource && !existingBySource.imported) {
+          error.textContent = 'This document is already part of the hosted shelf.';
+          error.hidden = false;
+          return;
+        }
+
+        const existingByRoute = artifacts.find(
+          (artifact) => artifact.route === candidate.route,
+        );
+        if (existingByRoute && existingByRoute !== existingBySource) {
+          error.textContent = 'Another document already uses this import’s generated route.';
+          error.hidden = false;
+          return;
+        }
+
+        const existing = existingBySource || existingByRoute;
+        const artifact = existing ? { ...existing } : candidate;
+        if (requestedTitle) artifact.title = requestedTitle;
+        error.hidden = true;
+        setImportPending(true);
+
+        try {
+          if (artifact.sourceType === 'github-markdown') {
+            if (requestedTitle && artifact.frameUrl) {
+              delete artifact.frameUrl;
+              delete artifact.framePromise;
+            }
+            await resolveArtifactFrameUrl(artifact);
+          }
+
+          if (attempt !== importAttempt || !dialog.hasAttribute('open')) {
+            if (artifact.frameUrl !== existing?.frameUrl) releaseArtifactFrame(artifact);
+            return;
+          }
+
+          if (existing) {
+            if (existing.frameUrl !== artifact.frameUrl) releaseArtifactFrame(existing);
+            Object.assign(existing, artifact);
+            const existingLink = sidebarLinks.find((entry) => entry.route === artifact.route)?.link;
+            if (existingLink) existingLink.textContent = artifact.title;
+          } else {
+            artifacts.push(artifact);
+            importedArtifacts.push(artifact);
+            addImportedSidebarLink(artifact);
+          }
+          writeImportedArtifacts(importedArtifacts);
+          forgetButton.hidden = false;
+          closeDialog();
+          showDocumentPane();
+          selectArtifact(emptySelection(artifact.route), 'push', true);
+        } catch (caught) {
+          if (attempt !== importAttempt || !dialog.hasAttribute('open')) return;
+          error.textContent = importErrorMessage(caught);
+          error.hidden = false;
+        } finally {
+          if (attempt === importAttempt) setImportPending(false);
+        }
+      });
+
+      function setImportPending(pending: boolean) {
+        importForm.setAttribute('aria-busy', String(pending));
+        importSubmitButton.disabled = pending;
+        importSubmitButton.textContent = pending ? 'Adding…' : 'Add document';
+      }
+    }
+
+    function addImportedSidebarLink(artifact: Artifact) {
+      const topLevel = document.querySelector<HTMLUListElement>(
+        '#starlight__sidebar ul.top-level',
+      );
+      if (!topLevel || topLevel.querySelector(`[data-docshelf-route="${artifact.route}"]`)) return;
+
+      let list = topLevel.querySelector<HTMLUListElement>('[data-docshelf-imported-list]');
+      if (!list) {
+        const group = document.createElement('li');
+        group.dataset.docshelfImportedGroup = '';
+        const label = document.createElement('div');
+        label.className = 'docshelf-imported-label';
+        label.textContent = 'Imported';
+        list = document.createElement('ul');
+        list.dataset.docshelfImportedList = '';
+        group.append(label, list);
+        topLevel.append(group);
+      }
+
+      const item = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = artifactViewerUrl(emptySelection(artifact.route));
+      link.dataset.docshelfRoute = artifact.route;
+      link.textContent = artifact.title;
+      item.append(link);
+      list.append(item);
+      sidebarLinks.push({ link, route: artifact.route });
+      registerSidebarLink(link, artifact.route);
+    }
+
+    function showDocumentPane() {
+      documentPane.hidden = false;
+      viewerEmptyState.hidden = true;
+    }
+
+    function showEmptyState() {
+      documentPane.hidden = true;
+      viewerEmptyState.hidden = false;
+    }
 
     function closeMobileNavigation() {
       // Frame swaps do not navigate the page, so use Starlight's toggle to
@@ -290,6 +616,7 @@ const initialFrameUrl = initialArtifact
       currentArtifact = artifact;
       currentSelection = selection;
       document.title = `${artifact.title} | DocShelf`;
+      hideArtifactError();
 
       if (changed || forceRefresh) void displayArtifact(artifact, selection);
 
@@ -315,7 +642,21 @@ const initialFrameUrl = initialArtifact
 
     async function displayArtifact(artifact: Artifact, selection: ArtifactSelection) {
       const requestId = ++navigationId;
-      const rawUrl = artifactFrameUrl(artifact, selection);
+      documentPane.setAttribute('aria-busy', 'true');
+
+      let rawUrl;
+      try {
+        rawUrl = await resolveArtifactFrameUrl(artifact, selection);
+      } catch (caught) {
+        if (requestId === navigationId) {
+          showArtifactError(importErrorMessage(caught));
+          pendingRefreshes.delete(artifact.route);
+          documentPane.setAttribute('aria-busy', 'false');
+        }
+        return;
+      }
+      if (requestId !== navigationId) return;
+      pendingRefreshes.add(artifact.route);
 
       if (
         frameMatches(activeFrame, artifact, selection) &&
@@ -324,12 +665,13 @@ const initialFrameUrl = initialArtifact
         pendingRefreshes.delete(artifact.route);
         activeFrame.title = artifact.title;
         bridgeFrameLinks(activeFrame);
-        applyLineSelectionToFrame(activeFrame, selection);
+        if (supportsLineSelection(artifact)) applyLineSelectionToFrame(activeFrame, selection);
         documentPane.setAttribute('aria-busy', 'false');
         return;
       }
 
       if (
+        supportsLineSelection(artifact) &&
         frameCanApplyFragment(activeFrame, artifact, selection) &&
         activeFrame.dataset.frameReady !== 'false'
       ) {
@@ -342,9 +684,6 @@ const initialFrameUrl = initialArtifact
         documentPane.setAttribute('aria-busy', 'false');
         return;
       }
-
-      documentPane.setAttribute('aria-busy', 'true');
-      pendingRefreshes.add(artifact.route);
 
       if (
         frameMatches(stagingFrame, artifact, selection) &&
@@ -409,9 +748,19 @@ const initialFrameUrl = initialArtifact
 
       activeFrame = nextFrame;
       stagingFrame = previousFrame;
-      applyLineSelectionToFrame(activeFrame, selection);
+      if (supportsLineSelection(artifact)) applyLineSelectionToFrame(activeFrame, selection);
       pendingRefreshes.delete(artifact.route);
       documentPane.setAttribute('aria-busy', 'false');
+    }
+
+    function showArtifactError(message: string) {
+      viewerArtifactErrorMessage.textContent = message;
+      viewerArtifactError.hidden = false;
+    }
+
+    function hideArtifactError() {
+      viewerArtifactErrorMessage.textContent = '';
+      viewerArtifactError.hidden = true;
     }
 
     function handleFrameMessage(event: MessageEvent) {
@@ -430,7 +779,8 @@ const initialFrameUrl = initialArtifact
       if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
       try {
         // Ignore a queued message if the frame has already navigated again.
-        if (activeFrame.contentWindow?.location.hash !== hash) return;
+        // Blob-backed imports keep their selection in the parent URL only.
+        if (!currentArtifact.frameUrl && activeFrame.contentWindow?.location.hash !== hash) return;
       } catch {
         return;
       }
@@ -512,7 +862,7 @@ const initialFrameUrl = initialArtifact
         const state = (await response.json()) as RevisionState;
         if (!validRevisionState(state)) return;
 
-        if (state.catalogRevision !== root.dataset.catalogRevision) {
+        if (state.shelfRevision !== root.dataset.shelfRevision) {
           window.location.reload();
           return;
         }
@@ -564,8 +914,193 @@ const initialFrameUrl = initialArtifact
     }
   }
 
+  function importedClaudeArtifact(
+    parsed: NonNullable<ReturnType<typeof parseClaudeArtifactUrl>>,
+    title: string,
+  ): Artifact {
+    const revisionSeed = parsed.artifactId.replaceAll('-', '');
+    return {
+      route: `claude/${parsed.artifactId}.html`,
+      title,
+      revision: `${revisionSeed}${revisionSeed}`,
+      source: parsed.publicUrl,
+      sourceType: 'claude',
+      embedUrl: parsed.embedUrl,
+      imported: true,
+    };
+  }
+
+  function importedGitHubMarkdown(
+    parsed: NonNullable<ReturnType<typeof parseGitHubMarkdownUrl>>,
+    title: string,
+  ): Artifact {
+    const identity = stableHash(parsed.rawUrl);
+    const revisionSeed = `${identity}${stableHash(parsed.rawUrl, 0x9e3779b9)}`;
+    const fileSlug = parsed.fileName
+      .replace(/\.(?:md|markdown)$/i, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'document';
+
+    return {
+      route: `github/${parsed.owner.toLowerCase()}/${parsed.repository.toLowerCase()}/${fileSlug}-${identity}.html`,
+      title,
+      revision: revisionSeed.repeat(4),
+      source: parsed.sourceUrl,
+      sourceType: 'github-markdown',
+      rawUrl: parsed.rawUrl,
+      linkBaseUrl: parsed.linkBaseUrl,
+      imported: true,
+    };
+  }
+
+  function readImportedArtifacts(): Artifact[] {
+    try {
+      const stored = [
+        ...readStoredEntries(importedArtifactsStorageKey),
+        ...readStoredEntries(legacyClaudeArtifactsStorageKey),
+      ];
+
+      const artifacts: Artifact[] = [];
+      for (const entry of stored) {
+        if (
+          !entry ||
+          typeof entry !== 'object' ||
+          !('source' in entry) ||
+          !('title' in entry) ||
+          typeof entry.source !== 'string' ||
+          typeof entry.title !== 'string'
+        ) {
+          continue;
+        }
+        const title = entry.title.trim().slice(0, 120);
+        if (!title) continue;
+
+        const claudeSource = parseClaudeArtifactUrl(entry.source);
+        const markdownSource = parseGitHubMarkdownUrl(entry.source);
+        const artifact = claudeSource
+          ? importedClaudeArtifact(claudeSource, title)
+          : markdownSource
+            ? importedGitHubMarkdown(markdownSource, title)
+            : null;
+        if (!artifact) continue;
+        if (
+          !artifacts.some(
+            (candidate) =>
+              candidate.route === artifact.route ||
+              artifactsShareRemoteSource(candidate, artifact),
+          )
+        ) {
+          artifacts.push(artifact);
+        }
+      }
+      return artifacts;
+    } catch {
+      return [];
+    }
+  }
+
+  function readStoredEntries(key: string): unknown[] {
+    const stored = JSON.parse(window.localStorage.getItem(key) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function writeImportedArtifacts(artifacts: Artifact[]) {
+    try {
+      window.localStorage.setItem(
+        importedArtifactsStorageKey,
+        JSON.stringify(artifacts.map(({ source, title }) => ({ source, title }))),
+      );
+    } catch {
+      // The opened Artifact remains usable for this page load when storage is unavailable.
+    }
+  }
+
+  function removeStoredImportedArtifacts() {
+    try {
+      window.localStorage.removeItem(importedArtifactsStorageKey);
+      window.localStorage.removeItem(legacyClaudeArtifactsStorageKey);
+    } catch {
+      // Reloading still resets any in-memory imports for this page load.
+    }
+  }
+
+  async function resolveArtifactFrameUrl(
+    artifact: Artifact,
+    selection?: ArtifactSelection,
+  ): Promise<string> {
+    if (artifact.sourceType !== 'github-markdown') {
+      return artifactFrameUrl(artifact, selection || emptySelection(artifact.route));
+    }
+    if (artifact.frameUrl) return artifact.frameUrl;
+    if (artifact.framePromise) return artifact.framePromise;
+
+    const loading = (async () => {
+      const { fetchRemoteMarkdown, renderRemoteMarkdownDocument } =
+        await import('../lib/remote-markdown.js');
+      const parsed = parseGitHubMarkdownUrl(artifact.source || artifact.rawUrl || '');
+      if (!parsed) throw new Error('The saved GitHub Markdown URL is no longer valid.');
+
+      const loaded = await fetchRemoteMarkdown(artifact.rawUrl || parsed.rawUrl);
+      const rendered = await renderRemoteMarkdownDocument(loaded.markdown, {
+        title: artifact.title,
+        fallbackTitle: parsed.fileName,
+        sourceUrl: artifact.source || parsed.sourceUrl,
+        assetBaseUrl: loaded.assetBaseUrl,
+        linkBaseUrl: artifact.linkBaseUrl || parsed.linkBaseUrl,
+        stylesheetUrl: new URL(`${basePath}markdown-tokyo-night.css`, window.location.href).href,
+        lineLinksScriptUrl: new URL(
+          `${basePath}markdown-line-links.js`,
+          window.location.href,
+        ).href,
+      });
+      artifact.title = rendered.title;
+      artifact.frameUrl = URL.createObjectURL(
+        new Blob([rendered.html], { type: 'text/html;charset=utf-8' }),
+      );
+      return artifact.frameUrl;
+    })();
+
+    artifact.framePromise = loading;
+    try {
+      return await loading;
+    } finally {
+      if (artifact.framePromise === loading) delete artifact.framePromise;
+    }
+  }
+
+  function releaseArtifactFrame(artifact: Artifact) {
+    if (artifact.frameUrl) URL.revokeObjectURL(artifact.frameUrl);
+    delete artifact.frameUrl;
+    delete artifact.framePromise;
+  }
+
+  function supportsLineSelection(artifact: Artifact) {
+    return !artifact.embedUrl;
+  }
+
+  function importErrorMessage(caught: unknown) {
+    if (!(caught instanceof Error) || !caught.message) {
+      return 'Could not load this document.';
+    }
+    if (/failed to fetch/i.test(caught.message)) {
+      return 'Could not fetch this public Markdown file from GitHub.';
+    }
+    return caught.message.slice(0, 240);
+  }
+
+  function stableHash(value: string, seed = 0x811c9dc5) {
+    let hash = seed;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
   function loadFrame(frame: HTMLIFrameElement, rawUrl: string) {
     const expectedUrl = new URL(rawUrl, window.location.href).href;
+    const isCrossOrigin = new URL(expectedUrl).origin !== window.location.origin;
 
     return new Promise<boolean>((resolve) => {
       const timeoutId = window.setTimeout(() => finish(false), 15_000);
@@ -581,6 +1116,11 @@ const initialFrameUrl = initialArtifact
       };
 
       frame.addEventListener('load', handleLoad);
+      if (isCrossOrigin) {
+        frame.src = expectedUrl;
+        return;
+      }
+
       try {
         if (frame.contentWindow) {
           frame.contentWindow.location.replace(rawUrl);
@@ -601,7 +1141,7 @@ const initialFrameUrl = initialArtifact
     try {
       frameDocument = frame.contentDocument;
     } catch {
-      // Artifacts are normally same-origin. A future external frame can still use load + paint.
+      // Cross-origin Claude frames can still use load + paint.
     }
 
     if (frameDocument?.fonts) {
@@ -660,8 +1200,10 @@ const initialFrameUrl = initialArtifact
 
   function frameHasLoadedUrl(frame: HTMLIFrameElement, expectedUrl: string) {
     try {
+      const frameDocument = frame.contentDocument;
+      if (!frameDocument) return frame.src === expectedUrl;
       return (
-        frame.contentDocument?.readyState === 'complete' &&
+        frameDocument.readyState === 'complete' &&
         frame.contentWindow?.location.href === expectedUrl
       );
     } catch {
@@ -684,7 +1226,10 @@ const initialFrameUrl = initialArtifact
 
   function artifactRouteFromLink(link: HTMLAnchorElement) {
     const url = new URL(link.href, window.location.href);
-    if (url.origin !== window.location.origin || !url.pathname.startsWith(artifactRootPath)) return null;
+    if (url.origin !== window.location.origin) return null;
+    const selectedRoute = url.pathname === basePath && url.searchParams.get('artifact');
+    if (selectedRoute) return selectedRoute;
+    if (!url.pathname.startsWith(artifactRootPath)) return null;
     try {
       return decodeURIComponent(url.pathname.slice(artifactRootPath.length));
     } catch {
@@ -700,6 +1245,7 @@ const initialFrameUrl = initialArtifact
     return (
       frame.dataset.artifactRoute === artifact.route &&
       frame.dataset.artifactRevision === artifact.revision &&
+      (!artifact.frameUrl || frame.dataset.artifactUrl === artifact.frameUrl) &&
       frame.dataset.artifactLocation === artifactLocation(selection)
     );
   }
@@ -713,6 +1259,7 @@ const initialFrameUrl = initialArtifact
       return (
         frame.dataset.artifactRoute === artifact.route &&
         frame.dataset.artifactRevision === artifact.revision &&
+        (!artifact.frameUrl || frame.dataset.artifactUrl === artifact.frameUrl) &&
         frame.dataset.artifactQuery === selection.query &&
         frame.contentDocument?.querySelector<HTMLElement>('.markdown-document')
           ?.dataset.docshelfLineLinks === 'true'
@@ -737,6 +1284,9 @@ const initialFrameUrl = initialArtifact
   }
 
   function artifactFrameUrl(artifact: Artifact, selection: ArtifactSelection) {
+    if (artifact.frameUrl) return artifact.frameUrl;
+    if (artifact.embedUrl) return artifact.embedUrl;
+
     const url = new URL(`${artifactRootPath}${artifact.route}`, window.location.href);
     url.search = selection.query ? `?${selection.query}` : '';
     url.searchParams.set(revisionParameter, artifact.revision);
@@ -791,7 +1341,7 @@ const initialFrameUrl = initialArtifact
   function validRevisionState(state: RevisionState) {
     return (
       state?.version === 1 &&
-      typeof state.catalogRevision === 'string' &&
+      typeof state.shelfRevision === 'string' &&
       Array.isArray(state.artifacts) &&
       state.artifacts.every(
         (artifact) =>
@@ -875,6 +1425,11 @@ const initialFrameUrl = initialArtifact
     border-inline-start-color: transparent;
   }
 
+  /* Retain Starlight's sidebar shell for imports, without an empty disclosure. */
+  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty)) {
+    display: none;
+  }
+
   :global(html:has(.docshelf-viewer) main) {
     height: calc(100vh - var(--sl-nav-height));
     min-width: 0;
@@ -913,6 +1468,41 @@ const initialFrameUrl = initialArtifact
     font-weight: 600;
   }
 
+  :global(.docshelf-imported-label) {
+    padding: 0.2em 0.5rem;
+    color: var(--sl-color-white);
+    font-size: var(--sl-text-base);
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  :global([data-docshelf-imported-list]) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  :global([data-docshelf-imported-list] li) {
+    margin-inline-start: 0.5rem;
+    padding-inline-start: 0.5rem;
+  }
+
+  :global([data-docshelf-imported-list] a) {
+    display: block;
+    padding: 0.3em 0.5rem;
+    border-radius: 0.25rem;
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+  }
+
+  :global([data-docshelf-imported-list] a:hover),
+  :global([data-docshelf-imported-list] a:focus) {
+    color: var(--sl-color-white);
+  }
+
   .docshelf-viewer,
   .document-pane {
     height: 100%;
@@ -925,7 +1515,8 @@ const initialFrameUrl = initialArtifact
     background: var(--docshelf-artifact-background);
   }
 
-  .build-status-banner {
+  .build-status-banner,
+  .artifact-load-error {
     position: absolute;
     z-index: 3;
     inset-block-start: 1rem;
@@ -944,7 +1535,8 @@ const initialFrameUrl = initialArtifact
     overflow-wrap: anywhere;
   }
 
-  .build-status-banner[hidden] {
+  .build-status-banner[hidden],
+  .artifact-load-error[hidden] {
     display: none;
   }
 
@@ -989,5 +1581,187 @@ const initialFrameUrl = initialArtifact
   .empty-state p {
     margin-top: 0.75rem;
     color: var(--sl-color-gray-3);
+  }
+
+  .import-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 0.75rem;
+    background: var(--sl-color-bg);
+    box-shadow: var(--sl-shadow-lg);
+    color: var(--sl-color-white);
+  }
+
+  .import-dialog::backdrop {
+    background: rgb(0 0 0 / 62%);
+  }
+
+  .import-dialog form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1.25rem;
+  }
+
+  .import-dialog-heading {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+  }
+
+  .import-dialog h2,
+  .import-dialog p {
+    margin: 0;
+  }
+
+  .import-dialog h2 {
+    font-size: var(--sl-text-xl);
+    line-height: 1.25;
+  }
+
+  .import-dialog-heading p,
+  .import-note {
+    margin-top: 0.35rem;
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+
+  .import-dialog label {
+    margin-top: 0.35rem;
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+  }
+
+  .import-dialog label span {
+    color: var(--sl-color-gray-3);
+    font-weight: 400;
+  }
+
+  .import-dialog input {
+    min-height: 2.75rem;
+    width: 100%;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 0.5rem;
+    padding: 0.65rem 0.75rem;
+    background: var(--sl-color-black);
+    color: var(--sl-color-white);
+    font: inherit;
+  }
+
+  .import-dialog input:focus-visible {
+    border-color: var(--sl-color-accent);
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+  }
+
+  .import-note strong {
+    color: var(--sl-color-gray-2);
+    overflow-wrap: anywhere;
+  }
+
+  .import-error {
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--sl-color-red);
+    border-radius: 0.5rem;
+    background: var(--sl-color-red-low);
+    color: var(--sl-color-red-high);
+    font-size: var(--sl-text-sm);
+    line-height: 1.4;
+  }
+
+  .import-error[hidden] {
+    display: none;
+  }
+
+  .import-dialog-actions {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-top: 0.6rem;
+  }
+
+  .import-dialog-actions > span {
+    flex: 1;
+  }
+
+  .import-dialog button {
+    min-height: 2.75rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    background: transparent;
+    color: var(--sl-color-white);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+  }
+
+  .import-dialog button:hover {
+    background: var(--sl-color-gray-6);
+  }
+
+  .import-dialog button:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  .import-dialog button:focus-visible {
+    outline: 3px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .import-dialog .submit-button {
+    border-color: var(--sl-color-text-accent);
+    background: var(--sl-color-text-accent);
+    color: var(--sl-color-text-invert);
+  }
+
+  .import-dialog .dialog-close {
+    display: inline-flex;
+    width: 2.75rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem;
+  }
+
+  .dialog-close svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.75;
+  }
+
+  .forget-button {
+    color: var(--sl-color-gray-3) !important;
+    font-size: var(--sl-text-sm) !important;
+    font-weight: 500 !important;
+  }
+
+  @media (max-width: 34rem) {
+    .import-dialog-actions {
+      flex-wrap: wrap;
+    }
+
+    .import-dialog-actions > span {
+      display: none;
+    }
+
+    .forget-button {
+      width: 100%;
+    }
+
+    .cancel-button,
+    .submit-button {
+      flex: 1;
+    }
   }
 </style>

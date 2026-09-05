@@ -56,12 +56,29 @@ test('fragment commands from unrelated windows or origins are ignored', () => {
   assert.deepEqual(page.selected(), ['2']);
 });
 
+test('Blob imports restore sections, selections, and the top without rewriting Blob history', () => {
+  const page = runLineLinks({ blob: true });
+  page.apply('#security');
+  page.apply('#security');
+  assert.equal(page.heading.scrolls, 1);
+  page.apply('#L2');
+  assert.deepEqual(page.selected(), ['2']);
+  page.apply('');
+  assert.deepEqual(page.selected(), []);
+  assert.equal(page.topScrolls, 1);
+  assert.equal(page.location.hash, '');
+  assert.equal(page.history.length, 0);
+  assert.equal(page.messages.length, 0);
+});
+
 // A small DOM surface runs the actual browser script. Geometry is fixed here;
 // real scrolling and joint session history are checked in the browser.
-function runLineLinks({ hash, standalone = false }) {
+function runLineLinks({ hash = '', standalone = false, blob = false }) {
   const listeners = new Map();
   const messages = [], history = [], events = [];
-  const location = new URL(`http://shelf.localhost/artifacts/test.html?__docshelf_revision=test${hash}`);
+  const location = new URL(blob
+    ? `blob:http://shelf.localhost/test${hash}`
+    : `http://shelf.localhost/artifacts/test.html?__docshelf_revision=test${hash}`);
   const makeElement = () => ({
     dataset: {}, children: [], attributes: new Map(), scrolls: 0,
     style: { setProperty() {} },

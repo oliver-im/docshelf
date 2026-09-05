@@ -10,9 +10,10 @@ import chokidar from 'chokidar';
 import {
   artifactSourcesMatch,
   docShelfRoot,
-  defaultManifestPath,
-  loadArtifactManifest,
-  localManifestPath,
+  defaultShelfPath,
+  loadShelf,
+  localShelfPath,
+  legacyLocalShelfPath,
   runtimeRoot,
   syncArtifacts,
 } from './artifacts.mjs';
@@ -71,7 +72,7 @@ let buildSequence = 0;
 const pendingReasons = new Set();
 const watchedSources = new Set();
 
-const watcher = chokidar.watch([defaultManifestPath, localManifestPath], {
+const watcher = chokidar.watch([defaultShelfPath, localShelfPath, legacyLocalShelfPath], {
   ignoreInitial: true,
   awaitWriteFinish: {
     stabilityThreshold: 200,
@@ -167,8 +168,8 @@ async function rebuild(reasons) {
     });
     // A signal that arrived while waiting for the lock must not start a sync or a build now.
     throwIfShuttingDown();
-    const manifest = await loadArtifactManifest();
-    const revisionState = await syncArtifacts(manifest, { lock: false });
+    const shelf = await loadShelf();
+    const revisionState = await syncArtifacts(shelf, { lock: false });
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
 
@@ -176,7 +177,7 @@ async function rebuild(reasons) {
     const { exitCode, output } = await runAstroBuild(buildRoot);
     if (exitCode !== 0) {
       process.stderr.write(output);
-      if (!(await artifactSourcesMatch(manifest, revisionState))) {
+      if (!(await artifactSourcesMatch(shelf, revisionState))) {
         requestFreshBuild('registered source changed during build');
       }
       throw Object.assign(new Error(`Astro exited with code ${exitCode}.`), { details: output });
@@ -185,12 +186,12 @@ async function rebuild(reasons) {
     if (!(await isSuccessfulBuild(buildRoot))) {
       throw new Error('The build did not produce index.html.');
     }
-    if (!(await artifactSourcesMatch(manifest, revisionState))) {
+    if (!(await artifactSourcesMatch(shelf, revisionState))) {
       requestFreshBuild('registered source changed during build');
       throw new Error('Registered sources changed during the build.');
     }
 
-    await refreshSourceWatches(manifest);
+    await refreshSourceWatches(shelf);
     if ((await siteInputsSignature(docShelfRoot)) !== siteSignature) {
       requestFreshBuild('DocShelf site files changed during build');
       throw new Error('DocShelf site files changed during the build.');
@@ -203,7 +204,7 @@ async function rebuild(reasons) {
     );
     await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
-    console.log(`[build] Published ${manifest.artifacts.length} artifacts in ${seconds}s.`);
+    console.log(`[build] Published ${shelf.artifacts.length} artifacts in ${seconds}s.`);
 
     if (previousBuildRoot && isWithin(runtimeRoot, previousBuildRoot)) {
       setTimeout(() => {
@@ -269,9 +270,13 @@ function runAstroBuild(buildRoot) {
   });
 }
 
-async function refreshSourceWatches(existingManifest) {
-  const manifest = existingManifest || (await loadArtifactManifest());
-  const nextSources = new Set(manifest.artifacts.map((artifact) => artifact.sourcePath));
+async function refreshSourceWatches(existingShelf) {
+  const shelf = existingShelf || (await loadShelf());
+  const nextSources = new Set(
+    shelf.artifacts.flatMap((artifact) =>
+      artifact.sourcePath ? [artifact.sourcePath] : [],
+    ),
+  );
 
   for (const sourcePath of watchedSources) {
     if (!nextSources.has(sourcePath)) {

@@ -111,7 +111,28 @@ body {
   padding-block: 3rem 5rem;
 }
 
-.markdown-document > :first-child {
+.markdown-document[data-docshelf-remote-markdown] {
+  padding-block-start: 3.5rem;
+}
+
+.markdown-source {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-end: var(--docshelf-content-inset-end);
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.markdown-source a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+}
+
+.markdown-document > :first-child,
+.markdown-document > .markdown-source + * {
   margin-block-start: 0;
 }
 
@@ -412,6 +433,18 @@ table {
   border-collapse: collapse;
   font-size: 0.94rem;
   line-height: 1.55;
+}
+
+/* Browser imports do not use the registered-document table wrappers. */
+[data-docshelf-remote-markdown] table {
+  display: block;
+  max-width: 100%;
+  margin-block: 1.25rem;
+  overflow-x: auto;
+}
+
+[data-docshelf-remote-markdown] :is(th, td) code {
+  white-space: nowrap;
 }
 
 th,

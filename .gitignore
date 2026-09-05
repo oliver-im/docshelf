@@ -3,6 +3,8 @@ dist/
 .astro/
 .docshelf-runtime/
 .playwright-mcp/
+shelf.local.json
+# Keep pre-shelf local registrations private after upgrading.
 artifacts.local.json
 public/artifacts/
 src/generated/

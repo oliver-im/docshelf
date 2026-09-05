@@ -1,6 +1,6 @@
 ---
 name: docshelf
-description: Register HTML or Markdown documents with DocShelf when the user asks to add them to the shelf, preserving their sources and verifying the resulting local URLs.
+description: Register local HTML or Markdown documents and published Claude Artifacts with DocShelf when the user asks to add them to the shelf, preserving their sources and verifying the resulting local URLs.
 ---
 
 # DocShelf
@@ -13,21 +13,29 @@ description: Register HTML or Markdown documents with DocShelf when the user ask
 
 ## Register the artifact
 
-- Resolve “this” from an explicitly named, attached, current, or just-created file. If more than one file is plausible, ask which one.
+- Resolve “this” from an explicitly named, attached, current, or just-created
+  file, or from an explicitly supplied published Claude Artifact URL. If more
+  than one source is plausible, ask which one.
 - When creation and registration are requested together, register only after the
   source artifact has been finished and verified by the authoring task.
-- Accept only HTML or Markdown sources supported by DocShelf and contained within its workspace.
-- Read DocShelf's `AGENTS.md` and the registration section of its `README.md` before changing the manifest.
-- Add the source to `artifacts.local.json`, creating that file from `artifacts.json` if needed. Never add registrations to `artifacts.json`.
+- Accept only HTML or Markdown files supported by DocShelf and contained within
+  its workspace, or an exact public HTTPS Claude Artifact link of the form
+  `claude.ai/public/artifacts/<id>`. Do not register other remote URLs.
+- Read DocShelf's `AGENTS.md` and the registration section of its `README.md` before changing the shelf.
+- Add the source to `shelf.local.json`, creating that file from `shelf.json` if needed. Never add registrations to `shelf.json`.
 - Preserve existing registrations and update an existing entry instead of creating a duplicate.
 - Infer metadata without asking when it is clear:
   - derive `project` from the owning repository or project directory;
-  - store `source` relative to the DocShelf checkout;
+  - store local `source` paths relative to the DocShelf checkout, and store
+    Claude Artifact sources as their canonical public links;
   - use a stable, lowercase `<project>/<document>.html` route;
   - take `title` from the document title or primary heading, falling back to a humanized filename;
   - write a short factual `description` based on the document's purpose.
 - Ask only when the source or required metadata cannot be inferred safely.
-- Before changing the manifest, probe
+- For a Claude Artifact, tell the user that its owner must add the DocShelf
+  origin to the Artifact's **Allowed domains** in Claude's **Get embed code**
+  settings. Do not download or modify the Artifact.
+- Before changing the shelf, probe
   `http://shelf.localhost:<port>/__docshelf/status`. If it is available, record
   its `instanceId` and `generation` so the resulting rebuild can be identified.
 - Do not modify the source artifact, commit machine-local registrations, or edit

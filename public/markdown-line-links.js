@@ -32,6 +32,7 @@
   root.dataset.docshelfLineLinks = 'true';
   let anchor = null;
   let selection = null;
+  let appliedHash = window.location.hash;
   const lineGroups = [];
   const lineControls = [];
   const rootStyle = window.getComputedStyle(root);
@@ -307,7 +308,7 @@
 
     const hash = event.data.hash;
     if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
-    const changed = window.location.hash !== hash;
+    const changed = appliedHash !== hash;
     replaceFrameHash(hash);
     applyHash(hash, event.data.scroll !== false);
     if (changed && event.data.scroll !== false && !parseLineFragment(hash)) {
@@ -323,6 +324,7 @@
     if (changed) window.dispatchEvent(new Event('docshelf:fragmentchange'));
   });
   window.addEventListener('hashchange', () => {
+    appliedHash = window.location.hash;
     applyHash(window.location.hash, true);
     // Native anchors and iframe history traversal already own their history
     // entry. Mirror its actual fragment without adding or erasing an entry.
@@ -443,8 +445,13 @@
   }
 
   function replaceFrameHash(hash) {
+    appliedHash = hash;
     if (window.parent === window) return;
     const url = new URL(window.location.href);
+    // Browser-imported Markdown uses a Blob URL whose selection lives in the
+    // parent viewer URL. Changing Blob history is unnecessary and is rejected
+    // by some browsers even when the Blob inherits the viewer's origin.
+    if (url.protocol === 'blob:') return;
     url.hash = hash;
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }

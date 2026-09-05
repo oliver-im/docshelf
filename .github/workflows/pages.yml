@@ -35,7 +35,7 @@ jobs:
       - run: npm ci
 
       - name: Register the README demo
-        run: cp .github/pages-artifacts.json artifacts.local.json
+        run: cp .github/pages-shelf.json shelf.local.json
 
       - run: npm test
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-/** Files that shape Astro output besides the generated artifact catalog and snapshots. */
+/** Files that shape Astro output besides the generated shelf and artifact snapshots. */
 const siteInputs = ['astro.config.mjs', 'package-lock.json', 'tsconfig.json', 'public', 'scripts', 'src'];
 const ignoredSiteInputs = new Set(['public/artifacts', 'src/generated']);
 

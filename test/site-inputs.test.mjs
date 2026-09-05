@@ -13,12 +13,12 @@ test('the site signature follows DocShelf files and ignores generated output', a
   await mkdir(path.join(root, 'public', 'artifacts'), { recursive: true });
   await writeFile(path.join(root, 'astro.config.mjs'), 'export default {};\n');
   await writeFile(path.join(root, 'src', 'components', 'Viewer.astro'), '<div />\n');
-  await writeFile(path.join(root, 'src', 'generated', 'artifacts.json'), '{}\n');
+  await writeFile(path.join(root, 'src', 'generated', 'shelf.json'), '{}\n');
   await writeFile(path.join(root, 'public', 'artifacts', 'report.html'), 'v1\n');
   await writeFile(path.join(root, 'public', 'favicon.svg'), '<svg/>\n');
   const initial = await siteInputsSignature(root);
 
-  await writeFile(path.join(root, 'src', 'generated', 'artifacts.json'), '{"changed":true}\n');
+  await writeFile(path.join(root, 'src', 'generated', 'shelf.json'), '{"changed":true}\n');
   await writeFile(path.join(root, 'public', 'artifacts', 'report.html'), 'v2 longer\n');
   assert.equal(await siteInputsSignature(root), initial);
 
