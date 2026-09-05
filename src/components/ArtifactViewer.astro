@@ -162,10 +162,6 @@ const blankFrameUrl = 'about:blank';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '../lib/github-markdown.js';
   import { parseLineFragment } from '../lib/line-permalinks.js';
-  import {
-    fetchRemoteMarkdown,
-    renderRemoteMarkdownDocument,
-  } from '../lib/remote-markdown.js';
 
   interface Artifact {
     route: string;
@@ -604,7 +600,6 @@ const blankFrameUrl = 'about:blank';
     async function displayArtifact(artifact: Artifact, selection: ArtifactSelection) {
       const requestId = ++navigationId;
       documentPane.setAttribute('aria-busy', 'true');
-      pendingRefreshes.add(artifact.route);
 
       let rawUrl;
       try {
@@ -618,6 +613,7 @@ const blankFrameUrl = 'about:blank';
         return;
       }
       if (requestId !== navigationId) return;
+      pendingRefreshes.add(artifact.route);
 
       if (
         frameMatches(activeFrame, artifact, selection) &&
@@ -990,6 +986,8 @@ const blankFrameUrl = 'about:blank';
     if (artifact.framePromise) return artifact.framePromise;
 
     const loading = (async () => {
+      const { fetchRemoteMarkdown, renderRemoteMarkdownDocument } =
+        await import('../lib/remote-markdown.js');
       const parsed = parseGitHubMarkdownUrl(artifact.source || artifact.rawUrl || '');
       if (!parsed) throw new Error('The saved GitHub Markdown URL is no longer valid.');
 
@@ -1347,6 +1345,11 @@ const blankFrameUrl = 'about:blank';
 
   :global(html:has(.docshelf-viewer) #starlight__sidebar li) {
     border-inline-start-color: transparent;
+  }
+
+  /* Retain Starlight's sidebar shell for imports, without an empty disclosure. */
+  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty)) {
+    display: none;
   }
 
   :global(html:has(.docshelf-viewer) main) {

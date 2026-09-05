@@ -84,6 +84,9 @@ export async function renderRemoteMarkdownDocument(markdown, options) {
   const title = options.title?.trim() || inferredTitle || options.fallbackTitle;
   const stylesheetUrl = new URL(options.stylesheetUrl).href;
   const lineLinksScriptUrl = new URL(options.lineLinksScriptUrl).href;
+  // Only our generated scripts may execute, even if sanitization regresses.
+  const scriptNonce = Array.from(crypto.getRandomValues(new Uint8Array(24)),
+    (byte) => byte.toString(16).padStart(2, '0')).join('');
   const assetOrigins = Array.from(
     new Set([new URL(stylesheetUrl).origin, new URL(lineLinksScriptUrl).origin]),
   )
@@ -99,11 +102,11 @@ export async function renderRemoteMarkdownDocument(markdown, options) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <meta name="referrer" content="no-referrer">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src ${assetOrigins}; script-src 'unsafe-inline' ${assetOrigins}; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src ${assetOrigins}; script-src 'nonce-${scriptNonce}'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'">
     <title>${escapeHtml(title)}</title>
     <link rel="stylesheet" href="${escapeHtml(stylesheetUrl)}">
-    <script src="${escapeHtml(lineLinksScriptUrl)}" defer></script>
-    <script>${remoteThemeScript}</script>
+    <script nonce="${scriptNonce}" src="${escapeHtml(lineLinksScriptUrl)}" defer></script>
+    <script nonce="${scriptNonce}">${remoteThemeScript}</script>
   </head>
   <body>
     <main class="markdown-document" data-docshelf-remote-markdown data-docshelf-source-line-count="${rendered.sourceLineCount}">
