@@ -12,12 +12,16 @@ export const artifactRevisionFile = '.docshelf-revisions.json';
  *
  * @param {string} html
  * @param {import('./artifacts.mjs').Artifact} artifact
- * @param {import('./artifacts.mjs').ArtifactManifest} manifest
+ * @param {import('./artifacts.mjs').Shelf} shelf
  * @param {{ basePath?: string }} [options]
  */
-export async function rewriteArtifactLinks(html, artifact, manifest, options = {}) {
+export async function rewriteArtifactLinks(html, artifact, shelf, options = {}) {
+  if (!artifact.sourcePath) return html;
+
   const artifactsBySource = new Map(
-    manifest.artifacts.map((candidate) => [candidate.sourcePath, candidate]),
+    shelf.artifacts.flatMap((candidate) =>
+      candidate.sourcePath ? [[candidate.sourcePath, candidate]] : [],
+    ),
   );
   const document = parse(html);
   const links = [];

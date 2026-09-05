@@ -8,12 +8,12 @@ import {
   artifactSearchIntegration,
   artifactUrl,
   docshelfBasePath,
-  loadArtifactManifest,
+  loadShelf,
   runtimeRoot,
 } from './scripts/artifacts.mjs';
 import { browserHost } from './scripts/server-security.mjs';
 
-const manifest = await loadArtifactManifest();
+const shelf = await loadShelf();
 const configuredOutput = process.env.DOCSHELF_WATCH_OUT_DIR;
 const outDir = configuredOutput ? path.resolve(configuredOutput) : undefined;
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
@@ -35,8 +35,8 @@ if (outDir) {
     throw new Error('DOCSHELF_WATCH_OUT_DIR must be a child of DocShelf .docshelf-runtime.');
   }
 }
-const sidebar = Array.from(
-  Map.groupBy(manifest.artifacts, (artifact) => artifact.project),
+const shelfGroups = Array.from(
+  Map.groupBy(shelf.artifacts, (artifact) => artifact.project),
   ([label, artifacts]) => ({
     label,
     items: artifacts.map((artifact) => ({
@@ -45,6 +45,9 @@ const sidebar = Array.from(
     })),
   }),
 );
+// Keep the navigation shell available when a hosted shelf starts empty so
+// browser-imported documents still have somewhere to appear.
+const sidebar = shelfGroups.length > 0 ? shelfGroups : [{ label: 'Shelf', items: [] }];
 
 export default defineConfig({
   site,
@@ -54,7 +57,7 @@ export default defineConfig({
     format: 'file',
   },
   integrations: [
-    artifactBuildIntegration(manifest),
+    artifactBuildIntegration(shelf),
     starlight({
       title: 'DocShelf',
       sidebar,

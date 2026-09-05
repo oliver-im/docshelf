@@ -57,7 +57,7 @@ test('build status follows attempts across starting, ready, and failed states', 
     error: null,
   });
 
-  await reporter.building(['change artifacts.local.json'], true);
+  await reporter.building(['change shelf.local.json'], true);
   const error = Object.assign(new Error('Astro exited with code 1.'), {
     details: '\u001b[31mfirst line\u001b[0m\nlast line',
   });
@@ -70,7 +70,7 @@ test('build status follows attempts across starting, ready, and failed states', 
     updatedAt: '2026-09-04T00:00:08.000Z',
     startedAt: '2026-09-04T00:00:05.000Z',
     finishedAt: '2026-09-04T00:00:07.000Z',
-    reasons: ['change artifacts.local.json'],
+    reasons: ['change shelf.local.json'],
     serving: true,
     error: {
       message: 'Astro exited with code 1.',
@@ -86,11 +86,11 @@ test('build status bounds diagnostic output and follows error causes', () => {
   const detailed = Object.assign(new Error('failed'), { details: 'x'.repeat(9_000) });
   assert.equal(describeBuildError(detailed).details.length, 8 * 1_024);
 
-  const caused = new Error('Could not parse manifest', {
+  const caused = new Error('Could not parse shelf', {
     cause: new SyntaxError('Unexpected token'),
   });
   assert.deepEqual(describeBuildError(caused), {
-    message: 'Could not parse manifest',
+    message: 'Could not parse shelf',
     details: 'Unexpected token',
   });
 });

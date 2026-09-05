@@ -1,18 +1,25 @@
 # DocShelf agent guidance
 
-DocShelf catalogs explicitly registered HTML and Markdown files without taking
-ownership of their source projects.
+DocShelf catalogs explicitly registered HTML and Markdown files, plus narrowly
+validated browser imports, without taking ownership of their source content.
 
 ## Repository boundaries
 
-- `artifacts.json` is the tracked empty fallback and manifest template.
-- `artifacts.local.json` contains machine-specific registrations and must not be
+- `shelf.json` is the tracked empty fallback and shelf template.
+- `shelf.local.json` contains the machine-specific shelf and must not be
   committed.
 - `public/artifacts/`, `src/generated/`, `dist/`, `.astro/`, and
   `.docshelf-runtime/` are generated. Do not edit or commit them.
-- Source files belong to their owning projects. DocShelf may create symlinks,
+- Local source files belong to their owning projects. DocShelf may create symlinks,
   render Markdown beneath its runtime directory, and alter copied build output,
   but must not modify source artifacts.
+- Claude sources must be exact published Artifact links. Preserve strict URL
+  validation and the cross-origin `/embed` boundary; do not generalize it into
+  arbitrary remote HTML loading.
+- Browser-imported Markdown must remain limited to public GitHub Markdown file
+  URLs. Preserve strict host and extension checks, the size limit, raw-HTML
+  omission, sanitization, and generated-document content security policy; do
+  not generalize it into arbitrary remote content loading.
 - Preserve the safety checks around workspace containment, symlink-only cleanup,
   and build output beneath `.docshelf-runtime/`.
 
@@ -25,7 +32,7 @@ ownership of their source projects.
 - Every watcher update runs a full Astro build into an isolated directory and
   publishes it only after it succeeds and its inputs are still current. Astro's
   output is shown only when a build fails; `DOCSHELF_VERBOSE=1` streams it.
-- `npm run dev` is for DocShelf UI development; restart it after manifest changes.
+- `npm run dev` is for DocShelf UI development; restart it after shelf changes.
 - Before handing off code changes, run `npm test`, `npm run check`, and
   `npm run build`.
 - The watcher is the portable runtime. `scripts/launchd.mjs` is an optional

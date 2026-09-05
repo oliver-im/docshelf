@@ -106,7 +106,28 @@ body {
   padding-block: clamp(2.5rem, 7vw, 6rem);
 }
 
-.markdown-document > :first-child {
+.markdown-document[data-docshelf-remote-markdown] {
+  padding-block-start: 3.5rem;
+}
+
+.markdown-source {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-end: var(--docshelf-content-inset-end);
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.markdown-source a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+}
+
+.markdown-document > :first-child,
+.markdown-document > .markdown-source + * {
   margin-block-start: 0;
 }
 

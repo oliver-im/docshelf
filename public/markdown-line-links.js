@@ -426,6 +426,10 @@
   function replaceFrameHash(hash) {
     if (window.parent === window) return;
     const url = new URL(window.location.href);
+    // Browser-imported Markdown uses a Blob URL whose selection lives in the
+    // parent viewer URL. Changing Blob history is unnecessary and is rejected
+    // by some browsers even when the Blob inherits the viewer's origin.
+    if (url.protocol === 'blob:') return;
     url.hash = hash;
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }

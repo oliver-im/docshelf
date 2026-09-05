@@ -1,6 +1,6 @@
-import { loadArtifactManifest, syncArtifacts } from './artifacts.mjs';
+import { loadShelf, syncArtifacts } from './artifacts.mjs';
 
-const manifest = await loadArtifactManifest();
-await syncArtifacts(manifest);
+const shelf = await loadShelf();
+await syncArtifacts(shelf);
 
-console.log(`Synchronized ${manifest.artifacts.length} artifacts.`);
+console.log(`Synchronized ${shelf.artifacts.length} artifacts.`);
