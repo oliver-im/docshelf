@@ -20,6 +20,18 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
           <path d="M9 4v16" />
         </svg>
       </button>
+      <button
+        class="import-artifact-button print:hidden"
+        type="button"
+        data-docshelf-import-open
+        aria-haspopup="dialog"
+        aria-label="Add a document"
+        title="Add a document"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
     </div>
   )
 }
@@ -205,13 +217,43 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
       background-color 160ms ease;
   }
 
+  .import-artifact-button {
+    display: inline-flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    background: transparent;
+    color: var(--sl-color-gray-2);
+    cursor: pointer;
+    transition:
+      border-color 160ms ease,
+      color 160ms ease,
+      background-color 160ms ease;
+  }
+
   .sidebar-toggle:hover {
     border-color: var(--sl-color-hairline-light);
     background: var(--sl-color-bg);
     color: var(--sl-color-white);
   }
 
+  .import-artifact-button:hover {
+    border-color: var(--sl-color-hairline-light);
+    background: var(--sl-color-bg);
+    color: var(--sl-color-white);
+  }
+
   .sidebar-toggle:focus-visible {
+    outline: 3px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .import-artifact-button:focus-visible {
     outline: 3px solid var(--sl-color-accent);
     outline-offset: 2px;
   }
@@ -228,6 +270,15 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
     stroke-width: 1.75;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .import-artifact-button svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.75;
   }
 
   @media (min-width: 50rem) {

@@ -13,10 +13,12 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  artifactViewerUrl,
   artifactRevisionFile,
   contentRevision,
   rewriteArtifactLinks,
 } from './artifact-html.mjs';
+import { parseClaudeArtifactUrl } from '../src/lib/claude-artifacts.js';
 import { renderMarkdownArtifact } from './markdown.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { normalizeBasePath } from './site-path.mjs';
@@ -25,10 +27,11 @@ import { acquireSyncLock, describeLockOwner, isProcessAlive } from './watcher-lo
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const docShelfRoot = path.resolve(scriptsDirectory, '..');
 const workspaceRoot = path.resolve(docShelfRoot, '..');
-export const defaultManifestPath = path.join(docShelfRoot, 'artifacts.json');
-export const localManifestPath = path.join(docShelfRoot, 'artifacts.local.json');
+export const defaultShelfPath = path.join(docShelfRoot, 'shelf.json');
+export const localShelfPath = path.join(docShelfRoot, 'shelf.local.json');
+export const legacyLocalShelfPath = path.join(docShelfRoot, 'artifacts.local.json');
 export const generatedArtifactsRoot = path.join(docShelfRoot, 'public', 'artifacts');
-export const generatedManifestPath = path.join(docShelfRoot, 'src', 'generated', 'artifacts.json');
+export const generatedShelfPath = path.join(docShelfRoot, 'src', 'generated', 'shelf.json');
 export const runtimeRoot = path.join(docShelfRoot, '.docshelf-runtime');
 export const docshelfBasePath = normalizeBasePath(process.env.DOCSHELF_BASE);
 const artifactRootPrefix = 'artifacts-';
@@ -44,37 +47,74 @@ const legacyMarkdownOutputMarker = '.docshelf-markdown-output';
  * @property {string} route
  * @property {string} title
  * @property {string} description
- * @property {string} sourcePath
- * @property {'html' | 'markdown'} format
+ * @property {string} [sourcePath]
+ * @property {'html' | 'markdown' | 'claude'} format
+ * @property {string} [embedUrl]
  */
 
 /**
- * @typedef {object} ArtifactManifest
+ * @typedef {object} Shelf
  * @property {1} version
  * @property {Artifact[]} artifacts
  */
 
-/** @returns {Promise<ArtifactManifest>} */
-export async function loadArtifactManifest() {
-  const localManifestStats = await stat(localManifestPath).catch(() => null);
-  const manifestPath = localManifestStats ? localManifestPath : defaultManifestPath;
-  return loadArtifactManifestFrom(manifestPath);
+/**
+ * @param {{
+ *   localPath?: string,
+ *   legacyPath?: string,
+ *   fallbackPath?: string,
+ *   warn?: (message: string) => void,
+ * }} [options]
+ * @returns {Promise<Shelf>}
+ */
+export async function loadShelf(options = {}) {
+  const shelfPath = await resolveShelfPath(options);
+  return loadShelfFrom(shelfPath);
 }
 
-/** @param {string} manifestPath @returns {Promise<ArtifactManifest>} */
-export async function loadArtifactManifestFrom(manifestPath) {
-  const contents = await readFile(manifestPath, 'utf8');
+/**
+ * Prefer the current local shelf name, but keep existing installations usable
+ * while artifacts.local.json is migrated manually.
+ *
+ * @param {{
+ *   localPath?: string,
+ *   legacyPath?: string,
+ *   fallbackPath?: string,
+ *   warn?: (message: string) => void,
+ * }} [options]
+ */
+export async function resolveShelfPath(options = {}) {
+  const preferredPath = options.localPath || localShelfPath;
+  const deprecatedPath = options.legacyPath || legacyLocalShelfPath;
+  const fallbackPath = options.fallbackPath || defaultShelfPath;
+  const warn = options.warn || console.warn;
+
+  if (await stat(preferredPath).catch(() => null)) return preferredPath;
+  if (await stat(deprecatedPath).catch(() => null)) {
+    const deprecatedName = path.basename(deprecatedPath);
+    const preferredName = path.basename(preferredPath);
+    warn(
+      `DocShelf is loading deprecated ${deprecatedName}. Rename it with: mv ${deprecatedName} ${preferredName}`,
+    );
+    return deprecatedPath;
+  }
+  return fallbackPath;
+}
+
+/** @param {string} shelfPath @returns {Promise<Shelf>} */
+export async function loadShelfFrom(shelfPath) {
+  const contents = await readFile(shelfPath, 'utf8');
   /** @type {unknown} */
   let parsed;
 
   try {
     parsed = JSON.parse(contents);
   } catch (error) {
-    throw new Error(`Could not parse ${manifestPath}`, { cause: error });
+    throw new Error(`Could not parse ${shelfPath}`, { cause: error });
   }
 
   if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.artifacts)) {
-    throw new Error(`${path.basename(manifestPath)} must contain version 1 and an artifacts array.`);
+    throw new Error(`${path.basename(shelfPath)} must contain version 1 and an artifacts array.`);
   }
 
   const routes = new Set();
@@ -93,12 +133,39 @@ export async function loadArtifactManifestFrom(manifestPath) {
     const title = requiredString(entry, 'title', index);
     const description = requiredString(entry, 'description', index);
 
-    validateSource(source, index);
     validateRoute(route, index);
 
     if (routes.has(route)) {
       throw new Error(`Artifact ${index + 1} duplicates route ${route}.`);
     }
+
+    const claudeArtifact = parseClaudeArtifactSource(source);
+    if (claudeArtifact) {
+      if (sources.has(claudeArtifact.publicUrl)) {
+        throw new Error(`Artifact ${index + 1} duplicates source ${claudeArtifact.publicUrl}.`);
+      }
+
+      routes.add(route);
+      sources.add(claudeArtifact.publicUrl);
+      artifacts.push({
+        project,
+        source: claudeArtifact.publicUrl,
+        route,
+        title,
+        description,
+        format: 'claude',
+        embedUrl: claudeArtifact.embedUrl,
+      });
+      continue;
+    }
+
+    if (/^[a-z][a-z\d+.-]*:/i.test(source) || source.startsWith('//')) {
+      throw new Error(
+        `Artifact ${index + 1} source URL must be a public Claude Artifact link.`,
+      );
+    }
+
+    validateSource(source, index);
 
     const sourcePath = path.resolve(docShelfRoot, source);
     const resolvedSource = await realpath(sourcePath).catch(() => null);
@@ -140,27 +207,31 @@ export async function loadArtifactManifestFrom(manifestPath) {
 
 /** @param {Artifact} artifact */
 export function artifactUrl(artifact) {
+  // Starlight's file-format formatter leaves this viewer link intact because
+  // its query ends in the validated .html route. Preserve that suffix.
+  if (artifact.format === 'claude') return artifactViewerUrl(artifact.route);
   // Starlight applies Astro's configured base path to sidebar links.
   return `/artifacts/${artifact.route}`;
 }
 
-/** @param {{ source: string }} artifact */
+/** @param {{ source: string, format?: string, title?: string }} artifact */
 export function artifactFileName(artifact) {
+  if (artifact.format === 'claude') return artifact.title || 'Claude Artifact';
   return path.basename(artifact.source);
 }
 
 /**
- * Regenerate public/artifacts and the generated manifest from the registered sources.
+ * Regenerate public/artifacts and the generated shelf from the registered sources.
  *
  * Every caller serializes on the artifact-sync lock: `npm run sync` and the `pre*` hooks wait for
  * a rebuilding watcher instead of replacing the symlink tree underneath its Astro build. The
  * watcher passes `lock: false` because it holds the lock for its whole rebuild.
  *
- * @param {ArtifactManifest} manifest
+ * @param {Shelf} shelf
  * @param {{ lock?: boolean }} [options]
  */
-export async function syncArtifacts(manifest, options = {}) {
-  if (options.lock === false) return replaceGeneratedArtifacts(manifest);
+export async function syncArtifacts(shelf, options = {}) {
+  if (options.lock === false) return replaceGeneratedArtifacts(shelf);
 
   const syncLock = await acquireSyncLock(runtimeRoot, {
     onWait: (owner) => {
@@ -168,14 +239,14 @@ export async function syncArtifacts(manifest, options = {}) {
     },
   });
   try {
-    return await replaceGeneratedArtifacts(manifest);
+    return await replaceGeneratedArtifacts(shelf);
   } finally {
     syncLock.release();
   }
 }
 
-/** @param {ArtifactManifest} manifest */
-async function replaceGeneratedArtifacts(manifest) {
+/** @param {Shelf} shelf */
+async function replaceGeneratedArtifacts(shelf) {
   const publicRoot = path.join(docShelfRoot, 'public');
   const stagingRoot = path.join(publicRoot, `.artifacts-${process.pid}.tmp`);
   const artifactBuildName = `${artifactRootPrefix}${Date.now()}-${process.pid}`;
@@ -203,10 +274,20 @@ async function replaceGeneratedArtifacts(manifest) {
     }
     await rename(artifactStagingRoot, artifactBuildRoot);
 
-    const sourceSnapshots = await readArtifactSources(manifest);
+    const sourceSnapshots = await readArtifactSources(shelf);
     const revisionEntries = [];
 
-    for (const artifact of manifest.artifacts) {
+    for (const artifact of shelf.artifacts) {
+      if (artifact.format === 'claude') {
+        const revision = contentRevision(artifact.embedUrl || artifact.source);
+        revisionEntries.push({
+          route: artifact.route,
+          revision,
+          sourceRevision: revision,
+        });
+        continue;
+      }
+
       const destination = path.join(stagingRoot, ...artifact.route.split('/'));
       await mkdir(path.dirname(destination), { recursive: true });
       const snapshot = sourceSnapshots.get(artifact.sourcePath);
@@ -221,7 +302,7 @@ async function replaceGeneratedArtifacts(manifest) {
         html = snapshot.contents.toString('utf8');
       }
 
-      html = await rewriteArtifactLinks(html, artifact, manifest, {
+      html = await rewriteArtifactLinks(html, artifact, shelf, {
         basePath: docshelfBasePath,
       });
       html = markArtifactForSearch(html, artifact.route);
@@ -239,7 +320,7 @@ async function replaceGeneratedArtifacts(manifest) {
       await symlink(target, destination, 'file');
     }
 
-    const revisionState = createRevisionState(manifest, revisionEntries);
+    const revisionState = createRevisionState(shelf, revisionEntries);
     const revisionStatePath = path.join(artifactBuildRoot, artifactRevisionFile);
     await writeFile(revisionStatePath, `${JSON.stringify(revisionState, null, 2)}\n`);
     await symlink(
@@ -250,7 +331,7 @@ async function replaceGeneratedArtifacts(manifest) {
 
     await assertSymlinkTree(generatedArtifactsRoot);
     const staleArtifactRoots = await findGeneratedArtifactRoots(artifactBuildRoot);
-    await writeGeneratedManifest(manifest, revisionState);
+    await writeGeneratedShelf(shelf, revisionState);
     await rm(generatedArtifactsRoot, { recursive: true, force: true });
     await rename(stagingRoot, generatedArtifactsRoot);
     published = true;
@@ -267,34 +348,35 @@ async function replaceGeneratedArtifacts(manifest) {
   }
 }
 
-/** @param {ArtifactManifest} manifest @param {ArtifactRevisionState} revisionState */
-async function writeGeneratedManifest(manifest, revisionState) {
+/** @param {Shelf} shelf @param {ArtifactRevisionState} revisionState */
+async function writeGeneratedShelf(shelf, revisionState) {
   const revisions = new Map(
     revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
   );
-  const generatedManifest = {
-    version: manifest.version,
-    catalogRevision: revisionState.catalogRevision,
-    artifacts: manifest.artifacts.map(({ project, route, title, description }) => ({
+  const generatedShelf = {
+    version: shelf.version,
+    shelfRevision: revisionState.shelfRevision,
+    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
       project,
       route,
       title,
       description,
       revision: revisions.get(route),
+      ...(embedUrl ? { embedUrl } : {}),
     })),
   };
 
-  await mkdir(path.dirname(generatedManifestPath), { recursive: true });
-  await writeFile(generatedManifestPath, `${JSON.stringify(generatedManifest, null, 2)}\n`);
+  await mkdir(path.dirname(generatedShelfPath), { recursive: true });
+  await writeFile(generatedShelfPath, `${JSON.stringify(generatedShelf, null, 2)}\n`);
 }
 
 /**
  * Validate the synchronized artifact revisions and ensure Pagefind's content
  * marker remains present without changing source artifacts owned by other projects.
  *
- * @param {ArtifactManifest} manifest
+ * @param {Shelf} shelf
  */
-export function artifactBuildIntegration(manifest) {
+export function artifactBuildIntegration(shelf) {
   return {
     name: 'docshelf-artifacts',
     hooks: {
@@ -306,12 +388,13 @@ export function artifactBuildIntegration(manifest) {
             'utf8',
           ),
         );
-        await assertArtifactSourcesUnchanged(manifest, revisionState);
+        await assertArtifactSourcesUnchanged(shelf, revisionState);
         const revisions = new Map(
           revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
         );
 
-        for (const artifact of manifest.artifacts) {
+        for (const artifact of shelf.artifacts) {
+          if (artifact.format === 'claude') continue;
           const outputPath = path.join(outputRoot, 'artifacts', ...artifact.route.split('/'));
           const html = await readFile(outputPath, 'utf8');
           if (contentRevision(html) !== revisions.get(artifact.route)) {
@@ -332,15 +415,17 @@ export function artifactBuildIntegration(manifest) {
 /**
  * Confirm that the published snapshot still matches every registered source.
  *
- * @param {ArtifactManifest} manifest
+ * @param {Shelf} shelf
  * @param {ArtifactRevisionState} revisionState
  */
-export async function artifactSourcesMatch(manifest, revisionState) {
+export async function artifactSourcesMatch(shelf, revisionState) {
   const expected = new Map(
     revisionState.artifacts.map((artifact) => [artifact.route, artifact.sourceRevision]),
   );
 
-  for (const artifact of manifest.artifacts) {
+  for (const artifact of shelf.artifacts) {
+    if (artifact.format === 'claude') continue;
+    if (!artifact.sourcePath) return false;
     const contents = await readFile(artifact.sourcePath).catch(() => null);
     if (!contents || contentRevision(contents) !== expected.get(artifact.route)) return false;
   }
@@ -349,11 +434,11 @@ export async function artifactSourcesMatch(manifest, revisionState) {
 }
 
 /**
- * @param {ArtifactManifest} manifest
+ * @param {Shelf} shelf
  * @param {ArtifactRevisionState} revisionState
  */
-async function assertArtifactSourcesUnchanged(manifest, revisionState) {
-  if (!(await artifactSourcesMatch(manifest, revisionState))) {
+async function assertArtifactSourcesUnchanged(shelf, revisionState) {
+  if (!(await artifactSourcesMatch(shelf, revisionState))) {
     throw new Error(
       'A registered artifact changed during the build; rebuild from a fresh snapshot.',
     );
@@ -454,15 +539,17 @@ function generatedRootPid(name) {
  * @typedef {object} ArtifactRevisionState
  * @property {1} version
  * @property {string} revision
- * @property {string} catalogRevision
+ * @property {string} shelfRevision
  * @property {ArtifactRevision[]} artifacts
  */
 
-/** @param {ArtifactManifest} manifest */
-async function readArtifactSources(manifest) {
+/** @param {Shelf} shelf */
+async function readArtifactSources(shelf) {
   const snapshots = new Map();
 
-  for (const artifact of manifest.artifacts) {
+  for (const artifact of shelf.artifacts) {
+    if (artifact.format === 'claude') continue;
+    if (!artifact.sourcePath) throw new Error(`Missing source path for ${artifact.route}.`);
     const contents = await readFile(artifact.sourcePath);
     snapshots.set(artifact.sourcePath, {
       contents,
@@ -473,20 +560,21 @@ async function readArtifactSources(manifest) {
   return snapshots;
 }
 
-/** @param {ArtifactManifest} manifest @param {ArtifactRevision[]} artifacts */
-function createRevisionState(manifest, artifacts) {
+/** @param {Shelf} shelf @param {ArtifactRevision[]} artifacts */
+function createRevisionState(shelf, artifacts) {
   return {
     version: 1,
     revision: contentRevision(
       JSON.stringify(artifacts.map(({ route, revision }) => ({ route, revision }))),
     ),
-    catalogRevision: contentRevision(
+    shelfRevision: contentRevision(
       JSON.stringify(
-        manifest.artifacts.map(({ project, route, title, description }) => ({
+        shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
           project,
           route,
           title,
           description,
+          ...(embedUrl ? { embedUrl } : {}),
         })),
       ),
     ),
@@ -520,6 +608,17 @@ export function validateSource(source, index) {
   if (!['.html', '.md'].includes(path.extname(source).toLowerCase())) {
     throw new Error(`Artifact ${index + 1} source must be an HTML or Markdown file.`);
   }
+}
+
+/**
+ * Accept only Claude's public Artifact share and embed URLs. General Claude pages
+ * and arbitrary remote HTML are deliberately not valid shelf sources.
+ *
+ * @param {string} source
+ * @returns {{ artifactId: string, publicUrl: string, embedUrl: string } | null}
+ */
+export function parseClaudeArtifactSource(source) {
+  return parseClaudeArtifactUrl(source);
 }
 
 /** @param {string} source @returns {'html' | 'markdown'} */

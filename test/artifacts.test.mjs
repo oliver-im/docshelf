@@ -10,9 +10,12 @@ import {
 } from '../scripts/artifact-html.mjs';
 import {
   artifactFileName,
+  artifactUrl,
   artifactSourcesMatch,
   docShelfRoot,
-  loadArtifactManifestFrom,
+  loadShelf,
+  loadShelfFrom,
+  parseClaudeArtifactSource,
   validateRoute,
   validateSource,
 } from '../scripts/artifacts.mjs';
@@ -22,6 +25,12 @@ import {
   createLineFragment,
   parseLineFragment,
 } from '../src/lib/line-permalinks.js';
+import { parseGitHubMarkdownUrl } from '../src/lib/github-markdown.js';
+import { renderRemoteMarkdownContent } from '../src/lib/remote-markdown-content.js';
+import {
+  artifactsShareRemoteSource,
+  remoteArtifactIdentity,
+} from '../src/lib/artifact-identity.js';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 test('route validation accepts a nested HTML route', () => {
@@ -57,44 +66,271 @@ test('artifact filenames use the registered source basename', () => {
   );
 });
 
-test('manifest loading resolves a valid source inside the workspace', async (t) => {
+test('Claude Artifact URLs accept only canonical public and embed links', () => {
+  const artifactId = '12345678-90ab-cdef-1234-567890abcdef';
+  const expected = {
+    artifactId,
+    publicUrl: `https://claude.ai/public/artifacts/${artifactId}`,
+    embedUrl: `https://claude.ai/public/artifacts/${artifactId}/embed`,
+  };
+
+  assert.deepEqual(
+    parseClaudeArtifactSource(`https://claude.ai/public/artifacts/${artifactId}`),
+    expected,
+  );
+  assert.deepEqual(
+    parseClaudeArtifactSource(`https://claude.ai/public/artifacts/${artifactId}/embed/`),
+    expected,
+  );
+
+  for (const source of [
+    'http://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef',
+    'https://claude.ai/public/artifacts/not-an-id',
+    'https://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef?view=1',
+    'https://claude.ai/',
+    'https://example.com/public/artifacts/12345678-90ab-cdef-1234-567890abcdef',
+  ]) {
+    assert.equal(parseClaudeArtifactSource(source), null);
+  }
+});
+
+test('GitHub Markdown file URLs resolve to their raw source', () => {
+  assert.deepEqual(
+    parseGitHubMarkdownUrl(
+      'https://github.com/oliver-im/docshelf/blob/main/docs/Guide.markdown#L12-L18',
+    ),
+    {
+      sourceUrl: 'https://github.com/oliver-im/docshelf/blob/main/docs/Guide.markdown',
+      rawUrl: 'https://raw.githubusercontent.com/oliver-im/docshelf/main/docs/Guide.markdown',
+      linkBaseUrl: 'https://github.com/oliver-im/docshelf/blob/main/docs/Guide.markdown',
+      owner: 'oliver-im',
+      repository: 'docshelf',
+      fileName: 'Guide.markdown',
+    },
+  );
+
+  assert.deepEqual(
+    parseGitHubMarkdownUrl(
+      'https://raw.githubusercontent.com/oliver-im/docshelf/refs/heads/main/README.md',
+    ),
+    {
+      sourceUrl:
+        'https://raw.githubusercontent.com/oliver-im/docshelf/refs/heads/main/README.md',
+      rawUrl:
+        'https://raw.githubusercontent.com/oliver-im/docshelf/refs/heads/main/README.md',
+      linkBaseUrl:
+        'https://raw.githubusercontent.com/oliver-im/docshelf/refs/heads/main/README.md',
+      owner: 'oliver-im',
+      repository: 'docshelf',
+      fileName: 'README.md',
+    },
+  );
+});
+
+test('GitHub Markdown imports reject general pages and ambiguous URLs', () => {
+  for (const source of [
+    'http://github.com/oliver-im/docshelf/blob/main/README.md',
+    'https://github.com/oliver-im/docshelf',
+    'https://github.com/oliver-im/docshelf/blob/main/index.html',
+    'https://github.com/oliver-im/docshelf/blob/main/README.md?plain=1',
+    'https://github.com/oliver-im/docshelf/blob/main/docs%2FREADME.md',
+    'https://raw.githubusercontent.com/oliver-im/docshelf/main/index.html',
+    'https://example.com/oliver-im/docshelf/blob/main/README.md',
+  ]) {
+    assert.equal(parseGitHubMarkdownUrl(source), null);
+  }
+});
+
+test('browser-rendered Markdown retains selectable source ranges', () => {
+  const source = `# Remote
+
+Paragraph
+continues
+
+- one
+- two
+
+| A | B |
+| - | - |
+| 1 | 2 |
+
+\`\`\`js
+const ready = true;
+\`\`\`
+
+<script>window.shouldNotRun = true;</script>
+`;
+  const rendered = renderRemoteMarkdownContent(source);
+
+  assert.equal(rendered.sourceLineCount, 17);
+  assert.match(
+    rendered.html,
+    /<h1 data-docshelf-line-start="1" data-docshelf-line-end="1">Remote<\/h1>/,
+  );
+  assert.match(
+    rendered.html,
+    /<p data-docshelf-line-start="3" data-docshelf-line-end="4">Paragraph<br data-docshelf-line-break-after="3">continues<\/p>/,
+  );
+  assert.match(
+    rendered.html,
+    /<ul data-docshelf-line-start="6" data-docshelf-line-end="7">/,
+  );
+  assert.match(
+    rendered.html,
+    /<table data-docshelf-line-start="9" data-docshelf-line-end="11">/,
+  );
+  assert.match(
+    rendered.html,
+    /<pre data-docshelf-line-start="13" data-docshelf-line-end="15">/,
+  );
+  assert.doesNotMatch(rendered.html, /shouldNotRun/);
+});
+
+test('remote artifact identity deduplicates sources independently of their routes', () => {
+  const embedUrl =
+    'https://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef/embed';
+  const hostedClaude = { route: 'team/demo.html', embedUrl };
+  const importedClaude = {
+    route: 'claude/12345678-90ab-cdef-1234-567890abcdef.html',
+    embedUrl,
+    sourceType: 'claude',
+  };
+  const rawUrl = 'https://raw.githubusercontent.com/oliver-im/docshelf/main/README.md';
+  const importedMarkdown = {
+    route: 'github/oliver-im/docshelf/readme.html',
+    sourceType: 'github-markdown',
+    rawUrl,
+  };
+
+  assert.equal(artifactsShareRemoteSource(hostedClaude, importedClaude), true);
+  assert.equal(remoteArtifactIdentity(importedMarkdown), `github-markdown:${rawUrl}`);
+  assert.equal(
+    artifactsShareRemoteSource(importedMarkdown, {
+      ...importedMarkdown,
+      route: 'another/generated-route.html',
+    }),
+    true,
+  );
+  assert.equal(
+    artifactsShareRemoteSource(hostedClaude, { ...importedClaude, embedUrl: `${embedUrl}?other` }),
+    false,
+  );
+  assert.equal(remoteArtifactIdentity({ route: 'local/report.html' }), null);
+});
+
+test('shelf loading supports the legacy local filename and prefers the new name', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const localPath = path.join(fixtureRoot, 'shelf.local.json');
+  const legacyPath = path.join(fixtureRoot, 'artifacts.local.json');
+  const fallbackPath = path.join(fixtureRoot, 'shelf.json');
+  const publicUrl =
+    'https://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef';
+  await writeShelf(fallbackPath, []);
+  await writeShelf(legacyPath, [{ ...artifact(publicUrl), title: 'Legacy shelf' }]);
+
+  const warnings = [];
+  const legacyShelf = await loadShelf({
+    localPath,
+    legacyPath,
+    fallbackPath,
+    warn: (message) => warnings.push(message),
+  });
+  assert.equal(legacyShelf.artifacts[0].title, 'Legacy shelf');
+  assert.deepEqual(warnings, [
+    'DocShelf is loading deprecated artifacts.local.json. Rename it with: mv artifacts.local.json shelf.local.json',
+  ]);
+
+  await writeShelf(localPath, [{ ...artifact(publicUrl), title: 'Current shelf' }]);
+  warnings.length = 0;
+  const currentShelf = await loadShelf({
+    localPath,
+    legacyPath,
+    fallbackPath,
+    warn: (message) => warnings.push(message),
+  });
+  assert.equal(currentShelf.artifacts[0].title, 'Current shelf');
+  assert.deepEqual(warnings, []);
+});
+
+test('shelf loading accepts a public Claude Artifact without a local file', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
+  const artifactId = '12345678-90ab-cdef-1234-567890abcdef';
+  const source = `https://claude.ai/public/artifacts/${artifactId}/embed`;
+  await writeShelf(shelfPath, [artifact(source)]);
+
+  const shelf = await loadShelfFrom(shelfPath);
+  const registered = shelf.artifacts[0];
+
+  assert.equal(registered.source, `https://claude.ai/public/artifacts/${artifactId}`);
+  assert.equal(registered.embedUrl, `https://claude.ai/public/artifacts/${artifactId}/embed`);
+  assert.equal(registered.sourcePath, undefined);
+  assert.equal(registered.format, 'claude');
+  assert.equal(artifactFileName(registered), 'Example report');
+  assert.equal(artifactUrl(registered), '/?artifact=example%2Freport.html');
+});
+
+test('shelf loading rejects arbitrary remote pages', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
+  await writeShelf(shelfPath, [artifact('https://claude.ai/')]);
+
+  await assert.rejects(loadShelfFrom(shelfPath), {
+    message: /must be a public Claude Artifact link/,
+  });
+});
+
+test('shelf loading treats Claude share and embed forms as the same source', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
+  const publicUrl =
+    'https://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef';
+  await writeShelf(shelfPath, [
+    artifact(publicUrl),
+    { ...artifact(`${publicUrl}/embed`), route: 'example/second.html' },
+  ]);
+
+  await assert.rejects(loadShelfFrom(shelfPath), { message: /duplicates source/ });
+});
+
+test('shelf loading resolves a valid source inside the workspace', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const sourcePath = path.join(fixtureRoot, 'report.html');
-  const manifestPath = path.join(fixtureRoot, 'manifest.json');
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
   await writeFile(sourcePath, '<!doctype html><title>Report</title>');
-  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
+  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
-  const manifest = await loadArtifactManifestFrom(manifestPath);
+  const shelf = await loadShelfFrom(shelfPath);
 
-  assert.equal(manifest.artifacts.length, 1);
-  assert.equal(manifest.artifacts[0].sourcePath, await realpath(sourcePath));
-  assert.equal(manifest.artifacts[0].format, 'html');
+  assert.equal(shelf.artifacts.length, 1);
+  assert.equal(shelf.artifacts[0].sourcePath, await realpath(sourcePath));
+  assert.equal(shelf.artifacts[0].format, 'html');
 });
 
-test('manifest loading identifies a Markdown source', async (t) => {
+test('shelf loading identifies a Markdown source', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const sourcePath = path.join(fixtureRoot, 'report.md');
-  const manifestPath = path.join(fixtureRoot, 'manifest.json');
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
   await writeFile(sourcePath, '# Report\n');
-  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
+  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
-  const manifest = await loadArtifactManifestFrom(manifestPath);
+  const shelf = await loadShelfFrom(shelfPath);
 
-  assert.equal(manifest.artifacts[0].format, 'markdown');
+  assert.equal(shelf.artifacts[0].format, 'markdown');
 });
 
-test('the Pages demo manifest publishes only the repository README', async () => {
-  const manifest = await loadArtifactManifestFrom(
-    path.join(docShelfRoot, '.github', 'pages-artifacts.json'),
+test('the Pages demo shelf publishes only the repository README', async () => {
+  const shelf = await loadShelfFrom(
+    path.join(docShelfRoot, '.github', 'pages-shelf.json'),
   );
 
-  assert.equal(manifest.artifacts.length, 1);
+  assert.equal(shelf.artifacts.length, 1);
   assert.equal(
-    manifest.artifacts[0].sourcePath,
+    shelf.artifacts[0].sourcePath,
     await realpath(path.join(docShelfRoot, 'README.md')),
   );
-  assert.equal(manifest.artifacts[0].route, 'docshelf/readme.html');
-  assert.equal(manifest.artifacts[0].format, 'markdown');
+  assert.equal(shelf.artifacts[0].route, 'docshelf/readme.html');
+  assert.equal(shelf.artifacts[0].format, 'markdown');
 });
 
 test('Markdown rendering creates a themed standalone document', async () => {
@@ -326,7 +562,7 @@ test('source revision validation detects a file changed after synchronization', 
   const revisionState = {
     version: 1,
     revision: 'unused-in-source-validation',
-    catalogRevision: 'unused-in-source-validation',
+    shelfRevision: 'unused-in-source-validation',
     artifacts: [
       {
         route: registered.route,
@@ -347,30 +583,30 @@ test('source revision validation detects a file changed after synchronization', 
   );
 });
 
-test('manifest loading rejects duplicate routes', async (t) => {
+test('shelf loading rejects duplicate routes', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const firstSource = path.join(fixtureRoot, 'first.html');
   const secondSource = path.join(fixtureRoot, 'second.html');
-  const manifestPath = path.join(fixtureRoot, 'manifest.json');
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
   await writeFile(firstSource, '<!doctype html><title>First</title>');
   await writeFile(secondSource, '<!doctype html><title>Second</title>');
-  await writeManifest(manifestPath, [
+  await writeShelf(shelfPath, [
     artifact(path.relative(docShelfRoot, firstSource)),
     artifact(path.relative(docShelfRoot, secondSource)),
   ]);
 
-  await assert.rejects(loadArtifactManifestFrom(manifestPath), { message: /duplicates route/ });
+  await assert.rejects(loadShelfFrom(shelfPath), { message: /duplicates route/ });
 });
 
-test('manifest loading rejects sources outside the workspace root', async (t) => {
+test('shelf loading rejects sources outside the workspace root', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const externalRoot = await temporaryDirectory(t, tmpdir(), 'docshelf-external-');
   const sourcePath = path.join(externalRoot, 'report.html');
-  const manifestPath = path.join(fixtureRoot, 'manifest.json');
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
   await writeFile(sourcePath, '<!doctype html><title>Outside</title>');
-  await writeManifest(manifestPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
+  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
-  await assert.rejects(loadArtifactManifestFrom(manifestPath), {
+  await assert.rejects(loadShelfFrom(shelfPath), {
     message: /outside the workspace root \(the parent directory of DocShelf\)/,
   });
 });
@@ -401,6 +637,6 @@ function loadedArtifact(sourcePath, route, format) {
   };
 }
 
-async function writeManifest(manifestPath, artifacts) {
-  await writeFile(manifestPath, `${JSON.stringify({ version: 1, artifacts }, null, 2)}\n`);
+async function writeShelf(shelfPath, artifacts) {
+  await writeFile(shelfPath, `${JSON.stringify({ version: 1, artifacts }, null, 2)}\n`);
 }
