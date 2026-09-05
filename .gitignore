@@ -2,6 +2,7 @@ node_modules/
 dist/
 .astro/
 .docshelf-runtime/
+.playwright-mcp/
 artifacts.local.json
 public/artifacts/
 src/generated/

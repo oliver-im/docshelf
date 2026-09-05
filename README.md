@@ -80,8 +80,9 @@ the ignored file-level symlink tree in `public/artifacts/`.
 
 ## Using the viewer
 
-Choose an artifact in the left sidebar to load it inside DocShelf. Use a modified
-click or the browser's link menu when you want to open the standalone artifact.
+Choose an artifact in the left sidebar or search results to load it inside
+DocShelf. Search results for a section jump to that heading. Use a modified click
+or the browser's link menu when you want to open the standalone artifact.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
 
@@ -115,10 +116,17 @@ documents that contain one of these blocks. YAML or TOML frontmatter is removed
 from the rendered document; a valid `lang` frontmatter value sets the HTML
 document language.
 
-Rendered Markdown uses an adapted Tokyo Night reading theme that fills the available
-viewer width. Its light or dark appearance follows DocShelf, including theme changes
-made while the document is open. Existing HTML artifacts retain their own
-styles.
+Rendered Markdown uses an adapted Tokyo Night reading theme with a centered,
+readable text column. Its light or dark appearance follows DocShelf, including
+theme changes made while the document is open. Existing HTML artifacts retain
+their own styles.
+
+Documents with three or more second-level headings get an **On this page**
+outline, including nested third-level headings. It sits beside the document when
+there is room and collapses into a sticky menu on narrower screens. Wide tables
+scroll independently with a visible hint; focus a scrolling table to move through
+its columns with the arrow keys.
+Source-line breaks and line selections are preserved across these layouts.
 
 Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Remote images work, but relative images

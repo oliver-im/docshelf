@@ -70,6 +70,7 @@ export async function renderMarkdownArtifact(artifact, source, options = {}) {
     language,
     basePath: options.basePath || '/',
     content: rendered.code,
+    headings: rendered.metadata.headings,
     sourceLineCount: countSourceLines(source),
     hasMermaid: /<code\b[^>]*\bclass="[^"]*\blanguage-mermaid\b/.test(rendered.code),
   });
@@ -233,11 +234,34 @@ function markdownLanguage(frontmatter) {
  *   language: string,
  *   basePath: string,
  *   content: string,
+ *   headings: Array<{ depth: number, slug: string, text: string }>,
  *   sourceLineCount: number,
  *   hasMermaid: boolean,
  * }} page
  */
 function markdownDocument(page) {
+  /** @type {Array<{ slug: string, text: string, children: Array<{ slug: string, text: string }> }>} */
+  const sections = [];
+  for (const heading of page.headings) {
+    if (heading.depth === 2) sections.push({ ...heading, children: [] });
+    else if (heading.depth === 3) sections.at(-1)?.children.push(heading);
+  }
+  /** @param {{ slug: string, text: string }} heading */
+  const sectionLink = (heading) => `<a href="#${escapeHtml(encodeURIComponent(heading.slug))}">${escapeHtml(heading.text)}</a>`;
+  const outline = sections.length >= 3
+    ? `<aside class="markdown-outline" data-pagefind-ignore>
+      <details open>
+        <summary>On this page</summary>
+        <nav aria-label="On this page">
+          <ol>${sections.map((heading) => `
+            <li>${sectionLink(heading)}${heading.children.length
+              ? `<ol>${heading.children.map((child) => `<li>${sectionLink(child)}</li>`).join('')}</ol>`
+              : ''}</li>`).join('')}
+          </ol>
+        </nav>
+      </details>
+    </aside>`
+    : '';
   const mermaidScripts = page.hasMermaid
     ? `
     <script src="${sitePath('/mermaid.min.js', page.basePath)}" defer></script>
@@ -254,15 +278,19 @@ function markdownDocument(page) {
     <title>${escapeHtml(page.title)}</title>
     <link rel="stylesheet" href="${sitePath('/markdown-tokyo-night.css', page.basePath)}">
     <script src="${sitePath('/markdown-line-links.js', page.basePath)}" defer></script>
+    <script src="${sitePath('/markdown-reading.js', page.basePath)}" defer></script>
     <script>
 ${themeSyncScript}
     </script>
 ${mermaidScripts}
   </head>
   <body>
+    <div class="markdown-layout${outline ? ' has-outline' : ''}">
+${outline}
     <main class="markdown-document" data-docshelf-source-line-count="${page.sourceLineCount}">
 ${page.content}
     </main>
+    </div>
   </body>
 </html>
 `;

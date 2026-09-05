@@ -307,7 +307,11 @@
     applyHash(event.data.hash, event.data.scroll !== false);
   });
   window.addEventListener('hashchange', () => {
+    const hadSelection = Boolean(selection);
     applyHash(window.location.hash, true);
+    // A heading link leaves source-selection mode. Clear the enclosing viewer's
+    // line permalink too, so it does not describe a selection that is no longer shown.
+    if (hadSelection && !selection) notifyParent('', 'replace');
   });
 
   applyHash(window.location.hash, true);

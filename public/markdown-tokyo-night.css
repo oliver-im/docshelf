@@ -12,6 +12,7 @@
   --md-bg-highlight: #24283b;
   --md-border: #292e42;
   --md-text: #c0caf5;
+  --md-text-strong: #e2e8ff;
   --md-text-muted: #a9b1d6;
   --md-text-faint: #7d84aa;
   --md-comment: #7d84aa;
@@ -29,12 +30,13 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --md-bg: #d5d6db;
-  --md-bg-deep: #cbccd1;
-  --md-bg-highlight: #dcdee2;
-  --md-border: #c3c5c9;
+  --md-bg: #f7f8fc;
+  --md-bg-deep: #eef0f6;
+  --md-bg-highlight: #e8edf7;
+  --md-border: #d9deea;
   --md-text: #343b58;
-  --md-text-muted: #272e4b;
+  --md-text-strong: #222a43;
+  --md-text-muted: #515b78;
   --md-text-faint: #555b73;
   --md-comment: #555b73;
   --md-blue: #34548a;
@@ -99,11 +101,13 @@ body {
 
   box-sizing: border-box;
   position: relative;
+  min-width: 0;
   width: 100%;
-  margin: 0;
+  max-width: 50rem;
+  margin-inline: auto;
   overflow-wrap: anywhere;
   padding-inline: var(--docshelf-content-inset-start) var(--docshelf-content-inset-end);
-  padding-block: clamp(2.5rem, 7vw, 6rem);
+  padding-block: 3rem 5rem;
 }
 
 .markdown-document > :first-child {
@@ -123,7 +127,7 @@ pre,
 table,
 figure,
 details {
-  margin-block: 1.15rem;
+  margin-block: 1.1rem;
 }
 
 h1,
@@ -132,31 +136,36 @@ h3,
 h4,
 h5,
 h6 {
-  scroll-margin-top: 1.5rem;
-  margin-block: 2.2em 0.65em;
-  font-weight: 700;
-  line-height: 1.22;
-  letter-spacing: -0.025em;
+  scroll-margin-top: 5rem;
+  margin-block: 2rem 0.75rem;
+  color: var(--md-text-strong);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
 h1 {
   color: var(--md-red);
-  font-size: clamp(2rem, 5vw, 2.85rem);
+  font-size: clamp(1.75rem, 3vw, 2rem);
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+  margin-block-end: 1.5rem;
 }
 
 h2 {
   color: var(--md-yellow);
-  font-size: clamp(1.55rem, 3.4vw, 2rem);
+  font-size: 1.4rem;
+  margin-block-start: 2.4rem;
 }
 
 h3 {
   color: var(--md-green);
-  font-size: clamp(1.3rem, 2.6vw, 1.55rem);
+  font-size: 1.2rem;
 }
 
 h4 {
   color: var(--md-cyan);
-  font-size: 1.16rem;
+  font-size: 1.05rem;
 }
 
 h5 {
@@ -167,8 +176,6 @@ h5 {
 h6 {
   color: var(--md-magenta);
   font-size: 0.9rem;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
 }
 
 strong {
@@ -177,12 +184,12 @@ strong {
 }
 
 em {
-  color: var(--md-cyan);
+  color: inherit;
 }
 
 a {
   border-radius: 0.15em;
-  color: var(--md-magenta);
+  color: var(--md-blue);
   text-decoration-color: color-mix(in srgb, currentcolor 55%, transparent);
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.18em;
@@ -206,7 +213,7 @@ ol {
 }
 
 li + li {
-  margin-block-start: 0.28rem;
+  margin-block-start: 0.45rem;
 }
 
 li::marker {
@@ -235,10 +242,11 @@ ul.contains-task-list {
 
 blockquote {
   margin-inline: 0;
-  padding: 0.8rem 1.15rem;
-  border-inline-start: 0.22rem solid var(--md-blue);
+  padding: 0.75rem 1rem;
+  border-inline-start: 2px solid var(--md-blue);
   background: color-mix(in srgb, var(--md-bg-deep) 74%, transparent);
   color: var(--md-text-muted);
+  font-size: 0.94rem;
 }
 
 blockquote > :first-child {
@@ -264,9 +272,8 @@ samp {
 }
 
 :not(pre) > code {
-  padding: 0.16em 0.38em;
-  border: 1px solid color-mix(in srgb, var(--md-border) 82%, transparent);
-  border-radius: 0.32rem;
+  padding: 0.12em 0.3em;
+  border-radius: 0.2rem;
   background: var(--md-bg-highlight);
   color: var(--md-text);
 }
@@ -276,11 +283,9 @@ pre {
   overflow: auto;
   overflow-wrap: normal;
   overscroll-behavior-x: contain;
-  padding: 1rem 1.15rem;
-  border: 1px solid var(--md-border);
-  border-radius: 0.45rem;
-  background: var(--md-bg-deep);
-  box-shadow: 0 0.45rem 1.25rem var(--md-shadow);
+  padding: 0.8rem 1rem;
+  border-radius: 0.25rem;
+  background: var(--md-bg-highlight);
   line-height: 1.58;
   tab-size: 2;
 }
@@ -408,11 +413,12 @@ table {
   border-spacing: 0;
   border-collapse: collapse;
   font-size: 0.94rem;
+  line-height: 1.55;
 }
 
 th,
 td {
-  padding: 0.62rem 0.8rem;
+  padding: 0.45rem 0.65rem;
   border: 1px solid var(--md-border);
   text-align: start;
   vertical-align: top;
@@ -420,12 +426,163 @@ td {
 
 th {
   background: var(--md-bg-deep);
-  color: var(--md-text-muted);
+  color: var(--md-text-strong);
   font-weight: 650;
 }
 
 tbody tr:nth-child(even) {
   background: color-mix(in srgb, var(--md-bg-highlight) 42%, transparent);
+}
+
+.markdown-table {
+  margin-block: 1.25rem;
+  min-width: 0;
+}
+
+.markdown-table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--md-border);
+  border-radius: 0.2rem;
+  scrollbar-color: var(--md-comment) var(--md-bg-deep);
+}
+
+.markdown-table-scroll:focus-visible {
+  outline: 2px solid var(--md-blue);
+  outline-offset: 3px;
+}
+
+.markdown-table-scroll table {
+  display: table;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.markdown-table-scroll :is(th, td) {
+  min-width: 10rem;
+  border: 0;
+  border-block-end: 1px solid var(--md-border);
+  overflow-wrap: anywhere;
+}
+
+.markdown-table-scroll :is(th, td) + :is(th, td) {
+  border-inline-start: 1px solid var(--md-border);
+}
+
+.markdown-table-scroll tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+.markdown-table-hint {
+  margin: 0 0 0.5rem;
+  color: var(--md-text-faint);
+  font-size: 0.8rem;
+}
+
+.markdown-table-hint[hidden] {
+  display: none;
+}
+
+.markdown-outline {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  width: 100%;
+  max-width: 50rem;
+  margin-inline: auto;
+  padding: 0.5rem 1.25rem 0.5rem 3.3rem;
+  background: var(--md-bg);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.markdown-outline details {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.markdown-outline summary {
+  padding-block: 0.85rem;
+  color: var(--md-text-muted);
+  font-weight: 600;
+}
+
+.markdown-outline nav {
+  max-height: min(60vh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block-end: 0.5rem;
+  scrollbar-width: thin;
+}
+
+.markdown-outline ol {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.markdown-outline li + li {
+  margin: 0.15rem 0 0;
+}
+
+.markdown-outline ol ol {
+  margin-inline-start: 0.8rem;
+  border-inline-start: 1px solid var(--md-border);
+  font-size: 0.94em;
+}
+
+.markdown-outline a {
+  display: block;
+  padding: 0.5rem 0.7rem;
+  border-inline-start: 2px solid transparent;
+  border-radius: 0 0.25rem 0.25rem 0;
+  color: var(--md-text-faint);
+  text-decoration: none;
+}
+
+.markdown-outline a:hover,
+.markdown-outline a[aria-current='location'] {
+  color: var(--md-blue);
+  background: var(--md-bg-highlight);
+}
+
+.markdown-outline a[aria-current='location'] {
+  border-inline-start-color: var(--md-blue);
+}
+
+@media (min-width: 70rem) {
+  .markdown-layout.has-outline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 14rem;
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+
+  .has-outline .markdown-document {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .markdown-outline {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    top: 3rem;
+    margin-block: 3rem;
+    padding: 0 1.25rem 0 0.75rem;
+    border: 0;
+  }
+
+  .markdown-outline summary {
+    padding-block: 0 0.75rem;
+  }
+
+  .markdown-outline nav {
+    max-height: calc(100vh - 9rem);
+  }
 }
 
 img,
@@ -474,7 +631,7 @@ mark {
   flex-direction: column;
   align-items: stretch;
   overflow: visible;
-  background: color-mix(in srgb, var(--md-bg-deep) 72%, transparent);
+  background: transparent;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -573,7 +730,7 @@ summary {
 
 @media (max-width: 40rem) {
   body {
-    font-size: 0.98rem;
+    font-size: 1rem;
   }
 
   .markdown-document {
@@ -585,8 +742,17 @@ summary {
   }
 
   pre {
-    margin-inline: -0.35rem;
     border-radius: 0.3rem;
+  }
+
+  .markdown-outline {
+    padding-inline-start: 2.95rem;
+  }
+
+  .markdown-outline a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
   }
 
   .docshelf-line-control {
@@ -616,6 +782,7 @@ summary {
     --md-bg-highlight: #eeeeef;
     --md-border: #c7c7ca;
     --md-text: #17171b;
+    --md-text-strong: #17171b;
     --md-text-muted: #33343a;
     --md-text-faint: #555760;
     --md-shadow: transparent;
@@ -625,6 +792,23 @@ summary {
     width: 100%;
     margin: 0;
     padding: 0;
+  }
+
+  .markdown-layout.has-outline {
+    display: block;
+  }
+
+  .markdown-outline,
+  .markdown-table-hint {
+    display: none;
+  }
+
+  .markdown-table-scroll {
+    overflow: visible;
+  }
+
+  .markdown-table-scroll :is(th, td) {
+    min-width: 0;
   }
 
   a {

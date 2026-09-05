@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { parse } from 'parse5';
 import {
   artifactViewerUrl,
   contentRevision,
@@ -162,6 +163,33 @@ const ready = true;
   assert.doesNotMatch(html, /src="\/markdown-mermaid\.js"/);
   assert.doesNotMatch(html, /private: true/);
   assert.doesNotMatch(html, /shouldNotRun/);
+});
+
+test('long Markdown documents have an outline with valid, unique heading targets', async () => {
+  const artifact = { title: 'Research', description: '', sourcePath: '/workspace/research.md' };
+  const source = '# Research\n\n## Evidence & "limits"\n\nFirst finding.\n\n## Evidence & "limits"\n\nSecond finding.\n\n## 한국어\n\nA third finding.\n\n### Detail\n\nSupporting evidence.\n';
+  const html = await renderMarkdownArtifact(artifact, source, { basePath: '/shelf/' });
+  const elements = [];
+  const visit = (node) => {
+    if (node.tagName) elements.push(node);
+    for (const child of node.childNodes || []) visit(child);
+  };
+  visit(parse(html));
+  const attribute = (node, name) => node.attrs.find((attr) => attr.name === name)?.value;
+  const headings = elements.filter((node) => node.tagName === 'h2');
+  const subheading = elements.find((node) => node.tagName === 'h3');
+  const links = elements.filter((node) => node.tagName === 'a');
+  const ids = headings.map((node) => attribute(node, 'id'));
+  assert.equal(links.length, 4);
+  assert.equal(new Set(ids).size, 3);
+  assert.deepEqual(links.map((node) => decodeURIComponent(attribute(node, 'href').slice(1))), [...ids, attribute(subheading, 'id')]);
+  assert.equal(links[3].parentNode.parentNode.parentNode.tagName, 'li');
+  assert.deepEqual(headings.map((node) => attribute(node, 'data-docshelf-line-start')), ['3', '7', '11']);
+  assert.ok(elements.some((node) => node.tagName === 'nav' && attribute(node, 'aria-label') === 'On this page'));
+  assert.ok(elements.some((node) => node.tagName === 'script' && attribute(node, 'src') === '/shelf/markdown-reading.js'));
+
+  const short = await renderMarkdownArtifact(artifact, '# Note\n\n## One section\n\nA short note.');
+  assert.doesNotMatch(short, /<aside|<nav/);
 });
 
 test('Markdown rendering preserves soft and hard source-line breaks', async () => {
