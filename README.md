@@ -135,9 +135,10 @@ DocShelf” from any project:
 npx skills add oliver-im/docshelf --skill docshelf -g
 ```
 
-The skill also provides an optional DocShelf HTML theme. Ask for the “DocShelf
-theme” when creating a standalone HTML artifact; registering existing HTML does
-not alter its styles.
+The skill registers completed documents without authoring or restyling them.
+The optional [HTML theme](.agents/skills/docshelf/references/theme.md) remains
+available as a separate authoring resource and is not part of the registration
+workflow.
 
 ## GitHub Pages demo
 

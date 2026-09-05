@@ -1,17 +1,9 @@
 ---
 name: docshelf
-description: Register HTML or Markdown artifacts with DocShelf, or create self-contained HTML with the optional DocShelf theme, when the user asks to add something to DocShelf or use the "DocShelf theme".
+description: Register HTML or Markdown documents with DocShelf when the user asks to add them to the shelf, preserving their sources and verifying the resulting local URLs.
 ---
 
 # DocShelf
-
-## Optional HTML theme
-
-- When the user explicitly asks for the “DocShelf theme,” read
-  [references/theme.md](references/theme.md) and use the supplied theme assets.
-- Do not restyle an existing HTML artifact merely because it is being registered.
-- When creation and registration are requested together, finish and verify the source
-  artifact before registering it.
 
 ## Find DocShelf
 
@@ -22,6 +14,8 @@ description: Register HTML or Markdown artifacts with DocShelf, or create self-c
 ## Register the artifact
 
 - Resolve “this” from an explicitly named, attached, current, or just-created file. If more than one file is plausible, ask which one.
+- When creation and registration are requested together, register only after the
+  source artifact has been finished and verified by the authoring task.
 - Accept only HTML or Markdown sources supported by DocShelf and contained within its workspace.
 - Read DocShelf's `AGENTS.md` and the registration section of its `README.md` before changing the manifest.
 - Add the source to `artifacts.local.json`, creating that file from `artifacts.json` if needed. Never add registrations to `artifacts.json`.
