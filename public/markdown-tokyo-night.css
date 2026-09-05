@@ -30,25 +30,26 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --md-bg: #f7f8fc;
-  --md-bg-deep: #eef0f6;
-  --md-bg-highlight: #e8edf7;
-  --md-border: #d9deea;
-  --md-text: #343b58;
-  --md-text-strong: #222a43;
-  --md-text-muted: #515b78;
-  --md-text-faint: #555b73;
-  --md-comment: #555b73;
-  --md-blue: #34548a;
-  --md-cyan: #0f4b6e;
-  --md-green: #33635c;
-  --md-magenta: #5a4a78;
-  --md-orange: #8c4822;
-  --md-red: #8c4351;
-  --md-yellow: #7f5310;
-  --md-selection: rgb(52 84 138 / 24%);
-  --md-highlight: rgb(150 80 39 / 18%);
-  --md-shadow: rgb(52 59 88 / 14%);
+  /* Neutral paper and quiet surfaces; accents retain the heading hierarchy. */
+  --md-bg: #fcfcfa;
+  --md-bg-deep: #f3f4f1;
+  --md-bg-highlight: #eef0ed;
+  --md-border: #dde1dd;
+  --md-text: #30363b;
+  --md-text-strong: #20272c;
+  --md-text-muted: #586269;
+  --md-text-faint: #646d73;
+  --md-comment: #646d73;
+  --md-blue: #365e80;
+  --md-cyan: #2e6170;
+  --md-green: #38695b;
+  --md-magenta: #685780;
+  --md-orange: #8a522e;
+  --md-red: #854956;
+  --md-yellow: #80602d;
+  --md-selection: rgb(54 94 128 / 20%);
+  --md-highlight: rgb(177 133 51 / 16%);
+  --md-shadow: rgb(32 39 44 / 10%);
 }
 
 *,

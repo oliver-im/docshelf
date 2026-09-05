@@ -820,6 +820,7 @@ const initialFrameUrl = initialArtifact
 
   :global(html:has(.docshelf-viewer)) {
     --docshelf-artifact-background: #1a1b26;
+    --docshelf-navigation-background: var(--docshelf-artifact-background);
     --sl-nav-height: 3rem;
     --sl-nav-pad-y: 0.25rem;
     --sl-mobile-toc-height: 0rem;
@@ -834,13 +835,32 @@ const initialFrameUrl = initialArtifact
   }
 
   :global(html[data-theme='light']:has(.docshelf-viewer)) {
-    --docshelf-artifact-background: #d5d6db;
+    /* Match the Markdown paper and accents while keeping navigation recessed. */
+    --docshelf-artifact-background: #fcfcfa;
+    --docshelf-navigation-background: #f2f3f0;
+    --sl-color-white: #20272c;
+    --sl-color-gray-1: #30363b;
+    --sl-color-gray-2: #454e54;
+    --sl-color-gray-3: #586269;
+    --sl-color-gray-4: #646d73;
+    --sl-color-gray-5: #d3d8d4;
+    --sl-color-gray-6: #eef0ed;
+    --sl-color-gray-7: #f5f6f3;
+    --sl-color-black: var(--docshelf-artifact-background);
+    --sl-color-accent-low: #e4ebef;
+    --sl-color-accent: #365e80;
+    --sl-color-accent-high: #284c69;
+    --sl-color-bg-nav: var(--docshelf-navigation-background);
+    --sl-color-bg-sidebar: var(--docshelf-navigation-background);
   }
 
-  :global(html:has(.docshelf-viewer) body),
+  :global(html:has(.docshelf-viewer) body) {
+    background: var(--docshelf-artifact-background);
+  }
+
   :global(html:has(.docshelf-viewer) header.header),
   :global(html:has(.docshelf-viewer) #starlight__sidebar) {
-    background: var(--docshelf-artifact-background);
+    background: var(--docshelf-navigation-background);
   }
 
   :global(html:has(.docshelf-viewer) header.header) {
