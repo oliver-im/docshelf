@@ -2,6 +2,9 @@ node_modules/
 dist/
 .astro/
 .obsidian/
+.DS_Store
+# Local reports, notes, and other private working documents.
+/.local/
 .docshelf-runtime/
 .playwright-mcp/
 shelf.local.json
@@ -10,5 +13,3 @@ artifacts.local.json
 public/artifacts/
 src/generated/
 worktrees/
-# Machine-local launch review, registered in shelf.local.json.
-/reports/launch-readiness-2026-09-06.md

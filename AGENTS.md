@@ -8,6 +8,9 @@ validated browser imports, without taking ownership of their source content.
 - `shelf.json` is the tracked empty fallback and shelf template.
 - `shelf.local.json` contains the machine-specific shelf and must not be
   committed.
+- Put local reports, notes, and other private working documents in the ignored
+  `.local/` directory. Maintained project documentation belongs in `docs/`.
+  Adding a document to the shelf does not imply committing its source.
 - `public/artifacts/`, `src/generated/`, `dist/`, `.astro/`, and
   `.docshelf-runtime/` are generated. Do not edit or commit them.
 - Local source files belong to their owning projects. DocShelf may create symlinks,
