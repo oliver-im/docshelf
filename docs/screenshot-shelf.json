@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "project": "DocShelf",
+      "source": "README.md",
+      "route": "docshelf/readme.html",
+      "title": "DocShelf README",
+      "description": "A home for reports and notes."
+    },
+    {
+      "project": "Guides",
+      "source": "docs/usage.md",
+      "route": "guides/usage.html",
+      "title": "Using DocShelf",
+      "description": "Browser imports, navigation, and Markdown reading."
+    },
+    {
+      "project": "Guides",
+      "source": "docs/local-server.md",
+      "route": "guides/local-server.html",
+      "title": "Running and updating DocShelf",
+      "description": "Setup, upgrades, and local service operation."
+    },
+    {
+      "project": "Releases",
+      "source": "docs/releasing.md",
+      "route": "releases/releasing.html",
+      "title": "Releasing DocShelf",
+      "description": "Versioning and release verification."
+    }
+  ]
+}
