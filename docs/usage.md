@@ -68,6 +68,11 @@ and **Copy link**; the selected document's copied link includes its current
 section or line selection. GitHub and Claude documents also offer **View source**.
 Normal browser right-click actions remain available.
 
+Website links in registered documents open in a new tab by default. Explicit
+HTML targets are preserved except for `_self`, which also opens a new tab for
+website links. Heading links stay within the current document, and links to
+other registered sources navigate the shelf.
+
 When the loopback watcher is running on macOS, registered local files also offer
 **Reveal in Finder**, which selects the original source file in its folder.
 This action is unavailable on the hosted demo, in Astro dev/preview, on other
@@ -91,9 +96,9 @@ seconds while it remains visible.
 Rendered Markdown also supports source-line links. Its gutter shows every source
 line, including blank lines and lines omitted from the rendered document. Click
 a number to select that exact source line, then Shift-click another number to
-extend the range. DocShelf paints each selected source line as a horizontal
-band; when the range covers an entire rendered element, it outlines that element
-as additional context. The range is written to the URL using the familiar
+extend the range. Gutter positions and selection bands are distributed within
+the rendered block; they identify source lines, which may differ from the
+visible rows after paragraph wrapping. The range is written to the URL using the familiar
 `#L14-L20` form. Use **Copy link** in the selection bar to share the exact
 artifact and range.
 
@@ -110,6 +115,9 @@ the HTML document language.
 Both registered and browser-imported Markdown use an adapted Tokyo Night
 reading theme with a centered, readable text column. Its light or dark appearance
 follows DocShelf, including theme changes made while the document is open.
+Paragraphs use normal Markdown wrapping: single source newlines flow as spaces,
+while blank lines separate paragraphs. Two trailing spaces or a backslash
+preserve an intentional line break. Code blocks retain their line breaks.
 Browser imports support GitHub-flavored Markdown, heading anchors, and source-line
 links, but do not run Mermaid or syntax-highlighting scripts. Existing HTML
 artifacts retain their own styles.
@@ -120,11 +128,14 @@ It sits beside the document when there is room and collapses into a sticky menu
 on narrower screens. Wide tables scroll independently with a visible hint; focus
 a scrolling table to move through its columns with the arrow keys.
 Outline links update the viewer URL, so sections can be bookmarked and restored
-with Back and Forward. Source-line breaks and line selections are preserved
-across these layouts.
+with Back and Forward. Source-line numbers and permalink selections remain tied
+to the original Markdown as the text reflows across these layouts.
 
 Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
 document needs custom markup or scripts. Browser-imported GitHub Markdown
 resolves relative images through GitHub's raw file host. A registered local
 Markdown artifact cannot load an unregistered neighboring image because
-DocShelf does not serve surrounding project directories.
+DocShelf does not serve surrounding project directories. Relative image paths
+that point into DocShelf's own `public/` directory use the bundled asset, with
+the deployment's URL prefix applied. This lets the README's screenshot work in
+both a local shelf and the Pages demo.

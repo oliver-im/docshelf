@@ -11,7 +11,7 @@ The demo opens this README. Use its **+** button to try a public GitHub Markdown
 file or a published Claude Artifact. Imports stay in your browser; the hosted
 demo cannot access your local files.
 
-![DocShelf in dark mode with grouped documents, a public import, and selected Markdown source lines](https://raw.githubusercontent.com/oliver-im/docshelf/main/public/docshelf-overview.png)
+![DocShelf in dark mode with grouped documents, a public import, and selected Markdown source lines](public/docshelf-overview.png)
 
 A sample shelf using public documentation, with a source-line range selected.
 

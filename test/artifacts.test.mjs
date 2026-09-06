@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -170,7 +170,7 @@ const ready = true;
   );
   assert.match(
     rendered.html,
-    /<p data-docshelf-line-start="3" data-docshelf-line-end="4">Paragraph<br data-docshelf-line-break-after="3">continues<\/p>/,
+    /<p data-docshelf-line-start="3" data-docshelf-line-end="4">Paragraph\ncontinues<\/p>/,
   );
   assert.match(
     rendered.html,
@@ -451,11 +451,11 @@ test('long Markdown documents have an outline with valid, unique heading targets
   assert.doesNotMatch(short, /<aside|<nav/);
 });
 
-test('Markdown rendering preserves soft and hard source-line breaks', async () => {
+test('Markdown paragraphs flow across soft newlines while preserving authored hard breaks and source ranges', async () => {
   const html = await renderMarkdownArtifact(
     {
       title: 'Line breaks',
-      description: 'Source-aligned rendering.',
+      description: 'Normal Markdown paragraph flow.',
       sourcePath: '/workspace/line-breaks.md',
     },
     `---
@@ -465,15 +465,36 @@ alpha
 beta *spans
 lines*\\
 gamma
+
+two spaces${'  '}
+break here
 `,
   );
 
   assert.match(
     html,
-    /<p data-docshelf-line-start="4" data-docshelf-line-end="7">alpha<br data-docshelf-line-break-after="4">\n/,
+    /<p data-docshelf-line-start="4" data-docshelf-line-end="7">alpha\nbeta /,
   );
-  assert.match(html, /<em>spans<br data-docshelf-line-break-after="5">\nlines<\/em>/);
+  assert.match(html, /<em>spans\nlines<\/em>/);
   assert.match(html, /<br data-docshelf-line-break-after="6">\ngamma<\/p>/);
+  assert.match(html, /two spaces<br data-docshelf-line-break-after="9">\nbreak here<\/p>/);
+  assert.equal(findElements(parse(html), 'br').length, 2);
+});
+
+test('imported Markdown uses normal paragraph flow and retains hard breaks, code, and source ranges', () => {
+  const rendered = renderRemoteMarkdownContent([
+    'alpha', 'beta *spans', 'lines*\\', 'gamma', '',
+    'two spaces  ', 'break here', '', '- list text', '  continued', '',
+    '> quoted text', '> continued', '', '```text', 'first', 'second', '```',
+  ].join('\n'));
+  assert.match(rendered.html, /<p data-docshelf-line-start="1" data-docshelf-line-end="4">alpha\nbeta <em>spans\nlines<\/em>/);
+  assert.match(rendered.html, /<br data-docshelf-line-break-after="3">gamma/);
+  assert.match(rendered.html, /two spaces<br data-docshelf-line-break-after="6">break here/);
+  assert.equal(findElements(parse(rendered.html), 'br').length, 2);
+  assert.match(rendered.html, /list text\ncontinued/);
+  assert.match(rendered.html, /quoted text\ncontinued/);
+  assert.match(rendered.html, /<code class="language-text">first\nsecond\n<\/code>/);
+  assert.equal(rendered.sourceLineCount, 18);
 });
 
 test('outline labels preserve literal braces and omit footnote references', async () => {
@@ -674,6 +695,101 @@ test('generated HTML preserves an explicit new-tab target', async (t) => {
 
   assert.match(html, /target="_blank"/);
   assert.match(html, /data-docshelf-artifact="example\/second\.html"/);
+});
+
+test('website links leave the document frame while local navigation stays in the shelf', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const sourcePath = path.join(fixtureRoot, 'review.md');
+  const source = `# Review
+
+[Demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)
+[HTTP](http://example.com/)
+[Protocol relative](//example.com/)
+[Heading](#review)
+[Self](review.md#review)
+[Mail](mailto:review@example.com)
+`;
+  await writeFile(sourcePath, source);
+  const artifact = loadedArtifact(sourcePath, 'example/review.html', 'markdown');
+  const html = await rewriteArtifactLinks(
+    await renderMarkdownArtifact(artifact, source), artifact,
+    { version: 1, artifacts: [artifact] }, { basePath: '/docshelf/' },
+  );
+  const links = new Map(findElements(parse(html), 'a').map((node) => [nodeText(node), node]));
+  for (const label of ['Demo', 'HTTP', 'Protocol relative']) {
+    assert.equal(attr(links.get(label), 'target'), '_blank');
+    assert.equal(attr(links.get(label), 'rel'), 'noopener noreferrer');
+    assert.equal(attr(links.get(label), 'data-docshelf-artifact'), undefined);
+  }
+  assert.equal(attr(links.get('Heading'), 'href'), '#review');
+  assert.equal(attr(links.get('Heading'), 'target'), undefined);
+  assert.equal(attr(links.get('Self'), 'href'), '/docshelf/?artifact=example%2Freview.html#review');
+  assert.equal(attr(links.get('Self'), 'target'), '_top');
+  assert.equal(attr(links.get('Self'), 'data-docshelf-artifact'), artifact.route);
+  assert.equal(attr(links.get('Mail'), 'href'), 'mailto:review@example.com');
+  assert.equal(attr(links.get('Mail'), 'target'), undefined);
+  assert.equal(await readFile(sourcePath, 'utf8'), source);
+});
+
+test('external HTML links retain authored destinations and protect new tabs from opener access', async () => {
+  const artifact = loadedArtifact('/workspace/report.html', 'example/report.html', 'html');
+  const html = await rewriteArtifactLinks(
+    `<a href="https://example.com/" target="_self" rel="nofollow opener">Self</a>
+     <a href="HTTPS://example.com/" target="_BLANK" rel="sponsored">Blank</a>
+     <a href="https://example.com/" target="_top">Top</a>
+     <a href="https://example.com/" target="preview">Named</a>
+     <a href="https://example.com/file.pdf" download>Download</a>`,
+    artifact, { version: 1, artifacts: [artifact] },
+  );
+  const links = new Map(findElements(parse(html), 'a').map((node) => [nodeText(node), node]));
+  assert.equal(attr(links.get('Self'), 'target'), '_blank');
+  assert.equal(attr(links.get('Self'), 'rel'), 'nofollow noopener noreferrer');
+  assert.equal(attr(links.get('Blank'), 'target'), '_blank');
+  assert.equal(attr(links.get('Blank'), 'rel'), 'sponsored noopener noreferrer');
+  assert.equal(attr(links.get('Top'), 'target'), '_top');
+  assert.equal(attr(links.get('Named'), 'target'), 'preview');
+  assert.equal(attr(links.get('Download'), 'download'), '');
+});
+
+test('bundled README images resolve locally and beneath a Pages deployment prefix', async () => {
+  const sourcePath = path.join(docShelfRoot, 'README.md');
+  const source = await readFile(sourcePath, 'utf8');
+  const artifact = loadedArtifact(sourcePath, 'docshelf/readme.html', 'markdown');
+  for (const basePath of ['/', '/docshelf/']) {
+    const html = await rewriteArtifactLinks(
+      await renderMarkdownArtifact(artifact, source, { basePath }), artifact,
+      { version: 1, artifacts: [artifact] }, { basePath },
+    );
+    const screenshot = findElements(parse(html), 'img').find((node) => attr(node, 'alt')?.startsWith('DocShelf in dark mode'));
+    assert.ok(screenshot);
+    assert.equal(attr(screenshot, 'src'), `${basePath}docshelf-overview.png`);
+    assert.ok((await readFile(path.join(docShelfRoot, 'public/docshelf-overview.png'))).length > 0);
+  }
+});
+
+test('public image rewriting preserves URL parts and cannot expose neighboring files or escaping symlinks', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const publicRoot = path.join(fixtureRoot, 'public');
+  await mkdir(publicRoot);
+  await writeFile(path.join(publicRoot, 'screen shot.png'), 'public image');
+  await writeFile(path.join(fixtureRoot, 'private.png'), 'private image');
+  await mkdir(path.join(fixtureRoot, 'public-other'));
+  await writeFile(path.join(fixtureRoot, 'public-other/screen.png'), 'neighbor image');
+  await symlink(path.join(fixtureRoot, 'private.png'), path.join(publicRoot, 'escape.png'));
+  const artifact = loadedArtifact(path.join(fixtureRoot, 'README.md'), 'example/readme.html', 'markdown');
+  const sources = [
+    'public/screen%20shot.png?size=2#preview',
+    'private.png', 'public/escape.png', 'public/missing.png',
+    'public/../private.png', 'public-other/screen.png', 'public/',
+    'public/%ZZ.png', 'https://example.com/image.png', 'data:image/png;base64,AAAA',
+  ];
+  const html = await rewriteArtifactLinks(
+    sources.map((src) => `<img src="${src}">`).join(''), artifact,
+    { version: 1, artifacts: [artifact] }, { basePath: '/docshelf/', publicRoot },
+  );
+  assert.deepEqual(findElements(parse(html), 'img').map((node) => attr(node, 'src')), [
+    '/docshelf/screen%20shot.png?size=2#preview', ...sources.slice(1),
+  ]);
 });
 
 test('content revisions change only when the generated contents change', () => {
