@@ -18,6 +18,7 @@ import {
   syncArtifacts,
 } from './artifacts.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
+import { createLocalActionsHandler } from './local-actions.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import { siteInputsSignature } from './site-inputs.mjs';
 import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
@@ -34,6 +35,11 @@ const standardBuildRoot = path.join(docShelfRoot, 'dist');
 const astroCli = path.join(docShelfRoot, 'node_modules', 'astro', 'bin', 'astro.mjs');
 const verboseBuilds = process.env.DOCSHELF_VERBOSE === '1';
 const buildStatus = new BuildStatusReporter(runtimeRoot);
+const handleLocalAction = createLocalActionsHandler({
+  listenHost: host,
+  loadShelf,
+  workspaceRoot: path.resolve(docShelfRoot, '..'),
+});
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error('DOCSHELF_PORT must be an integer between 1 and 65535.');
@@ -327,21 +333,23 @@ async function serveRequest(request, response) {
     return;
   }
 
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    response.writeHead(405, {
-      allow: 'GET, HEAD',
-      'content-type': 'text/plain; charset=utf-8',
-    });
-    response.end('Method not allowed\n');
-    return;
-  }
-
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(request.url || '/', 'http://shelf.localhost').pathname);
   } catch {
     response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('Bad request\n');
+    return;
+  }
+
+  if (await handleLocalAction(request, response, pathname)) return;
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405, {
+      allow: 'GET, HEAD',
+      'content-type': 'text/plain; charset=utf-8',
+    });
+    response.end('Method not allowed\n');
     return;
   }
 

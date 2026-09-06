@@ -40,6 +40,13 @@ not your own while investigating.
   added to a shelf file.
 - Generated cleanup is limited to marked runtime output and the managed
   symlink tree.
+- The macOS loopback watcher can reveal a registered local source in Finder.
+  This requires a same-origin JSON POST with a watcher-specific token and a
+  custom request header. The server resolves the registered route and rechecks
+  workspace containment; it does not accept paths or shell commands from the
+  browser. Local actions are disabled on non-loopback listeners and never
+  included in static hosting. As with the shelf itself, trusted local HTML has
+  access to same-origin capabilities.
 - The watcher binds to loopback by default and restricts loopback Host headers.
   Setting `DOCSHELF_HOST` to a non-loopback interface deliberately exposes the
   shelf to that network and does not add authentication or transport

@@ -148,6 +148,19 @@ page.
 
 - `Command/Ctrl+B` toggles the artifact sidebar.
 
+Each sidebar document has a **⋯** actions button, visible on hover or keyboard
+focus and always visible on touch devices. Its menu offers **Open in new tab**
+and **Copy link**; the selected document's copied link includes its current
+section or line selection. GitHub and Claude documents also offer **View source**.
+Normal browser right-click actions remain available.
+
+When the loopback watcher is running on macOS, registered local files also offer
+**Reveal in Finder**, which selects the original source file in its folder.
+This action is unavailable on the hosted demo, in Astro dev/preview, on other
+operating systems, or when the watcher is bound to a network interface. Use
+Enter or Space to open the menu, arrow keys to move between actions, and Escape
+to close it. Restart an already-running watcher after updating its server code.
+
 Drag the divider beside the sidebar to change its width. When the divider has
 keyboard focus, the arrow keys resize it in smaller steps. The width and
 visibility preferences are stored in the browser.

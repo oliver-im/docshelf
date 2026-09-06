@@ -28,7 +28,7 @@ export function isAllowedHostHeader(hostHeader, listenHost) {
 }
 
 /** @param {string} hostname */
-function isLoopbackHost(hostname) {
+export function isLoopbackHost(hostname) {
   const normalized = stripBrackets(hostname).toLowerCase().replace(/\.$/, '');
   if (normalized === 'localhost' || normalized === '::1') return true;
   return isIP(normalized) === 4 && normalized.startsWith('127.');

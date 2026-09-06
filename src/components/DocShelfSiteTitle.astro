@@ -59,8 +59,9 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
     resizer.setAttribute('role', 'separator');
     resizer.setAttribute('aria-label', 'Resize navigation');
     resizer.setAttribute('aria-orientation', 'vertical');
+    resizer.setAttribute('aria-controls', sidebar.id);
     resizer.tabIndex = 0;
-    resizer.title = 'Drag to resize navigation';
+    resizer.title = 'Drag or use arrow keys to resize navigation';
     document.body.append(resizer);
 
     const defaultWidth = sidebar.getBoundingClientRect().width;
@@ -261,6 +262,10 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
     stroke-width: 1.75;
   }
 
+  :global(.docshelf-sidebar-resizer) {
+    display: none;
+  }
+
   @media (min-width: 50rem) {
     .sidebar-toggle {
       display: inline-flex;
@@ -282,11 +287,24 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
       position: fixed;
       z-index: 6;
       inset-block: var(--sl-nav-height) 0;
-      inset-inline-start: calc(var(--sl-sidebar-width) - 0.25rem);
-      display: none;
-      width: 0.5rem;
+      inset-inline-start: calc(var(--sl-sidebar-width) - 0.375rem);
+      width: 0.75rem;
       cursor: col-resize;
       touch-action: none;
+    }
+
+    /* Keep a visible grip at rest so resizing is discoverable before hovering. */
+    :global(.docshelf-sidebar-resizer::before) {
+      position: absolute;
+      z-index: 1;
+      inset-block-start: calc(50% - 1rem);
+      inset-inline-start: calc(50% - 1.5px);
+      width: 3px;
+      height: 2rem;
+      border-radius: 999px;
+      background: var(--docshelf-divider-grip, var(--sl-color-gray-3));
+      content: '';
+      transition: background-color 160ms ease;
     }
 
     :global(.docshelf-sidebar-resizer::after) {
@@ -294,18 +312,24 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
       inset-block: 0;
       inset-inline-start: calc(50% - 0.5px);
       width: 1px;
-      background: transparent;
+      background: var(--docshelf-divider-color, var(--sl-color-gray-5));
       content: '';
       transition:
-        width 160ms ease,
+        transform 160ms ease,
         background-color 160ms ease;
     }
 
     :global(.docshelf-sidebar-resizer:hover::after),
     :global(.docshelf-sidebar-resizer:focus-visible::after),
     :global(.docshelf-sidebar-resizer[data-resizing='true']::after) {
-      width: 2px;
-      background: var(--sl-color-accent);
+      transform: scaleX(3);
+      background: var(--docshelf-divider-active, var(--sl-color-text-accent));
+    }
+
+    :global(.docshelf-sidebar-resizer:hover::before),
+    :global(.docshelf-sidebar-resizer:focus-visible::before),
+    :global(.docshelf-sidebar-resizer[data-resizing='true']::before) {
+      background: var(--docshelf-divider-active, var(--sl-color-text-accent));
     }
 
     :global(.docshelf-sidebar-resizer:focus-visible) {
@@ -328,6 +352,7 @@ const showSidebarToggle = [basePath, `${basePath}index.html`].includes(Astro.url
       transition: none;
     }
 
+    :global(.docshelf-sidebar-resizer::before),
     :global(.docshelf-sidebar-resizer::after) {
       transition: none;
     }

@@ -161,6 +161,7 @@ const blankFrameUrl = 'about:blank';
   import { parseClaudeArtifactUrl } from '../lib/claude-artifacts.js';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '../lib/github-markdown.js';
+  import { createDocumentActions } from '../lib/document-actions';
 
   interface Artifact {
     route: string;
@@ -306,6 +307,10 @@ const blankFrameUrl = 'about:blank';
     let checkingRevisions = false;
     const bridgedDocuments = new WeakSet<Document>();
     const pendingRefreshes = new Set<string>();
+    const documentActions = createDocumentActions({
+      basePath,
+      localActions: root.dataset.docshelfLiveUpdates === 'true',
+    });
 
     initializeImportDialog();
 
@@ -334,6 +339,11 @@ const blankFrameUrl = 'about:blank';
     for (const artifact of importedArtifacts) addImportedSidebarLink(artifact);
 
     function registerSidebarLink(link: HTMLAnchorElement, route: string) {
+      documentActions.add(
+        link,
+        () => artifacts.find((artifact) => artifact.route === route),
+        () => artifactViewerUrl(currentSelection?.route === route ? currentSelection : emptySelection(route)),
+      );
       link.addEventListener('click', (event) => {
         if (
           event.defaultPrevented ||
@@ -1370,7 +1380,10 @@ const blankFrameUrl = 'about:blank';
 
   :global(html:has(.docshelf-viewer)) {
     --docshelf-artifact-background: #1a1b26;
-    --docshelf-navigation-background: var(--docshelf-artifact-background);
+    --docshelf-navigation-background: #16161e;
+    --docshelf-divider-color: #3b3f54;
+    --docshelf-divider-grip: #737d9d;
+    --docshelf-divider-active: #7aa2f7;
     --sl-nav-height: 3rem;
     --sl-nav-pad-y: 0.25rem;
     --sl-mobile-toc-height: 0rem;
@@ -1388,6 +1401,9 @@ const blankFrameUrl = 'about:blank';
     /* Match the Markdown paper and accents while keeping navigation recessed. */
     --docshelf-artifact-background: #fcfcfa;
     --docshelf-navigation-background: #f2f3f0;
+    --docshelf-divider-color: #d3d8d4;
+    --docshelf-divider-grip: #7b858b;
+    --docshelf-divider-active: #365e80;
     --sl-color-white: #20272c;
     --sl-color-gray-1: #30363b;
     --sl-color-gray-2: #454e54;
