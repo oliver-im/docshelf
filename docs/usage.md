@@ -99,8 +99,8 @@ a number to select that exact source line, then Shift-click another number to
 extend the range. Gutter positions and selection bands are distributed within
 the rendered block; they identify source lines, which may differ from the
 visible rows after paragraph wrapping. The range is written to the URL using the familiar
-`#L14-L20` form. Use **Copy link** in the selection bar to share the exact
-artifact and range.
+`#L14-L20` form. Use **Copy link** in the document's **⋯** menu in the sidebar
+to share the exact artifact and range.
 
 ## Markdown rendering
 

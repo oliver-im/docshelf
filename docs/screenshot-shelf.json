@@ -9,6 +9,13 @@
       "description": "A home for reports and notes."
     },
     {
+      "project": "Reports",
+      "source": "docs/examples/project-review.html",
+      "route": "reports/project-review.html",
+      "title": "DocShelf project review",
+      "description": "A public sample HTML report for the README screenshots."
+    },
+    {
       "project": "Guides",
       "source": "docs/usage.md",
       "route": "guides/usage.html",

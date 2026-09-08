@@ -1,26 +1,28 @@
 # DocShelf
 
-A home for the HTML reports and Markdown notes scattered across your projects. Keep the originals where they belong, then use one shelf to find, read, and link to them. You can also bring in public GitHub Markdown and published Claude Artifacts.
+A home for Markdown and HTML notes scattered across projects.
 
-**[Try the live demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)** or [run your own shelf](#run-locally).
+**[Try the live demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)**
 
-The demo opens this README. Use its **+** button to try a public GitHub Markdown file or a published Claude Artifact. Imports stay in your browser; the hosted demo cannot access your local files.
+![DocShelf displaying an HTML report, with HTML and Markdown documents grouped in the sidebar](public/docshelf-overview.png)
 
-![DocShelf in dark mode with grouped documents, a public import, and selected Markdown source lines](public/docshelf-overview.png)
+## Why this is needed
 
-A sample shelf using public documentation, with a source-line range selected.
+While it is very common to have agent generated markdown or html reports, how to store and view them is surprisingly scattered. A common method is to store it in user space path such as `~/.codex`, but this makes it hard to discover. Another common way is to put them in one pre-defined path, but agents are currently bad at indexing and parsing symlink files. The most common way is to just store them in the repo that contains the context for the report, but this makes it scattered across projects.
 
-## What you can do
+DocShelf solves this with one shelf: a JSON file that maps the locations of your documents. It adds [full-text search through Starlight and Pagefind](https://starlight.astro.build/guides/site-search/) for registered local documents and a Markdown reading theme adapted from [Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight). It also comes with a lightweight skill, so you can tell your agent to "add it to DocShelf". Public GitHub Markdown files and published Claude Artifacts can be added as remote links, too.
 
-- Collect selected documents from several projects without moving their sources.
-- Search the full text of registered local documents and jump to matching sections.
-- Read Markdown with tables, code highlighting, Mermaid diagrams, and a page outline.
-- Bookmark a document, heading, or exact source-line range.
-- Ask an agent to “add this to DocShelf” with the included registration skill.
+## Line Range Permalinks
+
+Permalinks support source-line ranges, similar to GitHub code review, so you can point an agent to an exact passage. Click a gutter line number, Shift-click another to extend the selection, then copy the URL from your browser's address bar. The URL updates automatically to include the document and range, such as `?artifact=guides%2Fusage.html#L7-L11`.
+
+![Markdown source lines 7–11 selected in DocShelf, with the Copy link control visible](public/docshelf-line-range.png)
+
+---
 
 ## Run locally
 
-You need **Git, Node.js 24 or newer**, and a filesystem that supports symbolic links. The commands below use a macOS or Linux shell. CI runs on Ubuntu and local verification has covered macOS; Windows has not yet been verified.
+You need **Git, Node.js 24 or newer**, and a filesystem that supports symbolic links. Automatic setup is macOS-only; other platforms can use `npm run watch`. CI runs on Ubuntu and local verification has covered macOS; Windows has not yet been verified.
 
 Put DocShelf beside the projects you want to catalog:
 
@@ -30,7 +32,7 @@ workspace/
 └── example-project/
 ```
 
-For a new installation:
+For a new installation on macOS:
 
 ```sh
 mkdir -p ~/workspace
@@ -38,13 +40,14 @@ cd ~/workspace
 git clone https://github.com/oliver-im/docshelf.git
 cd docshelf
 npm ci
-cp .github/pages-shelf.json shelf.local.json
-npm run watch
+npm run setup
 ```
 
-Open **[http://shelf.localhost:4321/](http://shelf.localhost:4321/)** after the first build finishes. If your browser does not resolve that hostname, use `http://127.0.0.1:4321/`. Keep using the same address: browser imports and preferences belong to that site origin.
+Open **[https://shelf.localhost/](https://shelf.localhost/)** when setup reports that the shelf is ready. Setup reuses a compatible [Portless](https://github.com/vercel-labs/portless) proxy or offers to install one, asks before administrator access or certificate trust changes, and installs DocShelf to start automatically when you log in.
 
-Your first shelf already contains DocShelf's README, so navigation and search work immediately. The watcher rebuilds when a registered document or the shelf changes. Stop it with Ctrl+C.
+Your first shelf contains DocShelf's README, so navigation and search work immediately. Existing shelf entries are preserved. The watcher rebuilds when a registered document or the shelf changes.
+
+For a foreground server without automatic startup, use `npm run watch`. Keep using the same address: browser imports and preferences belong to that site origin. See [setup details and troubleshooting](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md).
 
 Already installed? Follow the [upgrade instructions](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md#updating-an-existing-installation).
 

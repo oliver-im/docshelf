@@ -760,10 +760,13 @@ test('bundled README images resolve locally and beneath a Pages deployment prefi
       await renderMarkdownArtifact(artifact, source, { basePath }), artifact,
       { version: 1, artifacts: [artifact] }, { basePath },
     );
-    const screenshot = findElements(parse(html), 'img').find((node) => attr(node, 'alt')?.startsWith('DocShelf in dark mode'));
-    assert.ok(screenshot);
-    assert.equal(attr(screenshot, 'src'), `${basePath}docshelf-overview.png`);
-    assert.ok((await readFile(path.join(docShelfRoot, 'public/docshelf-overview.png'))).length > 0);
+    const images = findElements(parse(html), 'img');
+    for (const filename of ['docshelf-overview.png', 'docshelf-line-range.png']) {
+      const screenshot = images.find((node) => attr(node, 'src') === `${basePath}${filename}`);
+      assert.ok(screenshot, `${filename} must resolve beneath ${basePath}`);
+      assert.ok(attr(screenshot, 'alt'));
+      assert.ok((await readFile(path.join(docShelfRoot, 'public', filename))).length > 0);
+    }
   }
 });
 

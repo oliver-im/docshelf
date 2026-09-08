@@ -40,3 +40,8 @@ validated browser imports, without taking ownership of their source content.
   `npm run build`.
 - The watcher is the portable runtime. `scripts/launchd.mjs` is an optional
   macOS-only integration.
+- On macOS, `npm run setup` installs the normal `https://shelf.localhost/` address and
+  login service. Reuse compatible Portless state and aliases. Never replace a
+  conflicting shared proxy or route, disable TLS validation, enable LAN/public
+  forwarding, or run the DocShelf watcher as root. Privileged setup needs the
+  installer's explicit interactive consent; `--direct` skips Portless entirely.

@@ -1,6 +1,60 @@
 # Running and updating DocShelf
 
-Run DocShelf with production search and automatic rebuilding:
+## Install with a stable local address
+
+On macOS, after `npm ci`, run:
+
+```sh
+npm run setup
+```
+
+Setup initializes a new local shelf with the README, preserving an existing
+`shelf.local.json` or legacy `artifacts.local.json`. It installs a DocShelf login
+service and verifies the first successful build at **https://shelf.localhost/**.
+The backend stays on `127.0.0.1:4321`; a shared
+[Portless](https://github.com/vercel-labs/portless) proxy provides HTTPS on port
+443 and redirects HTTP on port 80.
+
+The installer supports Portless 0.15.6–0.15.x. It reuses a compatible existing
+startup service and matching `shelf.localhost` alias. When needed, it asks before
+installing Portless globally from npm, creating its startup service, trusting
+its local certificate authority, or synchronizing local hostnames in
+`/etc/hosts` for system DNS and Safari. Those steps may request an administrator
+password. Run setup as your regular user, without `sudo`; the DocShelf watcher
+always runs as you. Noninteractive setup proceeds only when no such approval
+is needed.
+
+Setup refuses to replace another app's alias, a proxy configured for LAN access,
+or a DocShelf service owned by another checkout. It also checks for a conflicting
+backend listener. A stopped or incompatible shared proxy is left for its owner
+to configure; inspect `portless service status`, `portless list`, and
+`portless doctor` before retrying. Setup does not enable LAN access or public
+tunnels. It never disables certificate validation to make verification pass.
+
+Automatic setup is macOS-only and uses a LaunchAgent. The proxy starts at boot,
+and DocShelf starts when you log in. Other platforms can use the foreground
+watcher below.
+
+To install automatic startup without Portless or HTTPS:
+
+```sh
+npm run setup -- --direct
+```
+
+Open `http://shelf.localhost:4321/`, or `http://127.0.0.1:4321/` if the system
+does not resolve the hostname. Declining a privileged setup prompt stops setup
+and prints this fallback; it does not silently switch your browser origin.
+The direct URL remains available behind an HTTPS installation, too.
+
+For a different backend port, run `DOCSHELF_PORT=4331 npm run setup`. A preexisting
+alias for another port is treated as a conflict and is not overwritten. Keep
+using the same browser origin: imports and preferences saved at the old HTTP
+address do not automatically appear at the HTTPS address. Re-add browser imports
+there if migrating; registered local documents are unaffected.
+
+## Foreground server
+
+Run DocShelf with production search and automatic rebuilding in a terminal:
 
 ```sh
 npm run watch
@@ -30,7 +84,8 @@ DOCSHELF_PORT=4331 npm run watch
 ```
 
 The configured host and port are also used for generated canonical and sitemap
-URLs.
+URLs unless `DOCSHELF_SITE` specifies the installed address. Setup records
+`https://shelf.localhost` in the login service for this purpose.
 
 `DOCSHELF_HOST` can change the listening interface. The default loopback address
 keeps DocShelf local; binding to a network interface can expose registered files
@@ -39,12 +94,13 @@ to other machines. In loopback mode, DocShelf accepts only loopback and
 shelf through DNS rebinding.
 
 The watcher is portable to environments where Node.js and file symlinks are
-available. The login-service integration below is macOS-only.
+available. Stop it with Ctrl+C. Stop an installed login service before starting
+a foreground watcher in the same checkout.
 
 ## Updating an existing installation
 
 Stop the foreground watcher with Ctrl+C before updating. If you installed the
-macOS login service, stop it with `npm run daemon:uninstall` instead; launchd
+login service, stop it with `npm run daemon:uninstall` instead; the service manager
 would restart a process stopped with `kill` alone.
 
 From the DocShelf checkout on `main`:
@@ -55,14 +111,14 @@ npm ci
 npm test
 npm run check
 npm run build
-npm run watch
+npm run setup
 ```
 
-For a macOS login service, replace the last command with
-`npm run daemon:install`, then check `npm run daemon:status`. Reapply any custom
-`DOCSHELF_HOST` and `DOCSHELF_PORT` values when installing the service.
+Use `npm run setup -- --direct` if you installed with the direct-port address,
+or `npm run watch` for a foreground server. Check `npm run daemon:status` after
+automatic setup. Reapply a custom `DOCSHELF_PORT` when reinstalling.
 
-Keep your `shelf.local.json`; do not repeat the first-install copy command.
+Keep your `shelf.local.json`; setup preserves it.
 The ignored shelf, source documents, and browser imports survive this update.
 Use the same site origin (scheme, host, and port) to keep access to existing
 browser imports and preferences. A Git pull that cannot fast-forward needs
@@ -112,7 +168,24 @@ rebuilds. The lock covers the sync step only: a watcher rebuild that starts
 while a manual `npm run build` is already copying `public/artifacts` can still
 make that manual build fail with a revision mismatch. Rerun it.
 
-## macOS login service
+## Managing automatic startup
+
+On macOS, `npm run setup` installs the login service. Manage it with:
+
+```sh
+npm run daemon:status
+npm run daemon:uninstall
+```
+
+Uninstall removes only DocShelf's login service. It preserves your documents,
+local shelf, runtime output, and the shared Portless service and alias. If you
+are retiring this shelf permanently, inspect `portless list` before removing
+its alias with `portless alias --remove shelf`. Manage the shared proxy with
+Portless's own commands only when it is no longer needed by other apps.
+
+`npm run daemon:install` is the lower-level service command: it does not
+configure Portless or verify HTTPS. Prefer rerunning `npm run setup` to update
+the complete installation.
 
 Install the watcher as a per-user `launchd` service that starts at login and is
 kept running:
@@ -123,7 +196,7 @@ npm run daemon:status
 ```
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
-It records the current Node executable, DocShelf path, host, and port, so rerun the
+It records the current Node executable, DocShelf path, host, port, and site URL, so rerun the
 installer if any of them change, and after updating DocShelf so the loaded
 service definition is current. `daemon:status` reports the values loaded by
 `launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
@@ -137,12 +210,6 @@ The installer refuses to run while a watcher that `launchd` does not manage
 holds the watcher lock, because the agent would fail to start and be relaunched
 every ten seconds. After bootstrapping it waits for the agent to take the lock
 and reports the exit code and log path if the agent exits instead.
-
-Remove the service with:
-
-```sh
-npm run daemon:uninstall
-```
 
 ## Development and verification
 

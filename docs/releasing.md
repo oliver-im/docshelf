@@ -104,13 +104,15 @@ document switching, a search result, and a precise line link. Keep the claims
 accurate: full-text search covers registered local documents; remote imports
 depend on their host and the current browser's saved links.
 
-A [screenshot asset](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
-is included for the README or announcement. It shows only repository documents
-and the public security-policy import, with source lines 7–11 selected. To
-recreate the sample, use `docs/screenshot-shelf.json` as the local shelf in a
-separate checkout, import the public `SECURITY.md` link as “Public security
-policy”, and open `guides/usage.html#L7-L11` in dark mode. The production Pages
-shelf remains README-only.
+The README includes an [overview screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
+and a [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).
+They show only repository documents, including the sample HTML report at
+`docs/examples/project-review.html`. To recreate them, use
+`docs/screenshot-shelf.json` as the local shelf in a separate checkout and use
+dark mode. For the overview, open `?artifact=reports%2Fproject-review.html`.
+For the line-range example, open `?artifact=guides%2Fusage.html#L7-L11` and open
+the document's **⋯** menu so **Copy link** is visible. Include the HTML report in the sidebar of both
+captures. The production Pages shelf remains README-only.
 
 Draft X post, to tune after the README and release are final:
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>DocShelf project review</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #c0caf5; background: #1a1b26; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      main { max-width: 920px; margin: auto; padding: 64px 48px; }
+      .eyebrow { color: #7aa2f7; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+      h1 { margin: 16px 0; color: #e1e7ff; font-size: clamp(32px, 4vw, 44px); letter-spacing: -.04em; line-height: 1.15; }
+      .intro { max-width: 640px; color: #a9b1d6; font-size: 18px; line-height: 1.7; }
+      .findings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 32px 0 40px; }
+      .finding { padding: 20px; border: 1px solid #343b58; border-radius: 10px; background: #202332; }
+      .finding span { color: #9ece6a; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+      h2 { margin: 12px 0 8px; color: #e1e7ff; font-size: 18px; }
+      .finding p { margin: 0; color: #a9b1d6; font-size: 14px; line-height: 1.6; }
+      table { width: 100%; border-collapse: collapse; margin: 20px 0 32px; font-size: 14px; text-align: left; }
+      th { color: #7aa2f7; font-weight: 600; }
+      th, td { padding: 14px 12px; border-bottom: 1px solid #343b58; vertical-align: top; line-height: 1.6; }
+      th:first-child, td:first-child { padding-left: 0; width: 28%; }
+      .note { padding: 18px 20px; border-left: 3px solid #bb9af7; background: #202332; font-size: 14px; line-height: 1.7; }
+      .note strong { color: #bb9af7; }
+      footer { margin-top: 28px; color: #a9b1d6; font-size: 12px; }
+      @media (max-width: 620px) { main { padding: 32px 24px; } .findings { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">Sample HTML report · Project review</div>
+      <h1>One shelf for scattered documents</h1>
+      <p class="intro">Keep reports in the projects that give them context. Use DocShelf to find them, read them, and share a precise reference.</p>
+      <section class="findings" aria-label="Key findings">
+        <article class="finding">
+          <span>Collect</span>
+          <h2>Sources stay put</h2>
+          <p>A shelf file records document locations. The originals remain in their own projects.</p>
+        </article>
+        <article class="finding">
+          <span>Find</span>
+          <h2>Search across projects</h2>
+          <p>Search the full text of registered local Markdown and HTML documents.</p>
+        </article>
+        <article class="finding">
+          <span>Discuss</span>
+          <h2>Point to exact lines</h2>
+          <p>Select a Markdown source range and copy a link to the passage you want to discuss.</p>
+        </article>
+      </section>
+      <h2>Reading formats</h2>
+      <table>
+        <thead><tr><th>Document</th><th>How it appears in the shelf</th></tr></thead>
+        <tbody>
+          <tr><td>HTML reports</td><td>Keep their own layout, charts, styles, and interactive elements.</td></tr>
+          <tr><td>Markdown notes</td><td>Use a shared reading theme with tables, code, diagrams, and source-line links.</td></tr>
+          <tr><td>Public imports</td><td>View public GitHub Markdown and published Claude Artifacts from their source links.</td></tr>
+        </tbody>
+      </table>
+      <p class="note"><strong>Try the workflow.</strong> Open a Markdown guide from the sidebar, select a few source lines, and use <strong>Copy link</strong> to reference the selection.</p>
+      <footer>This public sample report is included to demonstrate an HTML document in DocShelf.</footer>
+    </main>
+  </body>
+</html>

@@ -115,7 +115,7 @@ await new Promise((resolve, reject) => {
   });
 });
 
-console.log(`DocShelf is available at http://${browserHost(host)}:${port}/`);
+console.log(`DocShelf is available at ${process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`}/`);
 if (activeBuildRoot) {
   console.log(`[serve] Using ${path.relative(docShelfRoot, activeBuildRoot)} while rebuilding.`);
 } else {
