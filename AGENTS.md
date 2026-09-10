@@ -8,6 +8,9 @@ validated browser imports, without taking ownership of their source content.
 - `shelf.json` is the tracked empty fallback and shelf template.
 - `shelf.local.json` contains the machine-specific shelf and must not be
   committed.
+- Put local reports, notes, and other private working documents in the ignored
+  `.local/` directory. Maintained project documentation belongs in `docs/`.
+  Adding a document to the shelf does not imply committing its source.
 - `public/artifacts/`, `src/generated/`, `dist/`, `.astro/`, and
   `.docshelf-runtime/` are generated. Do not edit or commit them.
 - Local source files belong to their owning projects. DocShelf may create symlinks,
@@ -37,3 +40,8 @@ validated browser imports, without taking ownership of their source content.
   `npm run build`.
 - The watcher is the portable runtime. `scripts/launchd.mjs` is an optional
   macOS-only integration.
+- On macOS, `npm run setup` installs the normal `https://shelf.localhost/` address and
+  login service. Reuse compatible Portless state and aliases. Never replace a
+  conflicting shared proxy or route, disable TLS validation, enable LAN/public
+  forwarding, or run the DocShelf watcher as root. Privileged setup needs the
+  installer's explicit interactive consent; `--direct` skips Portless entirely.

@@ -17,8 +17,18 @@ const serviceTarget = `gui/${userId}/${label}`;
 const standardOutputPath = path.join(runtimeRoot, 'docshelf.stdout.log');
 const standardErrorPath = path.join(runtimeRoot, 'docshelf.stderr.log');
 const watchScript = path.join(docShelfRoot, 'scripts', 'watch.mjs');
+const extraArgs = process.argv.slice(3);
+if (extraArgs.length && (command !== 'uninstall' || extraArgs.length !== 2 ||
+    extraArgs[0] !== '--from' || !path.isAbsolute(extraArgs[1]))) {
+  throw new Error('Usage: npm run daemon:uninstall -- --from /absolute/old/checkout');
+}
+const uninstallRoot = extraArgs.length ? path.resolve(extraArgs[1]) : docShelfRoot;
+const recoveryHint = 'After moving the checkout, run `npm run daemon:uninstall -- --from /absolute/old/checkout`, then rerun `npm run setup`.';
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
+const site = process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`;
+// Standard priority keeps Astro builds off launchd's throttled Background class.
+const processType = 'Standard';
 
 if (process.platform !== 'darwin' || userId === undefined) {
   throw new Error('The DocShelf launchd integration requires macOS user launch agents.');
@@ -33,6 +43,10 @@ if (userHome === '/' || path.dirname(launchAgentsDirectory) !== path.join(userHo
 }
 
 switch (command) {
+  case 'preflight':
+    await assertServiceCheckout();
+    await assertNoForeignWatcher();
+    break;
   case 'install':
     await install();
     break;
@@ -43,11 +57,13 @@ switch (command) {
     await uninstall();
     break;
   default:
-    console.error('Usage: node scripts/launchd.mjs <install|status|uninstall>');
+    console.error('Usage: node scripts/launchd.mjs <install|status|uninstall> [uninstall: --from /absolute/old/checkout]');
     process.exitCode = 1;
 }
 
 async function install() {
+  await assertServiceCheckout();
+  const nextPlist = renderPlist();
   await mkdir(launchAgentsDirectory, { recursive: true });
   await mkdir(runtimeRoot, { recursive: true });
 
@@ -55,18 +71,22 @@ async function install() {
   const wasLoaded = await isLoaded();
   await assertNoForeignWatcher();
 
-  if (wasLoaded) {
-    await launchctl(['bootout', `gui/${userId}`, plistPath]);
-    await waitUntilUnloaded();
-  }
-
   const temporaryPlistPath = `${plistPath}.${process.pid}.tmp`;
-  await writeFile(temporaryPlistPath, renderPlist(), { mode: 0o644 });
-  await rename(temporaryPlistPath, plistPath);
+  await writeFile(temporaryPlistPath, nextPlist, { mode: 0o644 });
 
   try {
+    if (wasLoaded) {
+      await launchctl(['bootout', `gui/${userId}`, plistPath]);
+      await waitUntilUnloaded();
+    }
+    await rename(temporaryPlistPath, plistPath);
     await bootstrap();
+    await confirmWatcherStarted();
   } catch (error) {
+    if (await isLoaded()) {
+      await launchctl(['bootout', `gui/${userId}`, plistPath]);
+      await waitUntilUnloaded();
+    }
     if (previousPlist === null) {
       await unlink(plistPath).catch(() => {});
     } else {
@@ -76,11 +96,14 @@ async function install() {
       }
     }
     throw error;
+  } finally {
+    await unlink(temporaryPlistPath).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
   }
 
-  await confirmWatcherStarted();
   console.log(`Installed and started ${label}.`);
-  console.log(`DocShelf: http://${browserHost(host)}:${port}/`);
+  console.log(`DocShelf: ${site}/`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -97,7 +120,8 @@ async function status() {
   process.stdout.write(result.stdout);
   const installedHost = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_HOST') || host;
   const installedPort = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_PORT') || String(port);
-  console.log(`\nDocShelf: http://${browserHost(installedHost)}:${installedPort}/`);
+  const installedSite = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_SITE') || `http://${browserHost(installedHost)}:${installedPort}`;
+  console.log(`\nDocShelf: ${installedSite}/`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -109,14 +133,29 @@ function launchctlEnvironmentValue(output, key) {
 }
 
 async function uninstall() {
+  await assertServiceCheckout(path.join(uninstallRoot, 'scripts', 'watch.mjs'));
   if (await isLoaded()) {
-    await launchctl(['bootout', `gui/${userId}`, plistPath]);
+    await launchctl(['bootout', serviceTarget]);
     await waitUntilUnloaded();
   }
   await unlink(plistPath).catch((error) => {
     if (error?.code !== 'ENOENT') throw error;
   });
-  console.log(`Uninstalled ${label}. Runtime builds and logs were left in ${runtimeRoot}.`);
+  console.log(`Uninstalled ${label}. Runtime builds and logs were left in ${path.join(uninstallRoot, '.docshelf-runtime')}.`);
+}
+
+async function assertServiceCheckout(expectedWatchScript = watchScript) {
+  const existing = await readFile(plistPath, 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (existing && !existing.includes(`<string>${xml(expectedWatchScript)}</string>`)) {
+    throw new Error(`The DocShelf login service belongs to another checkout. Manage it from its owning checkout; ${plistPath} was not changed. ${recoveryHint}`);
+  }
+  const loaded = await run('/bin/launchctl', ['print', serviceTarget], true);
+  if (loaded.code === 0 && !loaded.stdout.split('\n').some((line) => line.trim() === expectedWatchScript)) {
+    throw new Error(`The loaded DocShelf login service belongs to another checkout. It was not changed. ${recoveryHint}`);
+  }
 }
 
 async function isLoaded() {
@@ -148,17 +187,16 @@ async function confirmWatcherStarted() {
     const agent = await agentState();
     if (agent.lastExitCode !== null && agent.lastExitCode !== 0) {
       throw new Error(
-        `${label} is installed, but its watcher exited with code ${agent.lastExitCode} and launchd ` +
-          `keeps relaunching it. Check ${standardErrorPath}, then fix the cause or run ` +
-          '`npm run daemon:uninstall`.',
+        `${label} watcher exited with code ${agent.lastExitCode}. Installation will restore the ` +
+          `previous service. Check ${standardErrorPath} for the startup error.`,
       );
     }
     await delay(250);
   }
 
   throw new Error(
-    `${label} is installed, but its watcher did not take ${watcherLockPath(runtimeRoot)} within ` +
-      `20 seconds. Check ${standardErrorPath} or run \`npm run daemon:status\`.`,
+    `${label} watcher did not take ${watcherLockPath(runtimeRoot)} within ` +
+      `20 seconds. Installation will restore the previous service. Check ${standardErrorPath}.`,
   );
 }
 
@@ -252,8 +290,6 @@ function run(executable, arguments_, capture) {
  * to six seconds instead of one. The watcher idles between rebuilds, so nothing is gained by
  * demoting it.
  */
-const processType = 'Standard';
-
 function renderPlist() {
   const executableDirectory = path.dirname(process.execPath);
   const executablePath = [
@@ -285,6 +321,8 @@ function renderPlist() {
     <string>${xml(host)}</string>
     <key>DOCSHELF_PORT</key>
     <string>${port}</string>
+    <key>DOCSHELF_SITE</key>
+    <string>${xml(site)}</string>
     <key>PATH</key>
     <string>${xml(executablePath)}</string>
   </dict>

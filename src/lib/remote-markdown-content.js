@@ -20,7 +20,7 @@ const rangedRendererMethods = [
 export function renderRemoteMarkdownContent(markdown) {
   const tokens = marked.lexer(markdown, { gfm: true });
   const ranges = sourceRanges(tokens);
-  preserveParagraphSourceBreaks(tokens, ranges);
+  annotateParagraphHardBreaks(tokens, ranges);
   const renderer = new marked.Renderer();
   renderer.html = () => '';
 
@@ -47,18 +47,17 @@ export function renderRemoteMarkdownContent(markdown) {
 }
 
 /**
- * CommonMark normally collapses soft source breaks like spaces. Preserve them
- * in top-level paragraphs so the line gutter remains visually aligned with the
- * source, matching DocShelf's registered-Markdown renderer.
+ * Annotate authored hard breaks without changing normal Markdown paragraph
+ * flow, matching DocShelf's registered-Markdown renderer.
  *
  * @param {Array<Record<string, any>>} tokens
  * @param {WeakMap<Record<string, any>, { start: number, end: number }>} ranges
  */
-function preserveParagraphSourceBreaks(tokens, ranges) {
+function annotateParagraphHardBreaks(tokens, ranges) {
   for (const token of tokens) {
     const range = ranges.get(token);
     if (token.type === 'paragraph' && range && Array.isArray(token.tokens)) {
-      token.tokens = annotateInlineBreaks(token.tokens, range.start).tokens;
+      annotateInlineBreaks(token.tokens, range.start);
     }
   }
 }
@@ -66,41 +65,20 @@ function preserveParagraphSourceBreaks(tokens, ranges) {
 /**
  * @param {Array<Record<string, any>>} tokens
  * @param {number} startingLine
- * @returns {{ tokens: Array<Record<string, any>>, nextLine: number }}
  */
 function annotateInlineBreaks(tokens, startingLine) {
-  const annotated = [];
   let sourceLine = startingLine;
 
   for (const token of tokens) {
     const raw = typeof token.raw === 'string' ? token.raw : '';
     const lineBreaks = countLineBreaks(raw);
 
-    if (token.type === 'text' && typeof token.text === 'string' && token.text.includes('\n')) {
-      const parts = token.text.split('\n');
-      for (const [index, text] of parts.entries()) {
-        if (text) annotated.push({ ...token, raw: text, text });
-        if (index < parts.length - 1) {
-          annotated.push({
-            type: 'br',
-            raw: '\n',
-            docshelfLineBreakAfter: sourceLine,
-          });
-          sourceLine += 1;
-        }
-      }
-      continue;
-    }
-
     if (token.type === 'br') token.docshelfLineBreakAfter = sourceLine;
     if (Array.isArray(token.tokens)) {
-      token.tokens = annotateInlineBreaks(token.tokens, sourceLine).tokens;
+      annotateInlineBreaks(token.tokens, sourceLine);
     }
-    annotated.push(token);
     sourceLine += lineBreaks;
   }
-
-  return { tokens: annotated, nextLine: sourceLine };
 }
 
 /** @param {Array<Record<string, any>>} tokens */

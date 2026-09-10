@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .astro/
+.obsidian/
+.DS_Store
+# Local reports, notes, and other private working documents.
+/.local/
 .docshelf-runtime/
 .playwright-mcp/
 shelf.local.json

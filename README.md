@@ -1,32 +1,30 @@
 # DocShelf
 
-A shelf for explicitly registered HTML and Markdown, published Claude
-Artifacts, and browser-imported public GitHub Markdown. Source projects and
-content hosts keep ownership of their content; DocShelf provides one place to
-navigate it without crawling the surrounding workspace or accepting arbitrary
-web pages.
+A home for Markdown and HTML notes scattered across projects.
 
-[Open the README in the live DocShelf demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html).
+**[Try the live demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)**
 
-## Why DocShelf exists
+![DocShelf displaying an HTML report, with HTML and Markdown documents grouped in the sidebar](public/docshelf-overview.png)
 
-HTML is useful for visual reports and interactive explanations, while Markdown
-is useful for durable notes and documentation. Those files become difficult to
-rediscover when they are spread across projects or opened through ad hoc
-`file://` links. DocShelf gives explicitly selected content one curated shelf
-without crawling or serving its owning project directories.
+## Why this is needed
 
-DocShelf is intentionally explicit: one shelf entry maps one local file or
-published Claude Artifact to one stable route. Browser imports are separate,
-local to one browser, and limited to known source types.
+While it is very common to have agent generated markdown or html reports, how to store and view them is surprisingly scattered. A common method is to store it in user space path such as `~/.codex`, but this makes it hard to discover. Another common way is to put them in one pre-defined path, but agents are currently bad at indexing and parsing symlink files. The most common way is to just store them in the repo that contains the context for the report, but this makes it scattered across projects.
 
-## Requirements
+DocShelf solves this with one shelf: a JSON file that maps the locations of your documents. It adds [full-text search through Starlight and Pagefind](https://starlight.astro.build/guides/site-search/) for registered local documents and a Markdown reading theme adapted from [Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight). It also comes with a lightweight skill, so you can tell your agent to "add it to DocShelf". Public GitHub Markdown files and published Claude Artifacts can be added as remote links, too.
 
-- Node.js 24 or newer
-- A filesystem that supports symbolic links
+## Line Range Permalinks
 
-For local HTML and Markdown, DocShelf expects to live inside a workspace
-alongside the projects it catalogs:
+Permalinks support source-line ranges, similar to GitHub code review, so you can point an agent to an exact passage. Click a gutter line number, Shift-click another to extend the selection, then copy the URL from your browser's address bar. The URL updates automatically to include the document and range, such as `?artifact=guides%2Fusage.html#L7-L11`.
+
+![Markdown source lines 7–11 selected in DocShelf, with the Copy link control visible](public/docshelf-line-range.png)
+
+---
+
+## Run locally
+
+You need **Git, Node.js 24 or newer**, and a filesystem that supports symbolic links. Automatic setup is macOS-only; other platforms can use `npm run watch`. CI runs on Ubuntu and local verification has covered macOS; Windows has not yet been verified.
+
+Put DocShelf beside the projects you want to catalog:
 
 ```text
 workspace/
@@ -34,353 +32,84 @@ workspace/
 └── example-project/
 ```
 
-Registered sources must resolve inside the workspace root, defined as DocShelf's
-parent directory. This keeps a misplaced shelf entry from reaching outside
-the intended workspace.
-
-## Setup
+For a new installation on macOS:
 
 ```sh
-npm install
-cp shelf.json shelf.local.json
-npm run watch
+mkdir -p ~/workspace
+cd ~/workspace
+git clone https://github.com/oliver-im/docshelf.git
+cd docshelf
+npm ci
+npm run setup
 ```
 
-Your shelf lives in the ignored `shelf.local.json` file. Register artifacts in
-its `artifacts` array:
+Open **[https://shelf.localhost/](https://shelf.localhost/)** when setup reports that the shelf is ready. Setup reuses a compatible [Portless](https://github.com/vercel-labs/portless) proxy or offers to install one, asks before administrator access or certificate trust changes, and installs DocShelf to start automatically when you log in.
+
+Your first shelf contains DocShelf's README, so navigation and search work immediately. Existing shelf entries are preserved. The watcher rebuilds when a registered document or the shelf changes.
+
+For a foreground server without automatic startup, use `npm run watch`. Keep using the same address: browser imports and preferences belong to that site origin. See [setup details and troubleshooting](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md).
+
+Already installed? Follow the [upgrade instructions](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md#updating-an-existing-installation).
+
+## Register local documents
+
+Edit the `artifacts` array in your ignored `shelf.local.json`. Keep the README entry if you want it, and add entries for files that already exist:
 
 ```json
 {
-  "version": 1,
-  "artifacts": [
-    {
-      "project": "Example Project",
-      "source": "../example-project/docs/overview.md",
-      "route": "example-project/overview.html",
-      "title": "Project overview",
-      "description": "A visual overview of the example project."
-    }
-  ]
+  "project": "Example Project",
+  "source": "../example-project/docs/overview.md",
+  "route": "example-project/overview.html",
+  "title": "Project overview",
+  "description": "An overview of the example project."
 }
 ```
 
-Existing installations using `artifacts.local.json` continue to load with a
-deprecation warning. Rename the file to adopt the current terminology:
+`source` is relative to the DocShelf checkout and must end in `.html` or `.md`. The file must resolve inside DocShelf's parent directory, the workspace root. `route` is a unique, lowercase path ending in `.html`, even for Markdown. Keep routes stable so bookmarks keep working.
 
-```sh
-mv artifacts.local.json shelf.local.json
-```
+DocShelf creates generated HTML snapshots and never edits the original files. Links between registered sources are rewritten only in the generated output. It does not crawl or serve unregistered neighboring files, including images. The tracked `shelf.json` stays an empty template; your registrations belong in `shelf.local.json`.
 
-Local sources are relative to the DocShelf directory and may end in `.html` or
-`.md`. Routes always end in `.html`, including when the source is Markdown.
-`shelf.json` is both the copyable shelf template and a tracked empty fallback,
-allowing a clean clone to build without local entries. Machine-specific
-registrations belong only in the ignored `shelf.local.json` file.
+To register a published Claude Artifact in the shelf, see [supported links and embed setup](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#published-claude-artifacts).
 
-DocShelf reads each registered local source into a standalone HTML snapshot
-beneath its ignored runtime directory. Markdown is rendered to HTML; existing
-HTML is copied into the same generated pipeline. When a relative link resolves
-to another registered source, DocShelf rewrites only the generated link to use
-the target's stable DocShelf route. External links, same-document anchors, and
-unregistered targets remain unchanged. DocShelf never modifies the original
-files.
+## Read and navigate
 
-`npm run sync`, `dev`, `check`, and `build` validate the shelf and regenerate
-the ignored file-level symlink tree in `public/artifacts/`.
+Choose a document in the sidebar, or search for a word inside a registered local document. Drag the sidebar divider to resize it; `Command/Ctrl+B` hides or shows the sidebar.
 
-### Browser imports
+Use a document's **⋯** menu to open it in a new tab or copy its viewer link. Remote documents offer **View source**. Local files offer **Reveal in Finder** when the macOS loopback watcher is running. Native browser right-click remains available.
 
-Use the plus button in the DocShelf header on either the local site or the
-hosted GitHub Pages site. Paste a public GitHub Markdown file or published
-Claude Artifact URL, optionally give it a name, and DocShelf remembers it in
-that browser. Browser imports do not change a shelf file or make the imported
-link available to other visitors.
+For Markdown, click a gutter line number and Shift-click another to select a range. **Copy link** preserves that selection, such as `#L14-L20`. The **On this page** outline navigates longer documents by heading.
 
-For Markdown, DocShelf accepts only HTTPS `.md` and `.markdown` file URLs on
-`github.com` and `raw.githubusercontent.com`. It fetches the public raw file
-directly in the browser, omits raw HTML, sanitizes the result, and renders it
-with the DocShelf Markdown theme. Relative images resolve from the raw file's
-directory, while relative links from a GitHub file-view URL point back into the
-same repository. General GitHub pages and arbitrary remote hosts are rejected.
-Private repositories and authenticated requests are not supported.
+Read the [viewer and Markdown guide](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md) for keyboard controls, browser import behavior, and rendering details.
 
-Imported Markdown is fetched again after a page reload. It is not copied into
-the built site, available offline, or included in full-text search. It retains
-DocShelf's source-line selection and permalink behavior, while its repository
-remains the source of truth.
+## Add documents with an agent
 
-#### Published Claude Artifacts
-
-Unlike browser-imported Markdown, a published Claude Artifact can also be
-included for everyone who uses a built shelf by registering its public link in
-the shelf JSON:
-
-```json
-{
-  "project": "Claude Artifacts",
-  "source": "https://claude.ai/public/artifacts/12345678-90ab-cdef-1234-567890abcdef",
-  "route": "claude/system-explorer.html",
-  "title": "System explorer",
-  "description": "An interactive system explorer published from Claude."
-}
-```
-
-DocShelf accepts only exact HTTPS links of the form
-`claude.ai/public/artifacts/<id>` (the `/embed` form is accepted and normalized
-too). It embeds Claude's dedicated cross-origin `/embed` page; a Claude chat,
-home page, or other arbitrary URL is rejected. The Artifact owner must use
-Claude's **Get embed code** settings to add the complete DocShelf origin—such
-as `https://oliver-im.github.io` or `http://shelf.localhost:4321`—to **Allowed
-domains**. See Claude's
-[publishing and sharing instructions](https://support.claude.com/en/articles/9547008-publish-and-share-artifacts).
-
-Claude remains the content host. These entries are therefore not copied into
-DocShelf, included in full-text search, given Markdown source-line links, or
-available offline. Unpublishing an Artifact or removing the DocShelf origin
-from its allowed domains makes the embedded content unavailable.
-
-## Using the viewer
-
-Choose an artifact in the left sidebar or search results to load it inside
-DocShelf. Search results for a section jump to that heading. For local artifacts,
-use a modified click or the browser's link menu to open the standalone generated
-page.
-
-- `Command/Ctrl+B` toggles the artifact sidebar.
-
-Drag the divider beside the sidebar to change its width. When the divider has
-keyboard focus, the arrow keys resize it in smaller steps. The width and
-visibility preferences are stored in the browser.
-
-The selected artifact is written to the page URL, so a viewer state can be
-bookmarked. For a browser-imported document, that bookmark works in the same
-browser because the source link is stored locally; the bookmark alone does not
-transfer the import to someone else. The viewer keeps the current document
-visible while a selected or updated artifact loads in a hidden frame, then
-swaps frames after the new document is ready. While `npm run watch` is running,
-local content revisions are checked when the window regains focus and every few
-seconds while it remains visible.
-
-Rendered Markdown also supports source-line links. Its gutter shows every source
-line, including blank lines and lines omitted from the rendered document. Click
-a number to select that exact source line, then Shift-click another number to
-extend the range. DocShelf paints each selected source line as a horizontal
-band; when the range covers an entire rendered element, it outlines that element
-as additional context. The range is written to the URL using the familiar
-`#L14-L20` form. Use **Copy link** in the selection bar to share the exact
-artifact and range.
-
-## Markdown rendering
-
-Registered Markdown artifacts support GitHub-flavored tables, task lists,
-strikethrough, heading anchors, syntax-highlighted fenced code, and Mermaid
-diagrams. Put Mermaid syntax in a fenced code block with the `mermaid` language
-identifier, as on GitHub. DocShelf loads its bundled Mermaid runtime only for
-Markdown documents that contain one of these blocks. YAML or TOML frontmatter
-is removed from the rendered document; a valid `lang` frontmatter value sets
-the HTML document language.
-
-Both registered and browser-imported Markdown use an adapted Tokyo Night
-reading theme with a centered, readable text column. Its light or dark appearance
-follows DocShelf, including theme changes made while the document is open.
-Browser imports support GitHub-flavored Markdown, heading anchors, and source-line
-links, but do not run Mermaid or syntax-highlighting scripts. Existing HTML
-artifacts retain their own styles.
-
-Registered Markdown documents with three or more named, authored second-level
-headings get an **On this page** outline, including nested third-level headings.
-It sits beside the document when there is room and collapses into a sticky menu
-on narrower screens. Wide tables scroll independently with a visible hint; focus
-a scrolling table to move through its columns with the arrow keys.
-Outline links update the viewer URL, so sections can be bookmarked and restored
-with Back and Forward. Source-line breaks and line selections are preserved
-across these layouts.
-
-Raw HTML inside Markdown is omitted. Use a registered HTML artifact when a
-document needs custom markup or scripts. Browser-imported GitHub Markdown
-resolves relative images through GitHub's raw file host. A registered local
-Markdown artifact cannot load an unregistered neighboring image because
-DocShelf does not serve surrounding project directories.
-
-## Agent skill
-
-This repository includes a `docshelf` agent skill for registering HTML,
-Markdown, and published Claude Artifacts. Install it globally when you want to
-say “add this to DocShelf” from any project:
+Install the included `docshelf` skill globally:
 
 ```sh
 npx skills add oliver-im/docshelf --skill docshelf -g
 ```
 
-The skill registers completed documents without authoring or restyling them.
-The optional [HTML theme](.agents/skills/docshelf/references/theme.md) remains
-available as a separate authoring resource and is not part of the registration
-workflow.
+After creating a report or note, ask your agent to **“add this to DocShelf.”** The skill registers the finished source, preserves existing shelf entries, and verifies the result. It does not author or restyle documents. The optional [HTML theme](https://github.com/oliver-im/docshelf/blob/main/.agents/skills/docshelf/references/theme.md) is a separate authoring resource.
 
-## GitHub Pages demo
+## Content boundaries
 
-Pushes to `main` rebuild the public demo from this README and deploy the
-generated site to GitHub Pages. The workflow copies
-`.github/pages-shelf.json` to the ignored local shelf during the build, so the
-README remains the single source of truth and generated HTML is never
-committed. A fork can register published Claude Artifacts in that Pages shelf;
-visitors can also import public GitHub Markdown or their own Claude Artifacts
-with the header's plus button.
+| Source | Stored content | Full-text search | Requirements |
+| --- | --- | --- | --- |
+| Registered local HTML or Markdown | Generated local snapshot; original stays in its project | Yes | File inside the workspace |
+| Browser-imported GitHub Markdown | Source link in browser storage; fetched again on reload | No | Public HTTPS `.md` or `.markdown` file |
+| Published Claude Artifact | Claude-hosted cross-origin embed | No | Exact published Artifact URL and DocShelf origin allowed by its owner |
 
-The hosted build sets `DOCSHELF_SITE` and `DOCSHELF_BASE` from GitHub Pages and
-disables the local watcher's live-update polling. Only the README registered by
-the demo shelf is published; machine-local registrations remain ignored.
+Browser-import bookmarks depend on that browser's saved source link. Sharing the bookmark alone does not transfer the import to another visitor. Private GitHub repositories, arbitrary remote pages, and offline remote imports are not supported.
 
-## Security
+Register only local HTML you trust: it can run scripts with DocShelf's origin. GitHub Markdown is sanitized, but its images and links can contact remote sites. Keep the server's default loopback binding unless you intend to expose your registered documents to the network. See the [security policy](https://github.com/oliver-im/docshelf/blob/main/SECURITY.md).
 
-Registered local HTML is treated as trusted content and may execute scripts
-with the same origin as DocShelf. Register only HTML files you trust.
-Browser-imported GitHub Markdown is sanitized and rendered in a generated
-document, but it may still load remote images and links. Published Claude
-Artifacts remain in a cross-origin Claude frame but can still present
-interactive content, so open only links you trust. Keep DocShelf bound to its
-default loopback address unless you intentionally want to expose registered
-artifacts to the network. See [`SECURITY.md`](SECURITY.md) for the vulnerability
-reporting policy and security boundaries.
+## Running, developing, and releasing
 
-## Site development
+- [Local server, upgrades, troubleshooting, and macOS login service](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md)
+- [Versioning, release notes, and release procedure](https://github.com/oliver-im/docshelf/blob/main/docs/releasing.md)
 
-Use Astro's development server while changing DocShelf pages, components, or
-styles:
-
-```sh
-npm run dev
-```
-
-The development server loads the shelf when it starts. Restart it after editing
-the shelf, or use `npm run watch` to rebuild automatically after shelf or source
-file changes. Search is generated only during production builds and is
-unavailable in the development server.
-
-## Production verification
-
-```sh
-npm test
-npm run check
-npm run build
-npm run preview
-```
-
-## Always-on local server
-
-Run DocShelf with production search and automatic rebuilding:
-
-```sh
-npm run watch
-```
-
-The watcher is available at `http://shelf.localhost:4321/`, binds to
-`127.0.0.1` by default, observes only the shelf files and registered
-artifact sources, and switches to a new isolated build only after it succeeds.
-An invalid shelf or failed build leaves the previous site online. The watcher
-writes its latest attempt to `.docshelf-runtime/build-status.json` and serves the
-same state without caching at `/__docshelf/status`. Each attempt has a generation
-and watcher-instance ID so automated clients can distinguish it from an earlier
-success. The viewer polls this endpoint and shows a banner when a rebuild fails.
-Diagnostic output in the status file is bounded; the watcher log receives the
-detailed failed Astro build output. Every update runs a full Astro build into
-an isolated directory, then publishes it only after the build succeeds and its
-registered sources and DocShelf-owned inputs are still current. Files with
-content-hash names beneath `_astro/` are served as immutable. Everything else
-uses `no-cache` with an `ETag`, allowing unchanged files to receive a
-`304 Not Modified` response. Set `DOCSHELF_VERBOSE=1` to stream Astro's output
-for every build.
-
-Set a different port when needed:
-
-```sh
-DOCSHELF_PORT=4331 npm run watch
-```
-
-The configured host and port are also used for generated canonical and sitemap
-URLs.
-
-`DOCSHELF_HOST` can change the listening interface. The default loopback address
-keeps DocShelf local; binding to a network interface can expose registered files
-to other machines. In loopback mode, DocShelf accepts only loopback and
-`*.localhost` Host headers to prevent unrelated domains from reading the local
-shelf through DNS rebinding.
-
-The watcher is portable to environments where Node.js and file symlinks are
-available. The login-service integration below is macOS-only.
-
-### Locks
-
-Only one watcher runs per DocShelf checkout. It holds
-`.docshelf-runtime/watch.lock`, a directory whose `owner.json` records the
-owning process, its start time, and the launchd service name when there is
-one. A second `npm run watch` is refused with the owner's PID while that
-process is alive. A lock left behind by a process that died without releasing
-it is reclaimed automatically at the next start, including one whose PID has
-since been reused by an unrelated process (on macOS and Linux, where the lock
-compares the recorded start time and command line). If a start is still
-refused for a PID that is not a DocShelf watcher, delete
-`.docshelf-runtime/watch.lock` and retry. When the owner is the launchd agent,
-`kill` alone lets launchd restart it; use `npm run daemon:uninstall` instead.
-
-Artifact synchronization takes `.docshelf-runtime/sync.lock`. The sync step
-that `npm run sync`, `dev`, `check`, `build`, and `preview` run first waits for
-a rebuilding watcher to finish (up to two minutes) before it replaces
-`public/artifacts`, and the watcher waits for a running sync before it
-rebuilds. The lock covers the sync step only: a watcher rebuild that starts
-while a manual `npm run build` is already copying `public/artifacts` can still
-make that manual build fail with a revision mismatch. Rerun it.
-
-## macOS login service
-
-Install the watcher as a per-user `launchd` service that starts at login and is
-kept running:
-
-```sh
-npm run daemon:install
-npm run daemon:status
-```
-
-The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
-It records the current Node executable, DocShelf path, host, and port, so rerun the
-installer if any of them change, and after updating DocShelf so the loaded
-service definition is current. `daemon:status` reports the values loaded by
-`launchd`. Runtime builds and service logs stay in the ignored `.docshelf-runtime/`
-directory.
-
-The agent runs at standard priority. As a `Background` process type, launchd
-would confine it and the Astro builds it spawns to efficiency cores with
-throttled I/O, and every rebuild would take several times longer.
-
-The installer refuses to run while a watcher that `launchd` does not manage
-holds the watcher lock, because the agent would fail to start and be relaunched
-every ten seconds. After bootstrapping it waits for the agent to take the lock
-and reports the exit code and log path if the agent exits instead.
-
-Remove the service with:
-
-```sh
-npm run daemon:uninstall
-```
-
-## Releases
-
-Prepare a release with an explicit semantic version or a bump keyword:
-
-```sh
-gh workflow run release.yml -f version=patch
-# or: version=minor, version=major, version=0.1.0
-```
-
-The workflow updates `package.json` and `package-lock.json`, verifies the build,
-and pushes a `release/vX.Y.Z` branch. Open the pull-request link in the workflow
-summary and squash-merge it after CI passes. The merge to `main` tags that exact
-commit and creates the corresponding GitHub Release.
+Use `npm run dev` while changing DocShelf's UI. Before handing off code changes, run `npm test`, `npm run check`, and `npm run build`. Use `npm run watch` for production search and automatic source updates.
 
 ## License
 
-MIT
-
-The Markdown and optional HTML themes adapt colors from Tokyo Night for Obsidian,
-and the optional HTML theme includes matcha.css. See
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for their MIT notices.
+MIT. The Markdown and optional HTML themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
