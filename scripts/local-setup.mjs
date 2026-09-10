@@ -38,10 +38,12 @@ export function parseProxyStatus(output) {
   };
 }
 
-export function shelfRoute(output, port) {
+export function shelfRoute(output, port, { proxyRunning = true } = {}) {
   const lines = output.split('\n').filter((line) => /https?:\/\/shelf\.localhost(?=[:/\s])/.test(line));
   if (!lines.length) return 'missing';
-  if (lines.length === 1 && new RegExp(`^\\s*https://shelf\\.localhost/?\\s+->\\s+localhost:${port}\\s+\\(alias\\)\\s*$`).test(lines[0])) {
+  // With no listener, Portless may display an HTTPS alias as HTTP on port 443.
+  const origin = proxyRunning ? 'https://shelf\\.localhost' : '(?:https://shelf\\.localhost|http://shelf\\.localhost:443)';
+  if (lines.length === 1 && new RegExp(`^\\s*${origin}/?\\s+->\\s+localhost:${port}\\s+\\(alias\\)\\s*$`).test(lines[0])) {
     return 'existing';
   }
   throw new Error('shelf.localhost already belongs to another Portless route. Setup will not replace it. Inspect `portless list`, or use `npm run setup -- --direct`.');
@@ -65,6 +67,7 @@ export async function initializeShelf(root) {
 export async function setupLocal({ root, direct = false, platform = process.platform, env = process.env }, {
   run = runCommand, confirm, log = console.log, checkPort = checkBackendPort, checkProxyPorts = checkProxyListeners,
   verify = verifyInstallation, resolves = () => lookup('shelf.localhost'),
+  wait = delay,
 } = {}) {
   if (platform !== 'darwin') {
     throw new Error('Automatic setup requires macOS. Use `npm run watch` for the portable foreground server.');
@@ -114,12 +117,17 @@ export async function setupLocal({ root, direct = false, platform = process.plat
         (proxy.port !== 443 || !proxy.https || proxy.lan || proxy.tlds[0] !== '.localhost')) {
       throw new Error('The existing Portless proxy is not loopback HTTPS on port 443 with .localhost names. Setup will not change a shared proxy. Use --direct or configure Portless separately.');
     }
-    shelfRoute(await portless(['list']), port);
+    shelfRoute(await portless(['list']), port, { proxyRunning: proxy.running });
     if (!proxy.installed) {
       if (!proxy.running) await checkProxyPorts();
       await ask('Install the Portless startup service on loopback ports 80/443 and trust its local HTTPS certificate authority? Portless may request an administrator password. Other apps can reuse this proxy.');
       await portless(['service', 'install', '--https', '--port', '443', '--tld', 'localhost'], true);
-      proxy = parseProxyStatus(await portless(['service', 'status']));
+      // launchctl can return before the new proxy has opened its listener.
+      for (let attempt = 0; attempt < 21; attempt += 1) {
+        if (attempt > 0) await wait(250);
+        proxy = parseProxyStatus(await portless(['service', 'status']));
+        if (proxy.installed && proxy.running && proxy.manager === 'running') break;
+      }
     }
     if (!proxy.installed || !proxy.running || proxy.manager !== 'running') {
       throw new Error('Portless is installed but its startup service is not running. Check `portless service status`; setup will not replace it.');

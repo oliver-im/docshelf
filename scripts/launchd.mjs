@@ -17,6 +17,13 @@ const serviceTarget = `gui/${userId}/${label}`;
 const standardOutputPath = path.join(runtimeRoot, 'docshelf.stdout.log');
 const standardErrorPath = path.join(runtimeRoot, 'docshelf.stderr.log');
 const watchScript = path.join(docShelfRoot, 'scripts', 'watch.mjs');
+const extraArgs = process.argv.slice(3);
+if (extraArgs.length && (command !== 'uninstall' || extraArgs.length !== 2 ||
+    extraArgs[0] !== '--from' || !path.isAbsolute(extraArgs[1]))) {
+  throw new Error('Usage: npm run daemon:uninstall -- --from /absolute/old/checkout');
+}
+const uninstallRoot = extraArgs.length ? path.resolve(extraArgs[1]) : docShelfRoot;
+const recoveryHint = 'After moving the checkout, run `npm run daemon:uninstall -- --from /absolute/old/checkout`, then rerun `npm run setup`.';
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
 const site = process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`;
@@ -50,7 +57,7 @@ switch (command) {
     await uninstall();
     break;
   default:
-    console.error('Usage: node scripts/launchd.mjs <install|status|uninstall>');
+    console.error('Usage: node scripts/launchd.mjs <install|status|uninstall> [uninstall: --from /absolute/old/checkout]');
     process.exitCode = 1;
 }
 
@@ -126,28 +133,28 @@ function launchctlEnvironmentValue(output, key) {
 }
 
 async function uninstall() {
-  await assertServiceCheckout();
+  await assertServiceCheckout(path.join(uninstallRoot, 'scripts', 'watch.mjs'));
   if (await isLoaded()) {
-    await launchctl(['bootout', `gui/${userId}`, plistPath]);
+    await launchctl(['bootout', serviceTarget]);
     await waitUntilUnloaded();
   }
   await unlink(plistPath).catch((error) => {
     if (error?.code !== 'ENOENT') throw error;
   });
-  console.log(`Uninstalled ${label}. Runtime builds and logs were left in ${runtimeRoot}.`);
+  console.log(`Uninstalled ${label}. Runtime builds and logs were left in ${path.join(uninstallRoot, '.docshelf-runtime')}.`);
 }
 
-async function assertServiceCheckout() {
+async function assertServiceCheckout(expectedWatchScript = watchScript) {
   const existing = await readFile(plistPath, 'utf8').catch((error) => {
     if (error.code === 'ENOENT') return null;
     throw error;
   });
-  if (existing && !existing.includes(`<string>${xml(watchScript)}</string>`)) {
-    throw new Error(`The DocShelf login service belongs to another checkout. Manage it from its owning checkout; ${plistPath} was not changed.`);
+  if (existing && !existing.includes(`<string>${xml(expectedWatchScript)}</string>`)) {
+    throw new Error(`The DocShelf login service belongs to another checkout. Manage it from its owning checkout; ${plistPath} was not changed. ${recoveryHint}`);
   }
   const loaded = await run('/bin/launchctl', ['print', serviceTarget], true);
-  if (loaded.code === 0 && !loaded.stdout.includes(watchScript)) {
-    throw new Error('The loaded DocShelf login service belongs to another checkout. It was not changed.');
+  if (loaded.code === 0 && !loaded.stdout.split('\n').some((line) => line.trim() === expectedWatchScript)) {
+    throw new Error(`The loaded DocShelf login service belongs to another checkout. It was not changed. ${recoveryHint}`);
   }
 }
 

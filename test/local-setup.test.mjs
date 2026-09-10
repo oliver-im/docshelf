@@ -21,6 +21,7 @@ async function fixture(t, options = {}) {
   let installed = !options.fresh;
   let available = !options.missing;
   let registered = !options.fresh;
+  const statuses = [...(options.statuses || [])];
   const dependencies = {
     log: () => {}, checkPort: async () => {}, checkProxyPorts: async () => {}, resolves: async () => {},
     verify: async (value) => calls.push(['verify', value]),
@@ -32,7 +33,7 @@ async function fixture(t, options = {}) {
       if (executable !== 'portless') return success();
       if (!available) throw Object.assign(new Error('not installed'), { code: 'ENOENT' });
       if (args[0] === '--version') return success('0.15.6\n');
-      if (args.join(' ') === 'service status') return success(options.status || proxyStatus(installed ? {} : { installed: 'no', manager: 'not installed', running: 'not responding' }));
+      if (args.join(' ') === 'service status') return success(statuses.shift() || options.status || proxyStatus(installed ? {} : { installed: 'no', manager: 'not installed', running: 'not responding' }));
       if (args[0] === 'service' && args[1] === 'install') { installed = true; return success(); }
       if (args[0] === 'doctor') return success('ok    Local CA is trusted by the OS trust store.');
       if (args[0] === 'list') return success(options.routes || (registered ? '  https://shelf.localhost  ->  localhost:4321  (alias)\n' : 'No active routes.'));
@@ -86,6 +87,50 @@ test('declining privilege setup leaves the proxy, route, and watcher service alo
   const f = await fixture(t, { fresh: true, approve: false });
   await assert.rejects(setupLocal(f.input, f.dependencies), /--direct/);
   assert.ok(!f.calls.some(([, args]) => Array.isArray(args) && args.includes('install')));
+  assert.ok(!f.calls.some(([exe, args]) => exe === 'portless' && args[0] === 'alias'));
+});
+
+test('fresh setup waits for both the proxy listener and service manager before registering the alias', async (t) => {
+  const f = await fixture(t, { fresh: true, statuses: [
+    proxyStatus({ installed: 'no', manager: 'not installed', running: 'not responding' }),
+    proxyStatus({ manager: 'installed', running: 'not responding' }),
+    proxyStatus({ manager: 'installed' }),
+    proxyStatus(),
+  ] });
+  const waits = [];
+  f.dependencies.wait = async (ms) => { waits.push(ms); };
+  await setupLocal(f.input, f.dependencies);
+  assert.deepEqual(waits, [250, 250]);
+  const registration = f.calls.findIndex(([exe, args]) => exe === 'portless' && args[0] === 'alias');
+  assert.equal(f.calls.slice(0, registration).filter(([exe, args]) => exe === 'portless' && args.join(' ') === 'service status').length, 4);
+  assert.equal(f.calls.filter(([exe, args]) => exe === 'portless' && args[0] === 'service' && args[1] === 'install').length, 1);
+});
+
+test('proxy startup polling is bounded and a timeout never installs the watcher or registers an alias', async (t) => {
+  const f = await fixture(t, { fresh: true, statuses: [
+    proxyStatus({ installed: 'no', manager: 'not installed', running: 'not responding' }),
+  ], status: proxyStatus({ running: 'not responding' }) });
+  let waited = 0;
+  f.dependencies.wait = async (ms) => { waited += ms; };
+  await assert.rejects(setupLocal(f.input, f.dependencies), /startup service is not running/);
+  assert.equal(waited, 5000);
+  assert.ok(!f.calls.some(([exe, args]) => exe === process.execPath && args.at(-1) === 'install'));
+  assert.ok(!f.calls.some(([exe, args]) => exe === 'portless' && args[0] === 'alias'));
+});
+
+test('fresh service installation preserves an existing alias displayed as HTTP while the proxy is down', async (t) => {
+  const f = await fixture(t, { fresh: true });
+  const run = f.dependencies.run;
+  let running = false;
+  f.dependencies.run = async (executable, args, options) => {
+    const result = await run(executable, args, options);
+    if (executable === 'portless' && args[0] === 'list') {
+      result.stdout = `${running ? 'https://shelf.localhost' : 'http://shelf.localhost:443'} -> localhost:4321 (alias)`;
+    }
+    if (executable === 'portless' && args[0] === 'service' && args[1] === 'install') running = true;
+    return result;
+  };
+  await setupLocal(f.input, f.dependencies);
   assert.ok(!f.calls.some(([exe, args]) => exe === 'portless' && args[0] === 'alias'));
 });
 
@@ -156,6 +201,16 @@ test('route parsing does not mistake managed apps, alternate origins, or lookali
     'https://shelf.localhost:8443 -> localhost:4321 (alias)',
   ]) assert.throws(() => shelfRoute(line, 4321), /another Portless route/);
   assert.equal(shelfRoute('https://shelf.localhost.example.com -> localhost:4321 (alias)', 4321), 'missing');
+  const stopped = { proxyRunning: false };
+  assert.equal(shelfRoute('http://shelf.localhost:443 -> localhost:4321 (alias)', 4321, stopped), 'existing');
+  for (const line of [
+    'http://shelf.localhost:443 -> localhost:4321 (pid 42)',
+    'http://shelf.localhost:443 -> localhost:5000 (alias)',
+    'http://shelf.localhost:8443 -> localhost:4321 (alias)',
+    'http://shelf.localhost -> localhost:4321 (alias)',
+    'https://shelf.localhost -> localhost:4321 (alias)\nhttp://shelf.localhost:443 -> localhost:4321 (alias)',
+  ]) assert.throws(() => shelfRoute(line, 4321, stopped), /another Portless route/);
+  assert.throws(() => shelfRoute('http://shelf.localhost:443 -> localhost:4321 (alias)', 4321), /another Portless route/);
 });
 
 test('concurrent shelf initialization never overwrites existing registrations', async (t) => {

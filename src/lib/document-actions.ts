@@ -47,7 +47,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
 
   function close(restoreFocus = false) {
     const trigger = active?.trigger;
-    if (menu.matches(':popover-open')) menu.hidePopover();
+    if ('showPopover' in menu && menu.matches(':popover-open')) menu.hidePopover();
     trigger?.setAttribute('aria-expanded', 'false');
     active = undefined;
     if (restoreFocus) trigger?.focus({ preventScroll: true });
