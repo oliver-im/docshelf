@@ -65,7 +65,7 @@ Edit the `artifacts` array in your ignored `shelf.local.json`. Keep the README e
 }
 ```
 
-`source` is relative to the DocShelf checkout and must end in `.html` or `.md`. The file must resolve inside DocShelf's parent directory, the workspace root. `route` is a unique, lowercase path ending in `.html`, even for Markdown. Keep routes stable so bookmarks keep working.
+`source` is relative to the DocShelf checkout and must end in `.html` or `.md`. The file must resolve inside the workspace root: DocShelf's parent directory, unless `DOCSHELF_WORKSPACE` names another directory, absolute or relative to the checkout. Files inside the DocShelf checkout itself, such as its README, are accepted whatever the root is. Set that variable for every DocShelf command when the checkout does not sit beside the projects it catalogs; `npm run setup` records it in the login service. `route` is a unique, lowercase path ending in `.html`, even for Markdown. Keep routes stable so bookmarks keep working.
 
 DocShelf creates generated HTML snapshots and never edits the original files. Links between registered sources are rewritten only in the generated output. It does not crawl or serve unregistered neighboring files, including images. The tracked `shelf.json` stays an empty template; your registrations belong in `shelf.local.json`.
 

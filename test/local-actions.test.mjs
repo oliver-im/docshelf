@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { docShelfRoot } from '../scripts/artifacts.mjs';
 import { createLocalActionsHandler } from '../scripts/local-actions.mjs';
+import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'docshelf-actions-'));
@@ -133,6 +135,16 @@ test('reveal rechecks missing files and symlinks that leave the workspace', asyn
   await symlink(outside, f.sourcePath);
   assert.equal((await f.reveal()).status, 409);
   assert.deepEqual(f.revealed, []);
+});
+
+test('reveal admits sources inside the DocShelf checkout when the workspace root excludes it', async (t) => {
+  const f = await fixture(t);
+  const checkoutDirectory = await temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'actions-');
+  const sourcePath = path.join(checkoutDirectory, 'README.md');
+  await writeFile(sourcePath, '# Inside the checkout\n');
+  f.artifacts[0].sourcePath = sourcePath;
+  assert.equal((await f.reveal()).status, 200);
+  assert.deepEqual(f.revealed, [await realpath(sourcePath)]);
 });
 
 test('invalid bodies and OS failures return bounded errors without source paths', async (t) => {
