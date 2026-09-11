@@ -24,7 +24,9 @@ validated browser imports, without taking ownership of their source content.
   omission, sanitization, and generated-document content security policy; do
   not generalize it into arbitrary remote content loading.
 - Preserve the safety checks around workspace containment, symlink-only cleanup,
-  and build output beneath `.docshelf-runtime/`.
+  and build output beneath `.docshelf-runtime/`. The workspace root is the
+  checkout's parent directory unless `DOCSHELF_WORKSPACE` names another
+  directory; do not add other ways to widen it.
 
 ## Working commands
 

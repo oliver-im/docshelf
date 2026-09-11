@@ -17,8 +17,10 @@ import {
   loadShelf,
   loadShelfFrom,
   parseClaudeArtifactSource,
+  resolveWorkspaceRoot,
   validateRoute,
   validateSource,
+  workspaceRoot,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
 import { normalizeBasePath, sitePath } from '../scripts/site-path.mjs';
@@ -853,7 +855,40 @@ test('shelf loading rejects sources outside the workspace root', async (t) => {
   await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
 
   await assert.rejects(loadShelfFrom(shelfPath), {
-    message: /outside the workspace root \(the parent directory of DocShelf\)/,
+    message: /outside the workspace root .*: \.\..*Set DOCSHELF_WORKSPACE/,
+  });
+});
+
+test('the workspace root defaults to the parent directory of the checkout', () => {
+  const parent = path.resolve(docShelfRoot, '..');
+  assert.equal(workspaceRoot, parent);
+  assert.equal(resolveWorkspaceRoot(undefined), parent);
+  assert.equal(resolveWorkspaceRoot('  '), parent);
+  assert.equal(resolveWorkspaceRoot('../..'), path.resolve(docShelfRoot, '../..'));
+  assert.equal(resolveWorkspaceRoot('/workspace/root'), path.resolve('/workspace/root'));
+});
+
+test('a configured workspace root admits sources outside the parent directory', async (t) => {
+  const fixtureRoot = await createDocShelfFixture(t);
+  const externalRoot = await temporaryDirectory(t, tmpdir(), 'docshelf-external-');
+  const sourcePath = path.join(externalRoot, 'report.html');
+  const shelfPath = path.join(fixtureRoot, 'shelf.json');
+  await writeFile(sourcePath, '<!doctype html><title>Outside</title>');
+  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
+
+  const shelf = await loadShelfFrom(shelfPath, { workspaceRoot: externalRoot });
+  assert.equal(shelf.artifacts[0].sourcePath, await realpath(sourcePath));
+
+  const siblingRoot = path.join(externalRoot, 'sibling');
+  await mkdir(siblingRoot);
+  await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: siblingRoot }), {
+    message: /outside the workspace root/,
+  });
+  await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: path.join(externalRoot, 'missing') }), {
+    message: /workspace root is not an existing directory/,
+  });
+  await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: sourcePath }), {
+    message: /workspace root is not an existing directory/,
   });
 });
 

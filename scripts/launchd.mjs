@@ -27,6 +27,10 @@ const recoveryHint = 'After moving the checkout, run `npm run daemon:uninstall -
 const host = process.env.DOCSHELF_HOST || '127.0.0.1';
 const port = Number(process.env.DOCSHELF_PORT || 4321);
 const site = process.env.DOCSHELF_SITE || `http://${browserHost(host)}:${port}`;
+// Recorded in the service so the watcher keeps the same workspace root at every login.
+const workspace = process.env.DOCSHELF_WORKSPACE?.trim()
+  ? path.resolve(docShelfRoot, process.env.DOCSHELF_WORKSPACE.trim())
+  : '';
 // Standard priority keeps Astro builds off launchd's throttled Background class.
 const processType = 'Standard';
 
@@ -104,6 +108,7 @@ async function install() {
 
   console.log(`Installed and started ${label}.`);
   console.log(`DocShelf: ${site}/`);
+  if (workspace) console.log(`Workspace: ${workspace}`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -122,6 +127,8 @@ async function status() {
   const installedPort = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_PORT') || String(port);
   const installedSite = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_SITE') || `http://${browserHost(installedHost)}:${installedPort}`;
   console.log(`\nDocShelf: ${installedSite}/`);
+  const installedWorkspace = launchctlEnvironmentValue(result.stdout, 'DOCSHELF_WORKSPACE');
+  if (installedWorkspace) console.log(`Workspace: ${installedWorkspace}`);
   console.log(`Agent: ${plistPath}`);
   console.log(`Logs: ${standardOutputPath}`);
   console.log(`      ${standardErrorPath}`);
@@ -322,7 +329,9 @@ function renderPlist() {
     <key>DOCSHELF_PORT</key>
     <string>${port}</string>
     <key>DOCSHELF_SITE</key>
-    <string>${xml(site)}</string>
+    <string>${xml(site)}</string>${workspace ? `
+    <key>DOCSHELF_WORKSPACE</key>
+    <string>${xml(workspace)}</string>` : ''}
     <key>PATH</key>
     <string>${xml(executablePath)}</string>
   </dict>

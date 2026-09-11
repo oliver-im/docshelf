@@ -16,6 +16,7 @@ import {
   legacyLocalShelfPath,
   runtimeRoot,
   syncArtifacts,
+  workspaceRoot,
 } from './artifacts.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { createLocalActionsHandler } from './local-actions.mjs';
@@ -38,7 +39,7 @@ const buildStatus = new BuildStatusReporter(runtimeRoot);
 const handleLocalAction = createLocalActionsHandler({
   listenHost: host,
   loadShelf,
-  workspaceRoot: path.resolve(docShelfRoot, '..'),
+  workspaceRoot,
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {

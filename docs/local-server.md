@@ -93,6 +93,20 @@ to other machines. In loopback mode, DocShelf accepts only loopback and
 `*.localhost` Host headers to prevent unrelated domains from reading the local
 shelf through DNS rebinding.
 
+`DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered
+sources must resolve inside. It defaults to the checkout's parent directory.
+Give an absolute path or one relative to the checkout, and set it for every
+command that reads the shelf, including `npm run dev`, `npm run build`, and
+`npm run watch`:
+
+```sh
+DOCSHELF_WORKSPACE=../.. npm run watch
+```
+
+`npm run setup` records the value in the login service. A wider root lets
+DocShelf read and serve registered files from a larger area; unregistered files
+are still never served.
+
 The watcher is portable to environments where Node.js and file symlinks are
 available. Stop it with Ctrl+C. Stop an installed login service before starting
 a foreground watcher in the same checkout.
@@ -116,7 +130,8 @@ npm run setup
 
 Use `npm run setup -- --direct` if you installed with the direct-port address,
 or `npm run watch` for a foreground server. Check `npm run daemon:status` after
-automatic setup. Reapply a custom `DOCSHELF_PORT` when reinstalling.
+automatic setup. Reapply a custom `DOCSHELF_PORT` or `DOCSHELF_WORKSPACE` when
+reinstalling.
 
 Keep your `shelf.local.json`; setup preserves it.
 The ignored shelf, source documents, and browser imports survive this update.
@@ -196,7 +211,8 @@ npm run daemon:status
 ```
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
-It records the current Node executable, DocShelf path, host, port, and site URL.
+It records the current Node executable, DocShelf path, host, port, site URL,
+and any `DOCSHELF_WORKSPACE`.
 Rerun the installer after changing Node, the host, port, or site URL, and after
 updating DocShelf so the loaded service definition is current. If you move or
 rename the checkout, uninstall the old service from the new checkout by naming
