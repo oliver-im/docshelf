@@ -41,15 +41,43 @@ const legacyMarkdownRootPrefix = 'markdown-';
 const legacyMarkdownOutputMarker = '.docshelf-markdown-output';
 
 /**
- * The workspace root bounds which local files DocShelf reads and serves. It is
- * the checkout's parent directory unless DOCSHELF_WORKSPACE names another
- * directory, given as an absolute path or relative to the checkout.
+ * The workspace root bounds which local files DocShelf reads and serves, along
+ * with the checkout itself. It is the checkout's parent directory unless
+ * DOCSHELF_WORKSPACE names another directory, given as an absolute path or
+ * relative to the checkout.
  *
  * @param {string | undefined} configured
  */
 export function resolveWorkspaceRoot(configured) {
   const value = typeof configured === 'string' ? configured.trim() : '';
   return value ? path.resolve(docShelfRoot, value) : path.resolve(docShelfRoot, '..');
+}
+
+/**
+ * The directories local sources may live in: the workspace root and the
+ * checkout itself. The checkout is always admitted so the README that setup
+ * registers loads wherever DOCSHELF_WORKSPACE points. The shelf loader and the
+ * reveal guard share this rule so they cannot drift apart.
+ *
+ * @param {string} [configuredRoot] Defaults to the configured workspace root.
+ * @returns {Promise<{ workspace: string, checkout: string }>} Real paths.
+ */
+export async function resolveSourceRoots(configuredRoot = workspaceRoot) {
+  const workspace = await realpath(configuredRoot).catch(() => null);
+  if (!workspace || !(await stat(workspace)).isDirectory()) {
+    throw new Error(
+      `The workspace root is not an existing directory: ${configuredRoot}. Set DOCSHELF_WORKSPACE to the directory that contains the registered sources.`,
+    );
+  }
+  return { workspace, checkout: await realpath(docShelfRoot) };
+}
+
+/**
+ * @param {{ workspace: string, checkout: string }} roots
+ * @param {string} candidate A real path.
+ */
+export function isWithinSourceRoots(roots, candidate) {
+  return isWithin(roots.workspace, candidate) || isWithin(roots.checkout, candidate);
 }
 
 /**
@@ -135,12 +163,7 @@ export async function loadShelfFrom(shelfPath, options = {}) {
   }
 
   const configuredRoot = options.workspaceRoot || workspaceRoot;
-  const resolvedRoot = await realpath(configuredRoot).catch(() => null);
-  if (!resolvedRoot || !(await stat(resolvedRoot)).isDirectory()) {
-    throw new Error(
-      `The workspace root is not an existing directory: ${configuredRoot}. Set DOCSHELF_WORKSPACE to the directory that contains the registered sources.`,
-    );
-  }
+  const roots = await resolveSourceRoots(configuredRoot);
 
   const routes = new Set();
   const sources = new Set();
@@ -204,7 +227,7 @@ export async function loadShelfFrom(shelfPath, options = {}) {
       throw new Error(`Artifact ${index + 1} source is not a file: ${source}`);
     }
 
-    if (!isWithin(resolvedRoot, resolvedSource)) {
+    if (!isWithinSourceRoots(roots, resolvedSource)) {
       throw new Error(
         `Artifact ${index + 1} source is outside the workspace root ${configuredRoot}: ${source}. Set DOCSHELF_WORKSPACE to a directory that contains it.`,
       );
@@ -670,5 +693,6 @@ export function validateRoute(route, index) {
 /** @param {string} root @param {string} candidate */
 function isWithin(root, candidate) {
   const relativePath = path.relative(root, candidate);
-  return relativePath !== '' && !relativePath.startsWith(`..${path.sep}`) && relativePath !== '..';
+  return relativePath !== '' && relativePath !== '..' && !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath);
 }

@@ -21,8 +21,9 @@ not your own while investigating.
 - Registered local HTML is trusted content. It may execute scripts with the same
   origin and permissions as DocShelf. Registering malicious HTML is outside the
   security model unless it bypasses a documented containment boundary.
-- Local sources must remain within the workspace root, defined as the parent
-  directory of DocShelf. DocShelf must never modify those sources.
+- Local sources must remain within the workspace root, the parent directory of
+  DocShelf unless `DOCSHELF_WORKSPACE` names another directory, or within the
+  DocShelf checkout itself. DocShelf must never modify those sources.
 - Browser-imported Markdown is limited to public HTTPS `.md` and `.markdown`
   file URLs on `github.com` and `raw.githubusercontent.com`. DocShelf fetches
   the raw file without credentials, enforces a 2 MB limit, omits raw HTML,

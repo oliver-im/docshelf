@@ -95,9 +95,10 @@ shelf through DNS rebinding.
 
 `DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered
 sources must resolve inside. It defaults to the checkout's parent directory.
-Give an absolute path or one relative to the checkout, and set it for every
-command that reads the shelf, including `npm run dev`, `npm run build`, and
-`npm run watch`:
+Files inside the checkout itself, such as the README that `npm run setup`
+registers, are accepted whatever the root is. Give an absolute path or one
+relative to the checkout, and set it for every command that reads the shelf,
+including `npm run dev`, `npm run build`, and `npm run watch`:
 
 ```sh
 DOCSHELF_WORKSPACE=../.. npm run watch

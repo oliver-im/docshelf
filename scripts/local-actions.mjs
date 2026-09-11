@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { realpath, stat } from 'node:fs/promises';
-import path from 'node:path';
 import { promisify } from 'node:util';
+import { isWithinSourceRoots, resolveSourceRoots } from './artifacts.mjs';
 import { isAllowedHostHeader, isLoopbackHost } from './server-security.mjs';
 
 const runFile = promisify(execFile);
@@ -91,11 +91,11 @@ export function createLocalActionsHandler({
         return reply(400, { error: 'This document has no local source file.' });
       }
 
-      // Recheck the real file at action time; never accept a browser-supplied path.
+      // Recheck the real file at action time against the same roots as the shelf
+      // loader; never accept a browser-supplied path.
       const source = await realpath(artifact.sourcePath).catch(() => null);
-      const root = await realpath(workspaceRoot);
-      const relative = source && path.relative(root, source);
-      if (!source || relative === '..' || relative?.startsWith(`..${path.sep}`) || path.isAbsolute(relative || '')) {
+      const roots = await resolveSourceRoots(workspaceRoot);
+      if (!source || !isWithinSourceRoots(roots, source)) {
         return reply(409, { error: 'The source file is unavailable or outside the workspace.' });
       }
       if (!(await stat(source)).isFile()) return reply(409, { error: 'The source is no longer a file.' });
