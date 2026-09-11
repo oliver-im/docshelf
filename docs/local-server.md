@@ -213,11 +213,11 @@ npm run daemon:status
 
 The installer generates a machine-specific plist in `~/Library/LaunchAgents/`.
 It records the current Node executable, DocShelf path, host, port, site URL,
-and any `DOCSHELF_WORKSPACE`.
-Rerun the installer after changing Node, the host, port, or site URL, and after
-updating DocShelf so the loaded service definition is current. If you move or
-rename the checkout, uninstall the old service from the new checkout by naming
-its original absolute path, then run setup again:
+and any `DOCSHELF_WORKSPACE`. Rerun the installer after changing Node, the
+host, port, site URL, or `DOCSHELF_WORKSPACE`, and after updating DocShelf so
+the loaded service definition is current. If you move or rename the checkout,
+uninstall the old service from the new checkout by naming its original absolute
+path, then run setup again:
 
 ```sh
 npm run daemon:uninstall -- --from /absolute/old/checkout

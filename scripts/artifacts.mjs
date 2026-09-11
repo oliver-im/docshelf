@@ -64,7 +64,8 @@ export function resolveWorkspaceRoot(configured) {
  */
 export async function resolveSourceRoots(configuredRoot = workspaceRoot) {
   const workspace = await realpath(configuredRoot).catch(() => null);
-  if (!workspace || !(await stat(workspace)).isDirectory()) {
+  const workspaceStats = workspace ? await stat(workspace).catch(() => null) : null;
+  if (!workspaceStats?.isDirectory()) {
     throw new Error(
       `The workspace root is not an existing directory: ${configuredRoot}. Set DOCSHELF_WORKSPACE to the directory that contains the registered sources.`,
     );
