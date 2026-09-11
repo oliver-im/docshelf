@@ -1,0 +1,9 @@
+{
+  "id": "docshelf",
+  "name": "DocShelf",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.7",
+  "description": "Browse and search registered Markdown and HTML documents outside your vault, with source-line links.",
+  "author": "DocShelf contributors",
+  "isDesktopOnly": true
+}
