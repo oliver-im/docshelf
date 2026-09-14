@@ -28,6 +28,7 @@ await writeFile(path.join(vault, '.obsidian', 'core-plugins.json'), JSON.stringi
 await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ theme: 'obsidian' }));
 const shelf = JSON.parse(await readFile(path.join(workspace, 'shelf.json'), 'utf8'));
 for (const artifact of shelf.artifacts) artifact.source = path.join(workspace, artifact.source);
+shelf.artifacts[1].project = 'Reports';
 const shelfPath = path.join(vault, 'shelf.local.json');
 await writeFile(shelfPath, JSON.stringify(shelf));
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
@@ -73,6 +74,55 @@ try {
     await plugin.openShelf();
     await plugin.openArtifact(plugin.catalog.artifacts[0]);
   });
+  const firstProject = page.locator('.docshelf-project-toggle').filter({ hasText: 'Getting started' });
+  const secondProject = page.locator('.docshelf-project-toggle').filter({ hasText: 'Reports' });
+  assert.equal(await page.locator('.docshelf-shelf h2').count(), 0);
+  assert.equal(await page.locator('.docshelf-item:visible').count(), 2);
+  assert.deepEqual(await page.locator('.docshelf-project-count').allTextContents(), ['1', '1']);
+  await firstProject.click();
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  assert.equal(await secondProject.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
+  await page.locator('.docshelf-search').fill('authored');
+  assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
+  assert.equal(await page.locator('.docshelf-item-title').textContent(), 'Project field notes');
+  await page.locator('.docshelf-search').fill('');
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  await page.evaluate(async () => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    await plugin.refresh();
+    await plugin.openShelf();
+  });
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  // Recreate the view from its serialized workspace state, as on restart.
+  await page.evaluate(async () => {
+    const leaf = app.workspace.getLeavesOfType('docshelf-shelf')[0];
+    const state = JSON.parse(JSON.stringify(leaf.getViewState()));
+    await leaf.setViewState({ type: 'empty' });
+    await leaf.setViewState(state);
+  });
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  await page.locator('.docshelf-search').focus();
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await firstProject.evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('Space');
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator('.docshelf-item:visible').count(), 2);
+  const options = page.getByRole('button', { name: 'DocShelf options', exact: true });
+  await options.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.menu-item').filter({ hasText: 'Reload shelf' }).click();
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Menu reload did not complete.');
+  await options.click();
+  await page.locator('.menu-item').filter({ hasText: 'Configure shelf' }).click();
+  const configurationPage = await poll(async () => {
+    for (const candidate of browser.contexts()[0].pages()) {
+      if (await candidate.getByText('Configure DocShelf', { exact: true }).isVisible()) return candidate;
+    }
+  }, 'The sidebar menu did not open the configuration dialog.');
+  await configurationPage.keyboard.press('Escape');
+  assert.equal(await options.getAttribute('aria-expanded'), 'false');
+  console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and sidebar menu passed.');
   await page.locator('.docshelf-reading').waitFor();
   assert.equal(await page.locator('.docshelf-reading h1').textContent(), 'Project field notes');
   await page.locator('.docshelf-line-button[data-line="7"]').click();

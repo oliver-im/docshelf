@@ -21,7 +21,7 @@ yet listed in the community directory.
 
 Open **DocShelf: Configure shelf** from the command palette. Set **Shelf file**
 to a shelf JSON file. For a working example, select this checkout's
-`examples/shelf.json`. Open the library ribbon icon or **DocShelf: Open shelf**.
+`examples/shelf.json`. Open the DocShelf ribbon icon or **DocShelf: Open shelf**.
 
 An existing standalone DocShelf `shelf.local.json` can be used in place: its
 relative source paths continue to resolve against its containing directory.
@@ -111,6 +111,12 @@ descriptions, and local Markdown/HTML contents. Script and style contents are
 excluded. Search indexing uses at most 16 million source characters per refresh
 and 200,000 extracted characters per document; remaining metadata stays
 searchable. Exceeding the total limit is shown in the sidebar.
+
+With no search query, documents are grouped by their registered project label.
+Click a project heading to collapse or expand it; Obsidian saves these choices
+with the workspace. Search shows matches across all projects, including collapsed
+ones. The sidebar's **DocShelf options** (`…`) menu contains **Reload shelf** and
+**Configure shelf**; local file changes also refresh automatically.
 
 The `source` field also accepts:
 

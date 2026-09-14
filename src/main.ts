@@ -226,9 +226,10 @@ export default class DocShelfPlugin extends Plugin {
   private emit(): void { for (const listener of this.listeners) listener(); }
 
   async openShelf(): Promise<void> {
-    const leaf = this.app.workspace.getLeavesOfType(SHELF_VIEW)[0] || this.app.workspace.getLeftLeaf(false);
+    const existing = this.app.workspace.getLeavesOfType(SHELF_VIEW)[0];
+    const leaf = existing || this.app.workspace.getLeftLeaf(false);
     if (!leaf) return;
-    await leaf.setViewState({ type: SHELF_VIEW, active: true });
+    if (!existing) await leaf.setViewState({ type: SHELF_VIEW, active: true });
     await this.app.workspace.revealLeaf(leaf);
   }
 
