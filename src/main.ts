@@ -1,4 +1,4 @@
-import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from 'obsidian';
+import { addIcon, FileSystemAdapter, Notice, Plugin, removeIcon, type WorkspaceLeaf } from 'obsidian';
 import { watch, type FSWatcher } from 'chokidar';
 import { writeFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS, MAX_DOCUMENT_BYTES, message, type Artifact, type Cata
 import { DocumentView, DOCUMENT_VIEW } from './ui/document';
 import { ShelfView, SHELF_VIEW, SearchModal } from './ui/shelf';
 import { ConfigureModal, ShelfSettingsTab } from './ui/settings';
+import { DOCSHELF_ICON, DOCSHELF_ICON_SVG } from './ui/icon';
 
 export default class DocShelfPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -34,6 +35,8 @@ export default class DocShelfPlugin extends Plugin {
   private revisions = new Map<string, string>();
 
   async onload(): Promise<void> {
+    addIcon(DOCSHELF_ICON, DOCSHELF_ICON_SVG);
+    this.register(() => removeIcon(DOCSHELF_ICON));
     const data = await this.loadData();
     this.settings = {
       shelfPath: typeof data?.shelfPath === 'string' ? data.shelfPath : DEFAULT_SETTINGS.shelfPath,
@@ -44,7 +47,7 @@ export default class DocShelfPlugin extends Plugin {
     this.registerView(SHELF_VIEW, leaf => new ShelfView(leaf, this));
     this.registerView(DOCUMENT_VIEW, leaf => new DocumentView(leaf, this));
     this.addSettingTab(new ShelfSettingsTab(this));
-    this.addRibbonIcon('library', 'Open DocShelf', () => { void this.openShelf(); });
+    this.addRibbonIcon(DOCSHELF_ICON, 'Open DocShelf', () => { void this.openShelf(); });
     this.addCommand({ id: 'open-shelf', name: 'Open shelf', callback: () => { void this.openShelf(); } });
     this.addCommand({ id: 'search', name: 'Search documents', callback: () => new SearchModal(this).open() });
     this.addCommand({ id: 'reload', name: 'Reload shelf and documents', callback: () => { void this.refresh(); } });

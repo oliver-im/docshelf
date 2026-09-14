@@ -1,6 +1,7 @@
 import { ItemView, FuzzySuggestModal, type WorkspaceLeaf } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
+import { DOCSHELF_ICON } from './icon';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 
@@ -13,7 +14,7 @@ export class ShelfView extends ItemView {
   constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) { super(leaf); }
   getViewType(): string { return SHELF_VIEW; }
   getDisplayText(): string { return 'DocShelf'; }
-  getIcon(): string { return 'library'; }
+  getIcon(): string { return DOCSHELF_ICON; }
 
   async onOpen(): Promise<void> {
     this.contentEl.empty();
