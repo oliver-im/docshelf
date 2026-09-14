@@ -26,7 +26,20 @@ export function safeRelative(value: string): boolean {
     value.split('/').every(part => part !== '' && part !== '.' && part !== '..' && !part.startsWith('.'));
 }
 
-export async function loadCatalog(shelfPath: string, configuredRoot?: string): Promise<Catalog> {
+interface CatalogOptions { allowUnavailableFiles?: boolean }
+
+// Runtime catalogs retain unavailable registrations so healthy documents can
+// still refresh and the watcher can detect recovery. Validation stays strict.
+async function registeredFile(file: string, roots: string[], options: CatalogOptions): Promise<string | undefined> {
+  try { return await canonicalFile(file, roots); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (options.allowUnavailableFiles && ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(code || '')) return undefined;
+    throw error;
+  }
+}
+
+export async function loadCatalog(shelfPath: string, configuredRoot?: string, options: CatalogOptions = {}): Promise<Catalog> {
   const shelfDirectory = path.dirname(path.resolve(shelfPath));
   const workspace = configuredRoot ? path.resolve(shelfDirectory, configuredRoot) : path.dirname(shelfDirectory);
   const roots = [...new Set(await Promise.all([realpath(shelfDirectory), realpath(workspace)]))];
@@ -67,9 +80,9 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string): P
       const extension = path.extname(entry.source).toLowerCase();
       if (!['.md', '.markdown', '.html', '.htm'].includes(extension)) throw new Error(`Artifact ${index + 1}: source must be Markdown or HTML.`);
       const sourcePath = path.resolve(shelfDirectory, entry.source);
-      const canonicalPath = await canonicalFile(sourcePath, roots);
+      const canonicalPath = await registeredFile(sourcePath, roots, options);
       artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html' };
-      identity = canonicalPath;
+      identity = canonicalPath || sourcePath;
     }
     if (sources.has(identity)) throw new Error(`Duplicate source: ${entry.source}`);
     sources.add(identity);
@@ -78,7 +91,7 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string): P
       const assets = new Set<string>();
       for (const value of input.assets) {
         if (typeof value !== 'string' || !safeRelative(value) || !ASSET_TYPES[path.extname(value).toLowerCase()]) throw new Error(`Artifact ${index + 1}: invalid asset path.`);
-        await canonicalFile(path.resolve(path.dirname(artifact.sourcePath), value), roots);
+        await registeredFile(path.resolve(path.dirname(artifact.sourcePath), value), roots, options);
         assets.add(value);
       }
       artifact.assets = [...assets];

@@ -127,7 +127,7 @@ export default class DocShelfPlugin extends Plugin {
     this.emit();
     const settings = this.settings;
     try {
-      const catalog = await loadCatalog(this.shelfPath(), settings.workspaceRoot);
+      const catalog = await loadCatalog(this.shelfPath(), settings.workspaceRoot, { allowUnavailableFiles: true });
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
       this.server.setCatalog(catalog, settings.runHtmlScripts);
@@ -140,8 +140,15 @@ export default class DocShelfPlugin extends Plugin {
         try {
           const source = artifact.sourcePath ? (await readBoundedFile(artifact.sourcePath, catalog.roots, MAX_DOCUMENT_BYTES)).toString('utf8') : this.remoteCache.get(artifact.source);
           const assets = await Promise.all((artifact.assets || []).map(async asset => {
-            const info = await stat(path.resolve(path.dirname(artifact.sourcePath!), asset));
-            return [asset, info.mtimeMs, info.size, info.ino];
+            try {
+              const assetPath = await canonicalFile(path.resolve(path.dirname(artifact.sourcePath!), asset), catalog.roots);
+              const info = await stat(assetPath);
+              return [asset, info.mtimeMs, info.size, info.ino];
+            } catch (error) {
+              const failure = message(error);
+              failures.push(`${artifact.title}: ${failure}`);
+              return [asset, failure];
+            }
           }));
           revisions.set(artifact.route, createHash('sha256').update(JSON.stringify([artifact, assets, settings.runHtmlScripts])).update(source || '').digest('hex'));
           if (source !== undefined && indexedBytes + source.length <= 16 * 1024 * 1024) {
@@ -181,7 +188,10 @@ export default class DocShelfPlugin extends Plugin {
       });
       this.watcher.on('error', error => { this.error = `File watcher: ${message(error)}`; this.emit(); });
     } else {
-      this.watcher.add([...paths].filter(file => !this.watchedPaths.has(file)));
+      // Chokidar can drop a file's watch after unlink. Re-add missing watches
+      // even when the registration itself has not changed, to detect recovery.
+      const active = new Set(Object.entries(this.watcher.getWatched()).flatMap(([directory, files]) => files.map(file => path.join(directory, file))));
+      this.watcher.add([...paths].filter(file => !this.watchedPaths.has(file) || !active.has(file)));
       await this.watcher.unwatch([...this.watchedPaths].filter(file => !paths.has(file)));
     }
     this.watchedPaths = paths;

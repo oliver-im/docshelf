@@ -28,7 +28,8 @@ await writeFile(path.join(vault, '.obsidian', 'core-plugins.json'), JSON.stringi
 await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ theme: 'obsidian' }));
 const shelf = JSON.parse(await readFile(path.join(workspace, 'shelf.json'), 'utf8'));
 for (const artifact of shelf.artifacts) artifact.source = path.join(workspace, artifact.source);
-await writeFile(path.join(vault, 'shelf.local.json'), JSON.stringify(shelf));
+const shelfPath = path.join(vault, 'shelf.local.json');
+await writeFile(shelfPath, JSON.stringify(shelf));
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
 
 const log = createWriteStream('.local/runtime/obsidian.log');
@@ -135,11 +136,57 @@ try {
 
   const guidePath = path.join(workspace, 'guide.md');
   const original = await readFile(guidePath, 'utf8');
-  await writeFile(guidePath, `${original}\n## Watcher verification\nA new wombat phrase.\n`);
+  const watchedGuide = `${original}\n## Watcher verification\nA new wombat phrase.\n`;
+  await writeFile(guidePath, watchedGuide);
   await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Watcher verification' }).count(), 'External edits did not refresh the reader.');
   await page.locator('.docshelf-search').fill('wombat');
   await poll(async () => await page.locator('.docshelf-item').count() === 1, 'External edits did not refresh search.');
   console.log('Registered cross-document links and external-edit refresh passed.');
+
+  await writeFile(guidePath, `${watchedGuide}\n[Jump to report section](report.html#checks)\n`);
+  await poll(() => page.getByRole('link', { name: 'Jump to report section' }).count(), 'The report section link did not appear.');
+  await page.getByRole('link', { name: 'Jump to report section' }).click();
+  await poll(() => guest('location.hash === "#checks" && document.querySelector(":target")?.id === "checks"'), 'The HTML section fragment was lost.');
+  console.log('Markdown-to-HTML section navigation passed.');
+
+  await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [shelf.artifacts[0]] }));
+  await poll(() => page.locator('.docshelf-document').filter({ hasText: 'This document is no longer registered.' }).count(), 'The removed registration stayed open.');
+  await writeFile(shelfPath, JSON.stringify(shelf));
+  await poll(() => guest('location.hash === "#checks" && !!document.querySelector("#run-check")'), 'The restored registration did not recover its open tab.');
+  console.log('Removing and restoring a registration updates the open tab.');
+
+  const reportPath = path.join(workspace, 'report.html');
+  const report = await readFile(reportPath, 'utf8');
+  await rm(reportPath);
+  await poll(() => page.evaluate(() => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return plugin.catalog.artifacts.length === 2 && plugin.error.includes('ENOENT');
+  }), 'Missing source was not reported while retaining its registration.');
+  await page.evaluate(async () => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    await plugin.openArtifact(plugin.catalog.artifacts[0]);
+  });
+  await writeFile(guidePath, `${watchedGuide}\n## Missing source verification\nA puffinreviewmarker phrase.\n`);
+  await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Missing source verification' }).count(), 'A missing source stopped another document from refreshing.');
+  await page.locator('.docshelf-search').fill('puffinreviewmarker');
+  await poll(async () => await page.locator('.docshelf-item').count() === 1, 'A missing source stopped another document from being indexed.');
+  await writeFile(reportPath, report);
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').error), 'The source did not recover after being restored.');
+  console.log('Healthy documents refresh and remain searchable while another source is missing.');
+
+  const assetPath = path.join(workspace, 'assets', 'mark.svg');
+  const asset = await readFile(assetPath);
+  await rm(assetPath);
+  await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').error.includes('ENOENT')), 'The missing asset was not reported.');
+  await writeFile(guidePath, `${watchedGuide}\n## Missing asset verification\nAn assetreviewmarker phrase.\n`);
+  await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Missing asset verification' }).count(), 'A missing asset stopped its document from refreshing.');
+  await page.locator('.docshelf-search').fill('assetreviewmarker');
+  await poll(async () => await page.locator('.docshelf-item').count() === 1, 'A missing asset prevented its document from being indexed.');
+  await writeFile(assetPath, asset);
+  await writeFile(guidePath, watchedGuide);
+  await page.locator('.docshelf-search').fill('');
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').error), 'The asset did not recover after being restored.');
+  console.log('Missing assets do not block document refresh or search.');
 
   await page.evaluate(async () => {
     const plugin = app.plugins.getPlugin('docshelf');
@@ -156,12 +203,16 @@ try {
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);
   await page.evaluate(() => app.plugins.disablePlugin('docshelf'));
   await poll(async () => { try { await fetch(origin); return false; } catch { return true; } }, 'Loopback listener did not close on unload.');
-  assert.equal(await readFile(guidePath, 'utf8'), `${original}\n## Watcher verification\nA new wombat phrase.\n`);
+  assert.equal(await readFile(guidePath, 'utf8'), watchedGuide);
   assert.deepEqual(pageErrors, []);
   console.log('Unload cleanup and source preservation passed.');
   await writeFile('.local/runtime/results.json', JSON.stringify({ bundle: bundles[0], passed: true, probes, permalink, pageErrors }, null, 2));
 } catch (error) {
   if (page) { await page.screenshot({ path: '.local/runtime/failure.png' }).catch(() => {}); }
+  if (page) console.error('Plugin state:', await page.evaluate(() => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return { error: plugin?.error, artifacts: plugin?.catalog?.artifacts, watched: plugin?.watcher?.getWatched() };
+  }).catch(() => null));
   console.error('Runtime test failed:', error.message);
   console.error('Log: .local/runtime/obsidian.log');
   process.exitCode = 1;

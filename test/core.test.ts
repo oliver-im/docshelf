@@ -45,6 +45,37 @@ test('every source read revalidates a replaced symlink and enforces the byte lim
   await assert.rejects(readBoundedFile(link, roots, 100), /outside/);
 });
 
+test('runtime catalogs retain unavailable files while validation and reads stay strict', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const missingSource = path.join(f.workspace, 'missing.md');
+  const missingAsset = path.join(f.workspace, 'missing.svg');
+  await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [
+    { ...f.entry, assets: ['missing.svg'] },
+    { ...f.entry, source: missingSource, route: 'example/missing.html' },
+  ] }));
+  await assert.rejects(loadCatalog(f.shelfPath, f.workspace), { code: 'ENOENT' });
+  const catalog = await loadCatalog(f.shelfPath, f.workspace, { allowUnavailableFiles: true });
+  assert.equal(catalog.artifacts.length, 2);
+  assert.deepEqual(catalog.artifacts[0].assets, ['missing.svg']);
+  assert.equal(catalog.artifacts[1].sourcePath, missingSource);
+  assert.equal(catalog.artifacts[1].canonicalPath, undefined);
+  assert.match((await readBoundedFile(f.source, catalog.roots, 100)).toString(), /Outside the vault/);
+  await assert.rejects(readBoundedFile(missingSource, catalog.roots, 100), { code: 'ENOENT' });
+
+  await writeFile(missingSource, '# Restored');
+  await writeFile(missingAsset, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  const restored = await loadCatalog(f.shelfPath, f.workspace);
+  assert.equal(restored.artifacts[1].id, catalog.artifacts[1].id);
+  assert.equal(restored.artifacts[1].canonicalPath, await realpath(missingSource));
+
+  const outside = path.join(f.root, 'secret.md');
+  await writeFile(outside, 'private');
+  await unlink(missingSource);
+  await symlink(outside, missingSource);
+  await assert.rejects(readBoundedFile(missingSource, catalog.roots, 100), /outside/);
+  await assert.rejects(loadCatalog(f.shelfPath, f.workspace, { allowUnavailableFiles: true }), /outside/);
+});
+
 test('shelf rejects traversal, duplicate routes/sources, and invalid remote hosts', async t => {
   const f = await fixture(); t.after(f.cleanup);
   for (const entry of [{ ...f.entry, route: '../guide.html' }, { ...f.entry, source: 'https://example.com/doc.md' }, { ...f.entry, assets: ['../secret.txt'] }]) {

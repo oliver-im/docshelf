@@ -8,11 +8,14 @@ vault files or intercept native editors.
 
 1. The shelf loader canonicalizes the configured roots and validates each
    registration, its source type, unique identity, and optional asset list.
+   At runtime, unavailable files retain their registrations; the CLI validator
+   still requires every file to be available. Reads always recheck containment.
 2. The plugin reads bounded source snapshots and builds a MiniSearch index.
    Chokidar watches explicit source, asset, and shelf paths. A queued refresh
    publishes a validated catalog and updates affected views. Invalid shelf
    changes retain the last valid catalog with an error; file reads still enforce
-   current path checks.
+   current path checks. Missing files produce individual errors without blocking
+   healthy documents. Dropped file watches are re-added to detect their return.
 3. Markdown is parsed with source positions, stripped of authored raw HTML,
    sanitized, and displayed in the host with rewritten image and link targets.
    The source mode inserts text through DOM text APIs. Both share source-line

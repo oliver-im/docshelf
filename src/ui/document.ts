@@ -62,7 +62,12 @@ export class DocumentView extends ItemView {
     if (this.closed || generation !== this.generation) return;
     const revision = this.plugin.documentRevision(this.route);
     this.artifact = this.plugin.catalog?.artifacts.find(item => item.route === this.route) || null;
-    if (!this.artifact) { this.contentEl.empty(); this.contentEl.createEl('p', { text: 'This document is no longer registered. Open DocShelf to choose another document.', cls: 'docshelf-empty' }); return; }
+    if (!this.artifact) {
+      this.lastRevision = revision;
+      this.contentEl.empty();
+      this.contentEl.createEl('p', { text: 'This document is no longer registered. Open DocShelf to choose another document.', cls: 'docshelf-empty' });
+      return;
+    }
     try {
       this.source = this.artifact.kind === 'claude' ? '' : await this.plugin.readArtifact(this.artifact);
       if (this.closed || generation !== this.generation) return;
@@ -106,7 +111,9 @@ export class DocumentView extends ItemView {
     let rangeError = '';
     try { checkRange(this.range, lines.length); } catch (error) { rangeError = message(error); this.range = null; }
     if (this.mode === 'reading' && artifact.kind === 'html') {
-      this.renderWebview(this.plugin.server.documentUrl(artifact), false);
+      const url = new URL(this.plugin.server.documentUrl(artifact));
+      url.hash = this.hash;
+      this.renderWebview(url.href, false);
       this.status.setText(this.plugin.settings.runHtmlScripts ? 'Interactive report' : 'Report scripts are disabled');
     } else {
       const selection = new LineSelection(this.range, range => { this.range = range; this.updateRangeStatus(); this.saveState(); });

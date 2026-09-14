@@ -32,6 +32,10 @@ The plugin does not start or change the standalone server.
 The default shelf is `shelf.local.json` in your vault. Create it using the
 empty-state button or copy the empty `shelf.json` template. Edit registrations
 with your editor or an agent. DocShelf watches the shelf and registered files.
+Missing or unreadable sources and assets are reported without stopping other
+documents from refreshing. Their registrations stay on the shelf so they can
+recover when the files return. The shelf validation command still requires
+every registered file to be available.
 
 ```json
 {
