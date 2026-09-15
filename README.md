@@ -118,11 +118,15 @@ and shown as compact rows with a file-type icon and title. Long titles are
 truncated; hover over a row to see its full title and source type. Descriptions
 stay hidden while browsing. Search results include short content excerpts.
 Click a project heading to collapse or expand it, or drag it to reorder projects.
-Right-click a heading (or press **Shift+F10** while it is focused) for **Move up**,
-**Move down**, and **Reset to alphabetical**. Obsidian saves the project order and
-collapse state with the workspace; new projects follow the saved order
-alphabetically. Documents within a project stay alphabetical. Search shows
-matches across all projects, including collapsed ones. Local file changes
+Drag a document row to reorder it within its project. Right-click a heading or
+document (or press **Shift+F10** while it is focused) for **Move up**, **Move down**,
+and **Reset to alphabetical**. Resetting a document's order resets its project’s
+document list. Obsidian saves these orders and collapse state with the workspace;
+new projects and documents follow their saved lists alphabetically. Document
+orders use stable registration routes, so renaming a title preserves its position.
+Reordering does not change registrations or source files, and documents cannot
+be dragged between projects. Search shows matches across all projects, including
+collapsed ones, ordered by relevance with dragging disabled. Local file changes
 refresh automatically. For a manual refresh or setup,
 use **DocShelf: Reload shelf and documents** or **DocShelf: Configure shelf** in
 Obsidian's command palette.

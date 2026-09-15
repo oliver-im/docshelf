@@ -1,20 +1,24 @@
 import { ItemView, FuzzySuggestModal, Menu, setIcon, setTooltip, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
+import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
+const DOCUMENT_DRAG_TYPE = 'application/x-docshelf-document';
 const stringList = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === 'string'))] : [];
 
 export class ShelfView extends ItemView {
   private query = '';
   private collapsedProjects = new Set<string>();
   private projectOrder: string[] = [];
+  private documentOrder = new Map<string, string[]>();
   private draggedProject: string | null = null;
+  private draggedDocument: { project: string; route: string } | null = null;
   private dropMarker?: HTMLElement;
   private renderAfterDrag = false;
-  private projectMenu?: Menu;
+  private orderMenu?: Menu;
   private results!: HTMLElement;
   private status!: HTMLElement;
   private unsubscribe?: () => void;
@@ -23,12 +27,15 @@ export class ShelfView extends ItemView {
   getViewType(): string { return SHELF_VIEW; }
   getDisplayText(): string { return 'DocShelf'; }
   getIcon(): string { return DOCSHELF_ICON; }
-  getState(): Record<string, unknown> { return { collapsedProjects: [...this.collapsedProjects], projectOrder: this.projectOrder }; }
+  getState(): Record<string, unknown> { return { collapsedProjects: [...this.collapsedProjects], projectOrder: this.projectOrder, documentOrder: Object.fromEntries(this.documentOrder) }; }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
-    const state = value as { collapsedProjects?: unknown; projectOrder?: unknown } | null;
+    const state = value as { collapsedProjects?: unknown; projectOrder?: unknown; documentOrder?: unknown } | null;
     this.collapsedProjects = new Set(stringList(state?.collapsedProjects));
     this.projectOrder = stringList(state?.projectOrder);
+    const orders = state?.documentOrder;
+    this.documentOrder = new Map(orders && typeof orders === 'object' && !Array.isArray(orders)
+      ? Object.entries(orders).map(([project, routes]) => [project, stringList(routes)]) : []);
     this.renderResults();
     await super.setState(value, result);
   }
@@ -48,7 +55,7 @@ export class ShelfView extends ItemView {
 
   async onClose(): Promise<void> {
     this.unsubscribe?.();
-    this.projectMenu?.hide();
+    this.orderMenu?.hide();
     this.renderAfterDrag = false;
     this.endDrag();
   }
@@ -56,7 +63,7 @@ export class ShelfView extends ItemView {
   private renderResults(): void {
     if (!this.results) return;
     // A file watcher refresh must not remove the element being dragged.
-    if (this.draggedProject !== null) { this.renderAfterDrag = true; return; }
+    if (this.draggedProject !== null || this.draggedDocument !== null) { this.renderAfterDrag = true; return; }
     this.results.empty();
     const artifacts = this.plugin.catalog?.artifacts || [];
     const searching = !!this.query.trim();
@@ -155,7 +162,7 @@ export class ShelfView extends ItemView {
         else this.collapsedProjects.delete(project);
         this.app.workspace.requestSaveLayout();
       };
-      for (const hit of documents) this.renderItem(items, hit, false);
+      for (const artifact of this.orderedDocuments(project, documents.map(hit => hit.artifact))) this.renderItem(items, { artifact, excerpt: '' }, false);
     }
   }
 
@@ -174,27 +181,108 @@ export class ShelfView extends ItemView {
   }
 
   private showProjectMenu(project: string, toggle: HTMLButtonElement): void {
-    this.projectMenu?.hide();
-    const order = this.orderedProjects();
-    const index = order.indexOf(project);
-    const menu = this.projectMenu = new Menu().setUseNativeMenu(false);
+    this.showOrderMenu(project, toggle, () => this.orderedProjects(), order => this.saveProjectOrder(order, project), !!this.projectOrder.length);
+  }
+
+  private showOrderMenu(key: string, anchor: HTMLButtonElement, getOrder: () => string[], saveOrder: (order: string[]) => void, hasCustomOrder: boolean): void {
+    this.orderMenu?.hide();
+    const order = getOrder();
+    const index = order.indexOf(key);
+    const menu = this.orderMenu = new Menu().setUseNativeMenu(false);
     for (const [title, icon, offset] of [['Move up', 'arrow-up', -1], ['Move down', 'arrow-down', 1]] as const) {
       menu.addItem(item => item.setTitle(title).setIcon(icon).setDisabled(index < 0 || index + offset < 0 || index + offset >= order.length).onClick(() => {
         // Read the current catalog in case it changed while the menu was open.
-        const current = this.orderedProjects();
-        const from = current.indexOf(project);
+        const current = getOrder();
+        const from = current.indexOf(key);
         const to = from + offset;
         if (from < 0 || to < 0 || to >= current.length) return;
         current.splice(from, 1);
-        current.splice(to, 0, project);
-        this.saveProjectOrder(current, project);
+        current.splice(to, 0, key);
+        saveOrder(current);
       }));
     }
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!this.projectOrder.length).onClick(() => this.saveProjectOrder([], project)));
-    menu.onHide(() => { this.projectMenu = undefined; if (toggle.isConnected) toggle.focus(); });
-    const bounds = toggle.getBoundingClientRect();
-    menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, toggle.ownerDocument);
+    menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!hasCustomOrder).onClick(() => saveOrder([])));
+    menu.onHide(() => { this.orderMenu = undefined; if (anchor.isConnected) anchor.focus(); });
+    const bounds = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, anchor.ownerDocument);
+  }
+
+  private orderedDocuments(project: string, documents = (this.plugin.catalog?.artifacts || []).filter(artifact => artifact.project === project)): Artifact[] {
+    const alphabetical = [...documents].sort((a, b) => a.title.localeCompare(b.title) || a.route.localeCompare(b.route));
+    const available = new Map(alphabetical.map(artifact => [artifact.route, artifact]));
+    const order = this.documentOrder.get(project) || [];
+    const saved = new Set(order);
+    return [...order.flatMap(route => available.has(route) ? [available.get(route)!] : []), ...alphabetical.filter(artifact => !saved.has(artifact.route))];
+  }
+
+  private saveDocumentOrder(project: string, order: string[], focusRoute: string): void {
+    if (order.length) this.documentOrder.set(project, order);
+    else this.documentOrder.delete(project);
+    this.app.workspace.requestSaveLayout();
+    this.renderResults();
+    Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-item')).find(button => button.dataset.route === focusRoute)?.focus();
+  }
+
+  private makeDocumentSortable(button: HTMLButtonElement, { project, route }: Artifact): void {
+    button.draggable = true;
+    button.setAttribute('aria-description', 'Drag to reorder within this project. Press Shift+F10 for document order options.');
+    button.addEventListener('dragstart', event => {
+      if (!event.dataTransfer) { event.preventDefault(); return; }
+      event.stopPropagation();
+      this.draggedDocument = { project, route };
+      event.dataTransfer.setData(DOCUMENT_DRAG_TYPE, route);
+      event.dataTransfer.effectAllowed = 'move';
+      button.addClass('is-dragging');
+    });
+    button.addEventListener('dragend', () => this.endDrag());
+    button.addEventListener('dragover', event => {
+      if (!this.draggedDocument) return; // Let project drags reach the group.
+      event.stopPropagation();
+      this.clearDropMarker();
+      if (this.draggedDocument.project !== project || !event.dataTransfer?.types.includes(DOCUMENT_DRAG_TYPE)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      if (this.draggedDocument.route === route) return;
+      const bounds = button.getBoundingClientRect();
+      button.addClass(event.clientY < bounds.top + bounds.height / 2 ? 'docshelf-drop-before' : 'docshelf-drop-after');
+      this.dropMarker = button;
+    });
+    button.addEventListener('dragleave', event => {
+      if (!this.draggedDocument) return;
+      event.stopPropagation();
+      if (!event.relatedTarget || !button.contains(event.relatedTarget as Node)) this.clearDropMarker();
+    });
+    button.addEventListener('drop', event => {
+      const source = this.draggedDocument;
+      if (!source) return;
+      event.stopPropagation();
+      if (source.project !== project || event.dataTransfer?.getData(DOCUMENT_DRAG_TYPE) !== source.route) return;
+      event.preventDefault();
+      const bounds = button.getBoundingClientRect();
+      const after = event.clientY >= bounds.top + bounds.height / 2;
+      this.endDrag();
+      if (source.route === route) return;
+      // Check the live project membership after any refresh during the drag.
+      const order = this.orderedDocuments(project).map(artifact => artifact.route);
+      if (!order.includes(source.route) || !order.includes(route)) return;
+      order.splice(order.indexOf(source.route), 1);
+      order.splice(order.indexOf(route) + (after ? 1 : 0), 0, source.route);
+      this.saveDocumentOrder(project, order, source.route);
+    });
+    const showMenu = () => this.showOrderMenu(route, button, () => this.orderedDocuments(project).map(artifact => artifact.route), order => this.saveDocumentOrder(project, order, route), !!this.documentOrder.get(project)?.length);
+    button.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showMenu();
+    });
+    button.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        event.stopPropagation();
+        showMenu();
+      }
+    });
   }
 
   private clearDropMarker(): void {
@@ -204,6 +292,7 @@ export class ShelfView extends ItemView {
 
   private endDrag(): void {
     this.draggedProject = null;
+    this.draggedDocument = null;
     this.clearDropMarker();
     this.results?.querySelector('.is-dragging')?.removeClass('is-dragging');
     if (this.renderAfterDrag) { this.renderAfterDrag = false; this.renderResults(); }
@@ -214,6 +303,7 @@ export class ShelfView extends ItemView {
     const icon = { markdown: 'file-text', html: 'file-code', github: 'github', claude: 'globe' }[artifact.kind];
     const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': artifact.title, 'aria-description': [kind, searching ? artifact.project : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
     button.toggleClass('docshelf-search-result', searching);
+    button.dataset.route = artifact.route;
     setTooltip(button, `${artifact.title} (${kind})`, { placement: 'right' });
     const title = button.createDiv({ cls: 'docshelf-item-heading' });
     setIcon(title.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
@@ -221,7 +311,7 @@ export class ShelfView extends ItemView {
     if (searching) {
       if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
       button.createSpan({ text: artifact.project, cls: 'docshelf-item-project' });
-    }
+    } else this.makeDocumentSortable(button, artifact);
     button.onclick = () => { void this.plugin.openArtifact(artifact); };
   }
 }
