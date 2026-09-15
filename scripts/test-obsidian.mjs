@@ -108,21 +108,87 @@ try {
   await page.keyboard.press('Space');
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'true');
   assert.equal(await page.locator('.docshelf-item:visible').count(), 2);
-  const options = page.getByRole('button', { name: 'DocShelf options', exact: true });
-  await options.focus();
-  await page.keyboard.press('Enter');
-  await page.locator('.menu-item').filter({ hasText: 'Reload shelf' }).click();
-  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Menu reload did not complete.');
-  await options.click();
-  await page.locator('.menu-item').filter({ hasText: 'Configure shelf' }).click();
+
+  const projectNames = () => page.locator('.docshelf-project-name').allTextContents();
+  await firstProject.click();
+  await secondProject.dragTo(firstProject, { targetPosition: { x: 24, y: 2 } });
+  assert.deepEqual(await projectNames(), ['Reports', 'Getting started']);
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  await page.locator('.docshelf-search').fill('authored');
+  assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
+  await page.locator('.docshelf-search').fill('');
+  await page.evaluate(async () => {
+    await app.plugins.getPlugin('docshelf').refresh();
+    const leaf = app.workspace.getLeavesOfType('docshelf-shelf')[0];
+    const state = JSON.parse(JSON.stringify(leaf.getViewState()));
+    await leaf.setViewState({ type: 'empty' });
+    await leaf.setViewState(state);
+  });
+  assert.deepEqual(await projectNames(), ['Reports', 'Getting started']);
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+
+  // New projects follow a saved order; removing a project must not leave a gap.
+  const extraSource = path.join(workspace, 'extra.md');
+  await writeFile(extraSource, '# Additional project\n');
+  const extra = { project: 'Alpha', source: extraSource, route: 'examples/extra.html', title: 'Additional project', description: 'A new registration.' };
+  await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [...shelf.artifacts, extra] }));
+  await poll(async () => (await projectNames()).length === 3, 'The new project did not appear.');
+  assert.deepEqual(await projectNames(), ['Reports', 'Getting started', 'Alpha']);
+  await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [shelf.artifacts[0], extra] }));
+  await poll(async () => !(await projectNames()).includes('Reports'), 'The removed project stayed in the sidebar.');
+  assert.deepEqual(await projectNames(), ['Getting started', 'Alpha']);
+  await writeFile(shelfPath, JSON.stringify(shelf));
+  await poll(async () => (await projectNames()).join(',') === 'Reports,Getting started', 'The original project order did not recover.');
+
+  // An in-flight watcher refresh must preserve a drag and its drop target.
+  const sourceBounds = await secondProject.boundingBox();
+  const targetBounds = await firstProject.boundingBox();
+  await page.mouse.move(sourceBounds.x + 50, sourceBounds.y + sourceBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBounds.x + 50, targetBounds.y + targetBounds.height - 2, { steps: 12 });
+  await page.mouse.move(targetBounds.x + 51, targetBounds.y + targetBounds.height - 2);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  assert.equal(await page.locator('.docshelf-project-toggle.is-dragging').count(), 1);
+  await page.screenshot({ path: '.local/runtime/project-drag.png' });
+  await page.mouse.up();
+  assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
+  assert.equal(await page.locator('.docshelf-drop-before, .docshelf-drop-after, .is-dragging').count(), 0);
+
+  const cancelSource = await secondProject.boundingBox();
+  const cancelTarget = await firstProject.boundingBox();
+  await page.mouse.move(cancelSource.x + 50, cancelSource.y + cancelSource.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(cancelTarget.x + 50, cancelTarget.y + 2, { steps: 12 });
+  await page.mouse.move(cancelTarget.x + 51, cancelTarget.y + 2);
+  assert.equal(await page.locator('.docshelf-project-toggle.is-dragging').count(), 1);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
+  assert.equal(await page.locator('.docshelf-drop-before, .docshelf-drop-after, .is-dragging').count(), 0);
+
+  await secondProject.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.locator('.menu-item').filter({ hasText: 'Move up' }).click();
+  assert.deepEqual(await projectNames(), ['Reports', 'Getting started']);
+  assert.equal(await secondProject.evaluate(el => el === document.activeElement), true);
+  await secondProject.click({ button: 'right' });
+  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
+  assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
+  assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
+  assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(shelf));
+  await firstProject.click();
+  console.log('Project dragging, refresh during drag, saved order, new/removed projects, keyboard reordering, and alphabetical reset passed.');
+
+  assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:reload')), true);
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Reload command did not complete.');
+  assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:configure')), true);
   const configurationPage = await poll(async () => {
     for (const candidate of browser.contexts()[0].pages()) {
       if (await candidate.getByText('Configure DocShelf', { exact: true }).isVisible()) return candidate;
     }
-  }, 'The sidebar menu did not open the configuration dialog.');
+  }, 'The configure command did not open the configuration dialog.');
   await configurationPage.keyboard.press('Escape');
-  assert.equal(await options.getAttribute('aria-expanded'), 'false');
-  console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and sidebar menu passed.');
+  console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
   await page.locator('.docshelf-reading').waitFor();
   assert.equal(await page.locator('.docshelf-reading h1').textContent(), 'Project field notes');
   await page.locator('.docshelf-line-button[data-line="7"]').click();

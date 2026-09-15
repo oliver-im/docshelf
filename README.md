@@ -113,10 +113,15 @@ and 200,000 extracted characters per document; remaining metadata stays
 searchable. Exceeding the total limit is shown in the sidebar.
 
 With no search query, documents are grouped by their registered project label.
-Click a project heading to collapse or expand it; Obsidian saves these choices
-with the workspace. Search shows matches across all projects, including collapsed
-ones. The sidebar's **DocShelf options** (`…`) menu contains **Reload shelf** and
-**Configure shelf**; local file changes also refresh automatically.
+Click a project heading to collapse or expand it, or drag it to reorder projects.
+Right-click a heading (or press **Shift+F10** while it is focused) for **Move up**,
+**Move down**, and **Reset to alphabetical**. Obsidian saves the project order and
+collapse state with the workspace; new projects follow the saved order
+alphabetically. Documents within a project stay alphabetical. Search shows
+matches across all projects, including collapsed ones. Local file changes
+refresh automatically. For a manual refresh or setup,
+use **DocShelf: Reload shelf and documents** or **DocShelf: Configure shelf** in
+Obsidian's command palette.
 
 The `source` field also accepts:
 
