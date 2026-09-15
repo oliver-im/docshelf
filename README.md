@@ -45,8 +45,7 @@ every registered file to be available.
       "project": "Example project",
       "source": "../example-project/docs/review.md",
       "route": "example/review.html",
-      "title": "Project review",
-      "description": "Findings and next steps from the project review."
+      "title": "Project review"
     },
     {
       "project": "Example project",
@@ -63,7 +62,9 @@ every registered file to be available.
 - `source` is absolute or relative to the shelf JSON file. Supported local
   extensions are `.md`, `.markdown`, `.html`, and `.htm`.
 - `route` is a stable, unique relative `.html` path, including for Markdown.
-- `project`, `title`, and `description` appear in the sidebar and search results.
+- `project` and `title` label the sidebar groups and document rows.
+- Optional `description` adds searchable metadata. It may be omitted or empty.
+  Search results use it as an excerpt when document contents are unavailable.
 - Optional `assets` lists individual files relative to the source document's
   directory. Only these assets are served. Nested paths are allowed; `..`,
   hidden paths, wildcards, and directory registration are not.
@@ -112,7 +113,10 @@ excluded. Search indexing uses at most 16 million source characters per refresh
 and 200,000 extracted characters per document; remaining metadata stays
 searchable. Exceeding the total limit is shown in the sidebar.
 
-With no search query, documents are grouped by their registered project label.
+With no search query, documents are grouped by their registered project label
+and shown as compact rows with a file-type icon and title. Long titles are
+truncated; hover over a row to see its full title and source type. Descriptions
+stay hidden while browsing. Search results include short content excerpts.
 Click a project heading to collapse or expand it, or drag it to reorder projects.
 Right-click a heading (or press **Shift+F10** while it is focused) for **Move up**,
 **Move down**, and **Reset to alphabetical**. Obsidian saves the project order and

@@ -33,6 +33,27 @@ test('catalog resolves external files, keeps legacy shelf shape, and rejects out
   await assert.rejects(loadCatalog(f.shelfPath, f.workspace), /outside/);
 });
 
+test('descriptions are optional and searchable while malformed values are rejected', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const search = new ShelfSearch();
+  for (const description of [undefined, '', '   ', '  Curated metadata  ']) {
+    await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, description }] }));
+    const artifact = (await loadCatalog(f.shelfPath, f.workspace)).artifacts[0];
+    assert.equal(artifact.description, description?.trim() || '');
+    search.replace([artifact], new Map([[artifact.id, '# Notes\nBodykeyword remains searchable.']]));
+    assert.equal(search.search('')[0].excerpt, '');
+    assert.equal(search.search('   ')[0].excerpt, '');
+    assert.match(search.search('Bodykeyword')[0].excerpt, /Bodykeyword/);
+    if (description?.trim()) assert.equal(search.search('Curated')[0].artifact.id, artifact.id);
+    search.replace([artifact], new Map());
+    assert.equal(search.search('Project')[0].excerpt, description?.trim() || '');
+  }
+  for (const description of [null, 42, {}, [], 'x'.repeat(8193), 'bad\0text']) {
+    await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, description }] }));
+    await assert.rejects(loadCatalog(f.shelfPath, f.workspace), /description must be a string/);
+  }
+});
+
 test('every source read revalidates a replaced symlink and enforces the byte limit', async t => {
   const f = await fixture(); t.after(f.cleanup);
   const link = path.join(f.workspace, 'link.md');

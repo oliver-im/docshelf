@@ -1,4 +1,4 @@
-import { ItemView, FuzzySuggestModal, Menu, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, FuzzySuggestModal, Menu, setIcon, setTooltip, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
 import { DOCSHELF_ICON } from './icon';
@@ -209,13 +209,19 @@ export class ShelfView extends ItemView {
     if (this.renderAfterDrag) { this.renderAfterDrag = false; this.renderResults(); }
   }
 
-  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, showProject: boolean): void {
-    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button' } });
+  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean): void {
+    const kind = { markdown: 'Markdown', html: 'HTML', github: 'GitHub Markdown', claude: 'Claude artifact' }[artifact.kind];
+    const icon = { markdown: 'file-text', html: 'file-code', github: 'github', claude: 'globe' }[artifact.kind];
+    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': artifact.title, 'aria-description': [kind, searching ? artifact.project : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
+    button.toggleClass('docshelf-search-result', searching);
+    setTooltip(button, `${artifact.title} (${kind})`, { placement: 'right' });
     const title = button.createDiv({ cls: 'docshelf-item-heading' });
+    setIcon(title.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
     title.createSpan({ text: artifact.title, cls: 'docshelf-item-title' });
-    title.createSpan({ text: artifact.kind === 'github' ? 'GitHub' : artifact.kind === 'claude' ? 'Claude' : artifact.kind === 'html' ? 'HTML' : 'MD', cls: 'docshelf-kind' });
-    button.createSpan({ text: excerpt || artifact.description, cls: 'docshelf-item-description' });
-    if (showProject) button.createSpan({ text: artifact.project, cls: 'docshelf-muted' });
+    if (searching) {
+      if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
+      button.createSpan({ text: artifact.project, cls: 'docshelf-item-project' });
+    }
     button.onclick = () => { void this.plugin.openArtifact(artifact); };
   }
 }
@@ -228,7 +234,7 @@ export class SearchModal extends FuzzySuggestModal<SearchHit> {
   renderSuggestion(value: any, el: HTMLElement): void {
     const hit = value.item as SearchHit;
     el.createDiv({ text: hit.artifact.title });
-    el.createDiv({ text: `${hit.artifact.project} · ${hit.excerpt}`, cls: 'docshelf-muted' });
+    el.createDiv({ text: [hit.artifact.project, hit.excerpt].filter(Boolean).join(' · '), cls: 'docshelf-muted' });
   }
   onChooseItem(hit: SearchHit): void { void this.plugin.openArtifact(hit.artifact); }
 }

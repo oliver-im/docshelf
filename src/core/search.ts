@@ -31,7 +31,7 @@ export class ShelfSearch {
   }
 
   search(query: string): SearchHit[] {
-    if (!query.trim()) return Array.from(this.artifacts.values(), artifact => ({ artifact, excerpt: artifact.description }));
+    if (!query.trim()) return Array.from(this.artifacts.values(), artifact => ({ artifact, excerpt: '' }));
     return this.index.search(query.trim()).slice(0, 100).flatMap(result => {
       const artifact = this.artifacts.get(result.id);
       if (!artifact) return [];

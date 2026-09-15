@@ -3,7 +3,7 @@ export interface ShelfEntry {
   source: string;
   route: string;
   title: string;
-  description: string;
+  description?: string;
   /** Asset paths relative to this local document's directory. */
   assets?: string[];
 }
@@ -11,6 +11,8 @@ export interface ShelfEntry {
 export interface Shelf { version: 1; artifacts: ShelfEntry[] }
 
 export interface Artifact extends ShelfEntry {
+  /** Omitted descriptions are normalized to an empty string. */
+  description: string;
   id: string;
   kind: 'markdown' | 'html' | 'github' | 'claude';
   sourcePath?: string;

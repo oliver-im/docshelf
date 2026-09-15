@@ -29,6 +29,7 @@ await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ them
 const shelf = JSON.parse(await readFile(path.join(workspace, 'shelf.json'), 'utf8'));
 for (const artifact of shelf.artifacts) artifact.source = path.join(workspace, artifact.source);
 shelf.artifacts[1].project = 'Reports';
+delete shelf.artifacts[0].description;
 const shelfPath = path.join(vault, 'shelf.local.json');
 await writeFile(shelfPath, JSON.stringify(shelf));
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
@@ -78,6 +79,8 @@ try {
   const secondProject = page.locator('.docshelf-project-toggle').filter({ hasText: 'Reports' });
   assert.equal(await page.locator('.docshelf-shelf h2').count(), 0);
   assert.equal(await page.locator('.docshelf-item:visible').count(), 2);
+  assert.equal(await page.locator('.docshelf-item-description, .docshelf-kind').count(), 0);
+  assert.equal(await page.locator('.docshelf-item-icon svg').count(), 2);
   assert.deepEqual(await page.locator('.docshelf-project-count').allTextContents(), ['1', '1']);
   await firstProject.click();
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
@@ -86,6 +89,9 @@ try {
   await page.locator('.docshelf-search').fill('authored');
   assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
   assert.equal(await page.locator('.docshelf-item-title').textContent(), 'Project field notes');
+  assert.match(await page.locator('.docshelf-item-description').textContent(), /authored/);
+  assert.equal(await page.locator('.docshelf-item-project').textContent(), 'Getting started');
+  await page.screenshot({ path: '.local/runtime/shelf-search.png' });
   await page.locator('.docshelf-search').fill('');
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   await page.evaluate(async () => {
@@ -130,10 +136,17 @@ try {
   // New projects follow a saved order; removing a project must not leave a gap.
   const extraSource = path.join(workspace, 'extra.md');
   await writeFile(extraSource, '# Additional project\n');
-  const extra = { project: 'Alpha', source: extraSource, route: 'examples/extra.html', title: 'Additional project', description: 'A new registration.' };
+  const extra = { project: 'Alpha', source: extraSource, route: 'examples/extra.html', title: 'Additional project with a long title that should fit in one compact sidebar row' };
   await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [...shelf.artifacts, extra] }));
   await poll(async () => (await projectNames()).length === 3, 'The new project did not appear.');
   assert.deepEqual(await projectNames(), ['Reports', 'Getting started', 'Alpha']);
+  const extraRow = page.locator('.docshelf-item').filter({ hasText: extra.title });
+  assert.equal(await extraRow.locator('.docshelf-item-title').evaluate(el => el.scrollWidth > el.clientWidth), true);
+  assert.ok((await extraRow.boundingBox()).height <= 32, 'Browsing rows should stay compact even with a long title.');
+  await extraRow.hover();
+  await page.locator('.tooltip').filter({ hasText: extra.title }).waitFor();
+  await page.screenshot({ path: '.local/runtime/shelf-title-tooltip.png' });
+  await page.mouse.move(900, 800);
   await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [shelf.artifacts[0], extra] }));
   await poll(async () => !(await projectNames()).includes('Reports'), 'The removed project stayed in the sidebar.');
   assert.deepEqual(await projectNames(), ['Getting started', 'Alpha']);
@@ -177,6 +190,12 @@ try {
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(shelf));
   await firstProject.click();
+  const guideRow = page.locator('.docshelf-item').filter({ hasText: 'Project field notes' });
+  await guideRow.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.docshelf-reading h1').filter({ hasText: 'Project field notes' }).waitFor();
+  assert.equal(await page.locator('.docshelf-item-description').count(), 0);
+  console.log('Compact rows, full-title tooltips, optional descriptions, search excerpts, and keyboard opening passed.');
   console.log('Project dragging, refresh during drag, saved order, new/removed projects, keyboard reordering, and alphabetical reset passed.');
 
   assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:reload')), true);

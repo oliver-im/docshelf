@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { canonicalFile, readBoundedFile } from './files';
 import { parseClaudeArtifactUrl } from './claude-artifacts.js';
 import { parseGitHubMarkdownUrl } from './github-markdown.js';
-import { MAX_REMOTE_BYTES, type Artifact, type Catalog, type ShelfEntry } from './types';
+import { MAX_REMOTE_BYTES, type Artifact, type Catalog } from './types';
 
 export const ASSET_TYPES: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -17,6 +17,14 @@ export const ASSET_TYPES: Record<string, string> = {
 function required(value: unknown, field: string, index: number): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 8192 || value.includes('\0')) {
     throw new Error(`Artifact ${index + 1}: ${field} must be a nonempty string.`);
+  }
+  return value.trim();
+}
+
+function optionalDescription(value: unknown, index: number): string {
+  if (value === undefined) return '';
+  if (typeof value !== 'string' || value.length > 8192 || value.includes('\0')) {
+    throw new Error(`Artifact ${index + 1}: description must be a string of at most 8192 characters without NUL characters.`);
   }
   return value.trim();
 }
@@ -54,10 +62,10 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
   const artifacts: Artifact[] = [];
   for (const [index, input] of parsed.artifacts.entries()) {
     if (!input || typeof input !== 'object') throw new Error(`Artifact ${index + 1} must be an object.`);
-    const entry: ShelfEntry = {
+    const entry = {
       project: required(input.project, 'project', index), source: required(input.source, 'source', index),
       route: required(input.route, 'route', index), title: required(input.title, 'title', index),
-      description: required(input.description, 'description', index),
+      description: optionalDescription(input.description, index),
     };
     if (!safeRelative(entry.route) || !/\.html$/i.test(entry.route)) throw new Error(`Artifact ${index + 1}: route must be a relative .html path without traversal.`);
     if (routes.has(entry.route)) throw new Error(`Duplicate route: ${entry.route}`);
