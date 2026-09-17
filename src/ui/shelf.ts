@@ -21,6 +21,7 @@ export class ShelfView extends ItemView {
   private orderMenu?: Menu;
   private results!: HTMLElement;
   private status!: HTMLElement;
+  private renderedResults = '';
   private unsubscribe?: () => void;
 
   constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) { super(leaf); }
@@ -30,6 +31,7 @@ export class ShelfView extends ItemView {
   getState(): Record<string, unknown> { return { collapsedProjects: [...this.collapsedProjects], projectOrder: this.projectOrder, documentOrder: Object.fromEntries(this.documentOrder) }; }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
+    this.renderedResults = '';
     const state = value as { collapsedProjects?: unknown; projectOrder?: unknown; documentOrder?: unknown } | null;
     this.collapsedProjects = new Set(stringList(state?.collapsedProjects));
     this.projectOrder = stringList(state?.projectOrder);
@@ -42,6 +44,7 @@ export class ShelfView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.contentEl.empty();
+    this.renderedResults = '';
     this.contentEl.addClass('docshelf-shelf');
     const input = this.contentEl.createEl('input', { cls: 'docshelf-search', type: 'search', attr: { placeholder: 'Search documents…', 'aria-label': 'Search DocShelf' } });
     input.value = this.query;
@@ -64,13 +67,19 @@ export class ShelfView extends ItemView {
     if (!this.results) return;
     // A file watcher refresh must not remove the element being dragged.
     if (this.draggedProject !== null || this.draggedDocument !== null) { this.renderAfterDrag = true; return; }
-    this.results.empty();
     const artifacts = this.plugin.catalog?.artifacts || [];
     const searching = !!this.query.trim();
     const hits = this.plugin.search.search(this.query);
     const searchStatus = searching ? (hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}` : 'No matching documents.') : '';
-    this.status.setText(this.plugin.error || (this.plugin.loading ? 'Refreshing documents…' : searchStatus));
+    // Background refreshes must not shift the rows under a pointer or drag.
+    this.status.setText(this.plugin.error || (this.plugin.loading && !this.plugin.catalog ? 'Loading documents…' : searchStatus));
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
+    // Collapsing a project updates its existing DOM directly. Include order
+    // here, while setState explicitly invalidates restored collapse state.
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], hits, artifacts.length]);
+    if (key === this.renderedResults) return;
+    this.renderedResults = key;
+    this.results.empty();
     if (!artifacts.length) {
       const empty = this.results.createDiv({ cls: 'docshelf-empty' });
       empty.createEl('h3', { text: 'Your documents, in one place' });

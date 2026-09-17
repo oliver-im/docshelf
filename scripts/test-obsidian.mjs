@@ -5,6 +5,8 @@ import { createWriteStream } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { testNativeEditing } from './test-native-editing.mjs';
+import { testNativeLines } from './test-native-lines.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -60,6 +62,7 @@ try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = await poll(() => browser.contexts()[0].pages().find(page => page.url().includes('index.html')), 'The test vault did not open.');
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', entry => { if (entry.type() === 'error') console.error('Renderer:', entry.text()); });
   await page.waitForFunction(() => window.app?.workspace?.layoutReady, { timeout: 30_000 });
   await page.setViewportSize({ width: 1180, height: 860 });
   const trust = page.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
@@ -154,8 +157,8 @@ try {
   await poll(async () => (await projectNames()).join(',') === 'Reports,Getting started', 'The original project order did not recover.');
 
   // An in-flight watcher refresh must preserve a drag and its drop target.
-  const sourceBounds = await secondProject.boundingBox();
-  const targetBounds = await firstProject.boundingBox();
+  const sourceBounds = await poll(() => secondProject.boundingBox(), 'The drag source did not settle after refresh.');
+  const targetBounds = await poll(() => firstProject.boundingBox(), 'The drop target did not settle after refresh.');
   await page.mouse.move(sourceBounds.x + 50, sourceBounds.y + sourceBounds.height / 2);
   await page.mouse.down();
   await page.mouse.move(targetBounds.x + 50, targetBounds.y + targetBounds.height - 2, { steps: 12 });
@@ -193,7 +196,7 @@ try {
   const guideRow = page.locator('.docshelf-item').filter({ hasText: 'Project field notes' });
   await guideRow.focus();
   await page.keyboard.press('Enter');
-  await page.locator('.docshelf-reading h1').filter({ hasText: 'Project field notes' }).waitFor();
+  await page.locator('.docshelf-native .cm-content').waitFor();
   assert.equal(await page.locator('.docshelf-item-description').count(), 0);
   console.log('Compact rows, full-title tooltips, optional descriptions, search excerpts, and keyboard opening passed.');
   console.log('Project dragging, refresh during drag, saved order, new/removed projects, keyboard reordering, and alphabetical reset passed.');
@@ -218,7 +221,7 @@ try {
   const customDocuments = [zuluGuide.route, alphaGuide.route, guideRoute];
   assert.deepEqual(await documentRoutes(), customDocuments);
   assert.equal(await zuluRow.evaluate(el => el === document.activeElement), true);
-  assert.equal(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-document').length), 1, 'Dragging must not open a document.');
+  assert.equal(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-markdown').length), 1, 'Dragging must not open a document.');
   await firstProject.click();
   await page.evaluate(async () => {
     await app.plugins.getPlugin('docshelf').refresh();
@@ -279,6 +282,7 @@ try {
 
   // A registration moved to another project while dragging is no longer a valid source.
   await startDocumentDrag(zuluRow, alphaRow);
+  assert.equal(await page.locator('.docshelf-item.is-dragging').getAttribute('data-route'), zuluGuide.route);
   await writeFile(shelfPath, JSON.stringify({ ...documentShelf, artifacts: documentShelf.artifacts.map(artifact => artifact === zuluGuide ? { ...artifact, project: 'Reports' } : artifact) }));
   await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').catalog.artifacts.find(artifact => artifact.route === 'examples/zulu.html')?.project === 'Reports'), 'Project membership did not refresh during the drag.');
   await page.mouse.up();
@@ -313,36 +317,36 @@ try {
   }, 'The configure command did not open the configuration dialog.');
   await configurationPage.keyboard.press('Escape');
   console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
-  await page.locator('.docshelf-reading').waitFor();
-  assert.equal(await page.locator('.docshelf-reading h1').textContent(), 'Project field notes');
-  await page.locator('.docshelf-line-button[data-line="7"]').click();
-  await page.locator('.docshelf-line-button[data-line="9"]').click({ modifiers: ['Shift'] });
-  assert.deepEqual(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-document')[0].view.range), { start: 7, end: 9 });
-  await page.getByRole('button', { name: 'Copy link', exact: true }).click();
+  await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });
+  await testNativeLines({ page, poll, workspace });
+  await page.evaluate(() => {
+    const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
+    view.editor.setSelection({ line: 6, ch: 0 }, { line: 8, ch: view.editor.getLine(8).length });
+  });
+  assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:copy-link')), true);
   const permalink = await page.evaluate(() => require('electron').clipboard.readText());
   const params = new URL(permalink).searchParams;
   assert.equal(params.get('source'), shelf.artifacts[0].source);
   assert.equal(params.get('lines'), '7-9');
   assert.equal(params.has('path'), false);
-  await page.getByRole('button', { name: 'Source', exact: true }).click();
-  assert.equal(await page.locator('.docshelf-source-row.is-selected').count(), 3);
-  await page.getByRole('button', { name: 'Copy reference', exact: true }).click();
+  await page.evaluate(() => app.commands.executeCommandById('docshelf:copy-reference'));
   assert.match(await page.evaluate(() => require('electron').clipboard.readText()), /guide\.md:7-9$/);
-  console.log('Reading/source range selection and clipboard links passed.');
   await page.evaluate(async () => {
     const plugin = app.plugins.getPlugin('docshelf');
     await plugin.openArtifact(plugin.catalog.artifacts[0], { start: 1, end: 1 });
   });
   const dispatch = spawn(executable, [`--user-data-dir=${profile}`, permalink], { stdio: 'ignore' });
   dispatchProcesses.push(dispatch);
-  await poll(() => page.evaluate(() => app.workspace.getLeavesOfType('docshelf-document').some(leaf => leaf.view.range?.start === 7 && leaf.view.range?.end === 9)), 'The URI did not pass through Obsidian vault routing.');
+  await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews().some(view => view.editor.getCursor('from').line === 6 && view.editor.getCursor('to').line === 8)), 'The URI did not select the source lines in the native editor.');
   dispatch.kill('SIGKILL');
-  console.log('External-source URI passed through Obsidian’s main-process routing.');
+  console.log('Native selection, copied source references, and Obsidian URI routing passed.');
 
-  await page.locator('.docshelf-search').fill('authored');
-  assert.equal(await page.locator('.docshelf-item').count(), 1);
-  await page.locator('.docshelf-search').fill('');
-  await page.getByRole('button', { name: 'Reading', exact: true }).click();
+  const showNativePreview = () => page.evaluate(async () => {
+    const view = app.plugins.getPlugin('docshelf').nativeViews().find(view => view.contentEl.offsetParent !== null);
+    await view.leaf.setViewState({ type: 'docshelf-markdown', active: true, state: { ...view.getState(), mode: 'preview' } });
+  });
+  await showNativePreview();
+  await page.locator('.docshelf-native .markdown-preview-view:visible h1').waitFor();
   await page.screenshot({ path: '.local/runtime/reading-dark.png' });
   await page.evaluate(() => { document.body.classList.remove('theme-dark'); document.body.classList.add('theme-light'); });
   await page.screenshot({ path: '.local/runtime/reading-light.png' });
@@ -372,13 +376,14 @@ try {
   console.log('HTML scripts, relative CSS/image, and local-file isolation checks passed.');
 
   await guest('document.querySelector("a").click()');
-  await poll(async () => /7–9/.test(await page.locator('.docshelf-selection-status:visible').textContent()), 'The HTML-to-Markdown range link did not navigate.');
+  await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews().some(view => view.contentEl.offsetParent !== null && view.editor.getCursor('from').line === 6 && view.editor.getCursor('to').line === 8)), 'The HTML-to-Markdown range link did not navigate.');
+  await showNativePreview();
 
   const guidePath = path.join(workspace, 'guide.md');
   const original = await readFile(guidePath, 'utf8');
   const watchedGuide = `${original}\n## Watcher verification\nA new wombat phrase.\n`;
   await writeFile(guidePath, watchedGuide);
-  await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Watcher verification' }).count(), 'External edits did not refresh the reader.');
+  await poll(() => page.locator('.docshelf-native .markdown-preview-view:visible h2').filter({ hasText: 'Watcher verification' }).count(), 'External edits did not refresh the reader.');
   await page.locator('.docshelf-search').fill('wombat');
   await poll(async () => await page.locator('.docshelf-item').count() === 1, 'External edits did not refresh search.');
   console.log('Registered cross-document links and external-edit refresh passed.');
@@ -406,8 +411,9 @@ try {
     const plugin = app.plugins.getPlugin('docshelf');
     await plugin.openArtifact(plugin.catalog.artifacts[0]);
   });
+  await showNativePreview();
   await writeFile(guidePath, `${watchedGuide}\n## Missing source verification\nA puffinreviewmarker phrase.\n`);
-  await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Missing source verification' }).count(), 'A missing source stopped another document from refreshing.');
+  await poll(() => page.locator('.docshelf-native .markdown-preview-view:visible h2').filter({ hasText: 'Missing source verification' }).count(), 'A missing source stopped another document from refreshing.');
   await page.locator('.docshelf-search').fill('puffinreviewmarker');
   await poll(async () => await page.locator('.docshelf-item').count() === 1, 'A missing source stopped another document from being indexed.');
   await writeFile(reportPath, report);
@@ -419,7 +425,7 @@ try {
   await rm(assetPath);
   await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').error.includes('ENOENT')), 'The missing asset was not reported.');
   await writeFile(guidePath, `${watchedGuide}\n## Missing asset verification\nAn assetreviewmarker phrase.\n`);
-  await poll(() => page.locator('.docshelf-reading:visible h2').filter({ hasText: 'Missing asset verification' }).count(), 'A missing asset stopped its document from refreshing.');
+  await poll(() => page.locator('.docshelf-native .markdown-preview-view:visible h2').filter({ hasText: 'Missing asset verification' }).count(), 'A missing asset stopped its document from refreshing.');
   await page.locator('.docshelf-search').fill('assetreviewmarker');
   await poll(async () => await page.locator('.docshelf-item').count() === 1, 'A missing asset prevented its document from being indexed.');
   await writeFile(assetPath, asset);
@@ -453,7 +459,8 @@ try {
     const plugin = app.plugins.getPlugin('docshelf');
     return { error: plugin?.error, artifacts: plugin?.catalog?.artifacts, watched: plugin?.watcher?.getWatched() };
   }).catch(() => null));
-  console.error('Runtime test failed:', error.message);
+  console.error('Runtime test failed:', error.stack);
+  console.error('Page errors:', pageErrors);
   console.error('Log: .local/runtime/obsidian.log');
   process.exitCode = 1;
 } finally {

@@ -63,3 +63,41 @@ function addHeadingIds(tokens: Token[]): void {
     tokens[i].attrSet('id', occurrence ? `${slug}-${occurrence}` : slug);
   }
 }
+
+/** Resolve native editor link clicks using the source line, never a vault lookup. */
+export function markdownLink(source: string, line: number, column: number, label?: string): string | null {
+  const text = source.split('\n')[line] || '';
+  for (const match of text.matchAll(/\[\[([^\]]+)\]\]/g)) {
+    if (column >= match.index! && column <= match.index! + match[0].length) return match[1].split('|')[0];
+  }
+  const tokens = markdown.parse(withoutFrontmatter(source), {});
+  for (const token of tokens) {
+    if (token.type !== 'inline' || !token.map || line < token.map[0] || line >= token.map[1]) continue;
+    const links: { href: string; label: string }[] = [];
+    let link: { href: string; label: string } | undefined;
+    for (const child of token.children || []) {
+      if (child.type === 'link_open') link = { href: child.attrGet('href') || '', label: '' };
+      else if (child.type === 'link_close') { if (link) links.push(link); link = undefined; }
+      else if (link) link.label += child.content;
+    }
+    let offset = 0;
+    for (const link of links) {
+      const start = text.indexOf(`[${link.label}]`, offset);
+      if (start >= 0) {
+        const end = text.indexOf(')', start + link.label.length + 2);
+        if (column >= start && column <= (end < 0 ? start + link.label.length + 2 : end)) return link.href;
+        offset = start + link.label.length + 2;
+      }
+    }
+    const matches = label ? links.filter(link => link.label === label) : links;
+    if (matches.length === 1) return matches[0].href;
+  }
+  return null;
+}
+
+export function markdownHeadingLine(source: string, hash: string): number | undefined {
+  const tokens = markdown.parse(withoutFrontmatter(source), {});
+  addHeadingIds(tokens);
+  const heading = decodeURIComponent(hash.replace(/^#/, ''));
+  return tokens.find((token, index) => token.type === 'heading_open' && (token.attrGet('id') === heading || tokens[index + 1]?.content === heading))?.map?.[0];
+}

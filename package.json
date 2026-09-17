@@ -2,7 +2,7 @@
   "name": "obsidian-docshelf",
   "version": "0.1.0",
   "private": true,
-  "description": "A searchable, read-only shelf of external Markdown and HTML documents in Obsidian.",
+  "description": "Edit registered external Markdown in Obsidian and browse Markdown and HTML documents by project.",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -15,8 +15,10 @@
     "package": "node scripts/package.mjs"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
     "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "obsidian": "^1.13.1",
     "playwright-core": "^1.55.0",

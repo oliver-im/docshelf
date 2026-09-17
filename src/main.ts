@@ -1,6 +1,6 @@
 import { addIcon, FileSystemAdapter, Notice, Plugin, removeIcon, type WorkspaceLeaf } from 'obsidian';
 import { watch, type FSWatcher } from 'chokidar';
-import { writeFile, stat } from 'node:fs/promises';
+import { writeFile, stat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { loadCatalog, findSource } from './core/catalog';
@@ -14,6 +14,8 @@ import { DocumentView, DOCUMENT_VIEW } from './ui/document';
 import { ShelfView, SHELF_VIEW, SearchModal } from './ui/shelf';
 import { ConfigureModal, ShelfSettingsTab } from './ui/settings';
 import { DOCSHELF_ICON, DOCSHELF_ICON_SVG } from './ui/icon';
+import { NativeMarkdownView, NATIVE_MARKDOWN_VIEW, nativeMarkdownExtension } from './ui/native-markdown';
+import { RecoveryStore } from './core/editing';
 
 export default class DocShelfPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -23,6 +25,7 @@ export default class DocShelfPlugin extends Plugin {
   ready: Promise<void> = Promise.resolve();
   error = '';
   loading = false;
+  recovery!: RecoveryStore;
   private watcher: FSWatcher | null = null;
   private watchedPaths = new Set<string>();
   private listeners = new Set<() => void>();
@@ -38,6 +41,7 @@ export default class DocShelfPlugin extends Plugin {
     addIcon(DOCSHELF_ICON, DOCSHELF_ICON_SVG);
     this.register(() => removeIcon(DOCSHELF_ICON));
     const data = await this.loadData();
+    this.recovery = new RecoveryStore(path.join(this.basePath(), this.manifest.dir!, 'recovery'));
     this.settings = {
       shelfPath: typeof data?.shelfPath === 'string' ? data.shelfPath : DEFAULT_SETTINGS.shelfPath,
       workspaceRoot: typeof data?.workspaceRoot === 'string' ? data.workspaceRoot : '',
@@ -46,20 +50,23 @@ export default class DocShelfPlugin extends Plugin {
     };
     this.registerView(SHELF_VIEW, leaf => new ShelfView(leaf, this));
     this.registerView(DOCUMENT_VIEW, leaf => new DocumentView(leaf, this));
+    this.registerView(NATIVE_MARKDOWN_VIEW, leaf => new NativeMarkdownView(leaf, this));
+    this.registerEditorExtension(nativeMarkdownExtension);
     this.addSettingTab(new ShelfSettingsTab(this));
     this.addRibbonIcon(DOCSHELF_ICON, 'Open DocShelf', () => { void this.openShelf(); });
     this.addCommand({ id: 'open-shelf', name: 'Open shelf', callback: () => { void this.openShelf(); } });
     this.addCommand({ id: 'search', name: 'Search documents', callback: () => new SearchModal(this).open() });
     this.addCommand({ id: 'reload', name: 'Reload shelf and documents', callback: () => { void this.refresh(); } });
     this.addCommand({ id: 'configure', name: 'Configure shelf', callback: () => this.showSettings() });
+    this.addCommand({ id: 'recovery', name: 'Reveal Markdown recovery files', callback: () => this.revealRecovery() });
     this.addCommand({ id: 'copy-link', name: 'Copy document link', checkCallback: checking => {
-      const view = this.app.workspace.getActiveViewOfType(DocumentView);
+      const view = this.app.workspace.getActiveViewOfType(NativeMarkdownView) || this.app.workspace.getActiveViewOfType(DocumentView);
       if (!view?.artifact) return false;
       if (!checking) void view.copyLink();
       return true;
     } });
     this.addCommand({ id: 'copy-reference', name: 'Copy source reference', checkCallback: checking => {
-      const view = this.app.workspace.getActiveViewOfType(DocumentView);
+      const view = this.app.workspace.getActiveViewOfType(NativeMarkdownView) || this.app.workspace.getActiveViewOfType(DocumentView);
       if (!view?.artifact) return false;
       if (!checking) void view.copyReference();
       return true;
@@ -132,8 +139,6 @@ export default class DocShelfPlugin extends Plugin {
     try {
       const catalog = await loadCatalog(this.shelfPath(), settings.workspaceRoot, { allowUnavailableFiles: true });
       if (this.disposed || settings !== this.settings) return;
-      this.catalog = catalog;
-      this.server.setCatalog(catalog, settings.runHtmlScripts);
       const contents = new Map<string, string>();
       const revisions = new Map<string, string>();
       const failures: string[] = [];
@@ -161,6 +166,8 @@ export default class DocShelfPlugin extends Plugin {
         } catch (error) { failures.push(`${artifact.title}: ${message(error)}`); }
       }
       if (this.disposed || settings !== this.settings) return;
+      this.catalog = catalog;
+      this.server.setCatalog(catalog, settings.runHtmlScripts);
       this.search.replace(catalog.artifacts, contents);
       this.revisions = revisions;
       this.error = failures[0] || '';
@@ -177,27 +184,43 @@ export default class DocShelfPlugin extends Plugin {
 
   private async updateWatcher(catalog: Catalog | null): Promise<void> {
     if (this.disposed) return;
-    const paths = new Set([this.shelfPath()]);
+    const sources = new Set([this.shelfPath()]);
     for (const artifact of catalog?.artifacts || []) {
-      if (artifact.sourcePath) paths.add(artifact.sourcePath);
-      if (artifact.canonicalPath) paths.add(artifact.canonicalPath);
-      for (const asset of artifact.assets || []) paths.add(path.resolve(path.dirname(artifact.sourcePath!), asset));
+      if (artifact.sourcePath) sources.add(artifact.sourcePath);
+      if (artifact.canonicalPath) sources.add(artifact.canonicalPath);
+      for (const asset of artifact.assets || []) sources.add(path.resolve(path.dirname(artifact.sourcePath!), asset));
     }
-    if (!this.watcher) {
-      this.watcher = watch([...paths], { ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 } });
-      this.watcher.on('all', () => {
-        if (this.timer) clearTimeout(this.timer);
-        this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
-      });
-      this.watcher.on('error', error => { this.error = `File watcher: ${message(error)}`; this.emit(); });
-    } else {
-      // Chokidar can drop a file's watch after unlink. Re-add missing watches
-      // even when the registration itself has not changed, to detect recovery.
-      const active = new Set(Object.entries(this.watcher.getWatched()).flatMap(([directory, files]) => files.map(file => path.join(directory, file))));
-      this.watcher.add([...paths].filter(file => !this.watchedPaths.has(file) || !active.has(file)));
-      await this.watcher.unwatch([...this.watchedPaths].filter(file => !paths.has(file)));
-    }
+    // Parent aliases (notably macOS /var and /private/var) must share one watch.
+    // Otherwise removing a missing canonical path can unwatch its surviving
+    // lexical alias too, preventing detection when the source is recreated.
+    // Preserve the final component so registered file symlinks stay watched.
+    const paths = new Set(await Promise.all([...sources].map(async source => path.join(await realpath(path.dirname(source)).catch(() => path.dirname(source)), path.basename(source)))));
+    if (this.disposed) return;
+    if (this.watcher && paths.size === this.watchedPaths.size && [...paths].every(file => this.watchedPaths.has(file))) return;
+    await this.watcher?.close();
+    if (this.disposed) return;
     this.watchedPaths = paths;
+    const parents = new Set([...paths].map(file => path.dirname(file)));
+    // Observe each parent once, with an explicit file allowlist. Chokidar's
+    // per-file recovery watches can compete for one directory's read throttle
+    // after several different files have been deleted and restored.
+    const watcher = watch([...parents], {
+      ignoreInitial: true,
+      followSymlinks: false,
+      atomic: true,
+      awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+      ignored: file => !paths.has(file) && ![...parents].some(parent => parent === file || parent.startsWith(`${file}${path.sep}`)),
+    });
+    this.watcher = watcher;
+    const schedule = () => {
+      if (this.disposed || this.watcher !== watcher) return;
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
+    };
+    watcher.on('all', schedule);
+    // Re-read after startup too, covering writes during watcher replacement.
+    watcher.once('ready', schedule);
+    watcher.on('error', error => { this.error = `File watcher: ${message(error)}`; this.emit(); });
   }
 
   async readArtifact(artifact: Artifact): Promise<string> {
@@ -234,10 +257,22 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   async openArtifact(artifact: Artifact, range: LineRange | null = null, hash = '', target?: WorkspaceLeaf): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(DOCUMENT_VIEW).find(leaf => (leaf.view as DocumentView).artifact?.route === artifact.route);
+    const native = artifact.kind === 'markdown';
+    const type = native ? NATIVE_MARKDOWN_VIEW : DOCUMENT_VIEW;
+    const existing = this.app.workspace.getLeavesOfType(type).find(leaf => {
+      const open = (leaf.view as DocumentView | NativeMarkdownView).artifact;
+      return open?.route === artifact.route && (!native || open.sourcePath === artifact.sourcePath);
+    });
     const leaf = target || existing || this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: DOCUMENT_VIEW, active: true, state: { route: artifact.route, mode: artifact.kind === 'html' && range ? 'source' : 'reading', lines: range ? `${range.start}-${range.end}` : undefined, hash } });
+    await leaf.setViewState({ type, active: true, state: { ...(existing === leaf ? leaf.view.getState() : {}), route: artifact.route, mode: native ? 'source' : artifact.kind === 'html' && range ? 'source' : 'reading', lines: range ? `${range.start}-${range.end}` : undefined, hash } });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  nativeViews(): NativeMarkdownView[] { return this.app.workspace.getLeavesOfType(NATIVE_MARKDOWN_VIEW).map(leaf => leaf.view).filter((view): view is NativeMarkdownView => view instanceof NativeMarkdownView); }
+
+  revealRecovery(): void {
+    const { shell } = require('electron') as { shell: { showItemInFolder(path: string): void } };
+    shell.showItemInFolder(this.recovery.directory);
   }
 
   showSettings(): void { new ConfigureModal(this).open(); }

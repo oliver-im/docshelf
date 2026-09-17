@@ -68,6 +68,16 @@ export class DocumentView extends ItemView {
       this.contentEl.createEl('p', { text: 'This document is no longer registered. Open DocShelf to choose another document.', cls: 'docshelf-empty' });
       return;
     }
+    // Migrate existing workspace tabs from the old local Markdown reader.
+    if (this.artifact.kind === 'markdown') {
+      const artifact = this.artifact;
+      // Finish the host's current setViewState before replacing this view.
+      // Re-entering it here lets the outer transition overwrite the new view.
+      setTimeout(() => {
+        if (!this.closed && generation === this.generation && this.leaf.view === this) void this.plugin.openArtifact(artifact, this.range, this.hash, this.leaf);
+      }, 0);
+      return;
+    }
     try {
       this.source = this.artifact.kind === 'claude' ? '' : await this.plugin.readArtifact(this.artifact);
       if (this.closed || generation !== this.generation) return;

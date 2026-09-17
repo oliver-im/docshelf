@@ -1,8 +1,8 @@
 # DocShelf for Obsidian
 
-Browse registered Markdown and HTML documents from their original project
-folders, search their contents, and copy source-line references from Obsidian.
-DocShelf never edits the registered documents or copies them into your vault.
+Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
+search project documents, and copy source-line references. Files stay in their
+original project folders; DocShelf does not create mirrored vault notes.
 
 ## Install locally
 
@@ -80,15 +80,19 @@ is not exposed merely because a registered document refers to it.
 
 ## Source-line links
 
-Click a line number, then Shift-click another to select a range. Use the arrow
-keys to move between line controls, Shift-arrow to extend a selection, and
-Escape to clear it. **Copy link** produces an Obsidian URI:
+In native Live Preview, edit the text normally or click a number in the left
+gutter to select a source reference. Shift-click another number to extend the
+range. This highlights the passage without moving the text cursor or changing
+the document. **DocShelf: Copy document link** and the header's link icon copy
+that range. You can also select text in the editor. With neither kind of
+selection, the link opens the whole document:
 
 ```text
 obsidian://docshelf?vault=My%20vault&source=%2Fprojects%2Fexample%2Freview.md&lines=7-11
 ```
 
-**Copy reference** produces `/projects/example/review.md:7-11` for an agent.
+**DocShelf: Copy source reference** produces `/projects/example/review.md:7-11`
+for an agent. The quote icon in the document header does the same thing.
 Links open only registered sources. They use `source`, because Obsidian
 intercepts `path` before dispatching to plugin handlers.
 Spaces must be encoded as `%20`, not `+`, because Obsidian uses percent decoding
@@ -98,12 +102,57 @@ By default links identify the vault by name. If multiple vaults share a name,
 copy the intended vault's ID from the vault switcher and put it in **Vault ID
 for links**. The plugin must be enabled in the destination vault.
 
-Reading mode shows individual source-line controls with bands distributed
-across rendered blocks. Placement is approximate where Markdown layout differs
-from the source. **Source** displays exact text and line numbers, in pages of
-400 lines. Documents with more than 20,000 lines use this source view. HTML
-range links also open in Source. These are positional links; later edits may
-move the referenced passage. Out-of-bounds ranges are reported explicitly.
+Local Markdown range links open the native editor with the requested lines
+selected. GitHub Markdown retains the read-only viewer with individual line
+controls; HTML range links open its read-only Source view. These are positional
+links; later edits may move the passage. Out-of-bounds ranges are reported.
+
+Rendered tables show their actual source range, such as
+**17–20**, in the gutter. Clicking it references that whole block. Wrapped text
+keeps its original source-line number. Source mode exposes individual table rows
+and frontmatter lines. Use **Clear selection** or **Escape** to
+clear a gutter reference. Gutter buttons also support Space/Enter and arrow-key
+navigation, with Shift-arrow extending the range. References track source
+positions as you edit and are saved with the pane's workspace state.
+
+## Edit local Markdown
+
+Click a local Markdown document in the shelf and start typing. This uses
+Obsidian's actual `MarkdownView`, including Live Preview, source mode, reading
+mode, formatting commands, undo/redo, and native editor extensions. Changes
+autosave to the registered original file; **Cmd/Ctrl+S** also saves. The small
+status below the document header reports saving or an actionable problem.
+Existing local Markdown reader tabs migrate when restored.
+The source-line gutter works in both Live Preview and source mode. Stay in Live
+Preview to read, edit, and select source references together; Obsidian's separate
+Reading mode remains available through its usual view toggle.
+
+Clean editors refresh after external file changes. If a file changes while you
+have unsaved edits, DocShelf keeps your buffer and stops saving. **Review
+changes** compares the current file and your edits. You can merge in that dialog,
+choose **Save edited version**, or choose **Use disk version**. Saving checks the
+file again, so an external change made while the dialog is open also conflicts.
+Missing files and removed registrations cannot be recreated by autosave.
+
+Before saving, DocShelf keeps the original snapshot and edited text in a private
+JSON recovery record under `.obsidian/plugins/docshelf/recovery/`. Each editor
+pane has its own record. Pending edits are recovered when the document reopens;
+review is required before writing a recovered draft. A successful save retains
+the preceding snapshot and edited text until the next edit in that pane. Choosing
+the disk version archives the old draft. **DocShelf: Reveal Markdown recovery
+files** opens their location. These records contain document contents and remain
+on disk until you remove them; they are not part of shelf registrations.
+
+Writes preserve the file's inode, permissions, UTF-8 BOM, and LF/CRLF convention.
+Invalid UTF-8 and documents over 8 MB are rejected. Conflict checks and recovery
+reduce data-loss risk, but separate editors do not share a filesystem lock;
+exactly simultaneous writes are not guaranteed to be conflict-free.
+
+The editor has no vault `TFile`: native text editing works, but features and
+plugins that require a vault file (backlinks, graph,
+vault file operations, Obsidian Sync) are not enabled for external documents.
+Relative document links still require registration; image embeds still use the
+explicit asset list. HTML and remote sources remain read-only.
 
 ## Search and remote sources
 
@@ -149,10 +198,11 @@ being reachable and allowing the public page to load.
 ## File access and network disclosure
 
 DocShelf reads explicitly registered files outside the vault so project-owned
-documents can stay in their original folders. Registered sources and assets
-are never written. The plugin writes only its settings and, when you click
-**Create empty shelf file**, a new shelf JSON file; it will not overwrite an
-existing file.
+documents can stay in their original folders. Local Markdown editing writes to
+the registered original file after recovery and conflict checks. HTML, remote
+sources, and assets are read-only. The plugin also writes settings, private
+recovery records, and, when you click **Create empty shelf file**, a new shelf
+JSON file; it will not overwrite an existing shelf file.
 
 Interactive HTML runs in a separate, nonpersistent Electron webview session
 with Node disabled, context isolation, sandboxing, and web security. It loads
@@ -169,10 +219,10 @@ images may also use HTTPS. Public GitHub imports contact
 `raw.githubusercontent.com`; Claude views contact `claude.ai` and resources
 loaded by that page. DocShelf adds no telemetry or account requirement.
 
-External documents are not part of core Obsidian search, backlinks, graph,
-native editing, or Obsidian Sync. This plugin is desktop-only. Mirroring,
-write-back, and mobile support are outside this version's scope. Mermaid fences
-currently display as code; they are not rendered as diagrams.
+External documents are not indexed by core Obsidian search, backlinks, or graph,
+and do not join Obsidian Sync. This plugin is desktop-only. Mirroring and mobile
+support are outside this version's scope. Local Markdown uses Obsidian's native
+rendering; the read-only GitHub viewer displays Mermaid fences as code.
 
 ## Develop and verify
 

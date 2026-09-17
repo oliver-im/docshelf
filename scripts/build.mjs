@@ -3,7 +3,7 @@ import { context, build } from 'esbuild';
 const options = {
   entryPoints: ['src/main.ts'],
   bundle: true,
-  external: ['obsidian', 'electron', '@electron/remote'],
+  external: ['obsidian', 'electron', '@electron/remote', '@codemirror/state', '@codemirror/view'],
   platform: 'node',
   format: 'cjs',
   target: 'es2022',

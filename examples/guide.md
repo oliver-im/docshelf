@@ -24,7 +24,8 @@ const shelf = { version: 1, artifacts: [] };
 console.log(shelf);
 ```
 
-Source files are read-only in DocShelf. Edit them in their owning project;
-the viewer refreshes when the file changes.
+Local Markdown opens in Obsidian's native editor and saves to the original
+project file. External changes refresh a clean editor; conflicting edits are
+kept for review before saving.
 
 ![DocShelf mark](assets/mark.svg)
