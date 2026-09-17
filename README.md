@@ -120,8 +120,9 @@ positions as you edit and are saved with the pane's workspace state.
 Click a local Markdown document in the shelf and start typing. This uses
 Obsidian's actual `MarkdownView`, including Live Preview, source mode, reading
 mode, formatting commands, undo/redo, and native editor extensions. Changes
-autosave to the registered original file; **Cmd/Ctrl+S** also saves. The small
-status below the document header reports saving or an actionable problem.
+autosave to the registered original file; **Cmd/Ctrl+S** also saves. A compact
+footer appears while saving, when source lines are selected, or when a problem
+needs attention. Otherwise it is hidden and reserves no space.
 Existing local Markdown reader tabs migrate when restored.
 The source-line gutter works in both Live Preview and source mode. Stay in Live
 Preview to read, edit, and select source references together; Obsidian's separate

@@ -85,7 +85,6 @@ export class NativeMarkdownView extends MarkdownView {
     await super.onOpen();
     this.contentEl.addClass('docshelf-native');
     this.saveStatusEl = this.contentEl.createDiv({ cls: 'docshelf-editor-status', attr: { role: 'status', 'aria-live': 'polite' } });
-    this.contentEl.prepend(this.saveStatusEl);
     this.addAction('link', 'Copy DocShelf link', () => { void this.copyLink(); });
     this.addAction('quote', 'Copy source reference', () => { void this.copyReference(); });
     this.addAction('folder-open', 'Reveal source', () => { if (this.artifact) void this.plugin.revealArtifact(this.artifact); });
@@ -237,14 +236,14 @@ export class NativeMarkdownView extends MarkdownView {
 
   private updateSaveStatus(): void {
     if (!this.saveStatusEl) return;
-    const text = this.saveProblem || (this.hasUnsavedEdits ? 'Saving…' : 'Saved to original file');
+    const text = this.saveProblem || (this.hasUnsavedEdits ? 'Saving…' : '');
     const reference = sourceReference(this);
     const key = `${text}:${!!this.externalSnapshot && this.hasUnsavedEdits}:${JSON.stringify(reference)}`;
     if (key === this.saveStatusKey) return;
     this.saveStatusKey = key;
     this.saveStatusEl.empty();
     this.saveStatusEl.toggleClass('docshelf-editor-problem', !!this.saveProblem);
-    this.saveStatusEl.createSpan({ text });
+    if (text) this.saveStatusEl.createSpan({ text });
     if (reference) {
       const label = reference.start === reference.end ? `Source line ${reference.start}` : `Source lines ${reference.start}–${reference.end}`;
       this.saveStatusEl.createSpan({ text: label, cls: 'docshelf-reference-label' });

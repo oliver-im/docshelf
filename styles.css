@@ -70,12 +70,13 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 .docshelf-source-pager { position: sticky; top: 0; z-index: 1; padding: 10px 14px; background: var(--background-primary); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); }
 .docshelf-shelf :focus-visible, .docshelf-document :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 @media (max-width: 600px) { .docshelf-document-header { padding: 14px; } .docshelf-reading { padding: 18px 12px 40px 0; } .docshelf-reading-block { --docshelf-gutter-width: 38px; gap: 8px; } }
-.docshelf-native { display: flex; flex-direction: column; }
+.view-content.docshelf-native { display: flex; flex-direction: column; padding: 0; }
 .docshelf-native .inline-title { display: none; }
 .docshelf-native-unavailable > .markdown-source-view, .docshelf-native-unavailable > .markdown-preview-view { display: none !important; }
 .docshelf-native > .markdown-source-view, .docshelf-native > .markdown-preview-view { flex: 1; min-height: 0; }
-.docshelf-editor-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 16px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.docshelf-editor-problem { color: var(--text-warning); border-bottom: 1px solid var(--background-modifier-border); }
+.docshelf-editor-status { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 16px; color: var(--text-muted); font-size: var(--font-ui-smaller); border-top: 1px solid var(--background-modifier-border); }
+.docshelf-editor-status:empty { display: none; }
+.docshelf-editor-problem { color: var(--text-warning); }
 .docshelf-editor-status button { font-size: var(--font-ui-smaller); height: auto; padding: 3px 8px; }
 .docshelf-review-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
 .docshelf-review-columns textarea { width: 100%; height: 300px; resize: vertical; font-family: var(--font-monospace); font-size: var(--font-smaller); }
