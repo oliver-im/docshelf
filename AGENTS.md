@@ -15,7 +15,8 @@ validated browser imports, without taking ownership of their source content.
   `.docshelf-runtime/` are generated. Do not edit or commit them.
 - Local source files belong to their owning projects. DocShelf may create symlinks,
   render Markdown beneath its runtime directory, and alter copied build output,
-  but must not modify source artifacts.
+  but the web app must not modify source artifacts. The Obsidian plugin may edit
+  registered Markdown originals under `packages/obsidian/AGENTS.md`.
 - Claude sources must be exact published Artifact links. Preserve strict URL
   validation and the cross-origin `/embed` boundary; do not generalize it into
   arbitrary remote HTML loading.
@@ -29,6 +30,15 @@ validated browser imports, without taking ownership of their source content.
   names another directory, or inside the checkout itself; do not add other ways
   to widen it.
 
+## Repository layout
+
+- DocShelf Web stays at the root so existing services and shelf paths keep working.
+- `packages/obsidian/` contains the desktop plugin and its own safety guidance.
+- `packages/core/` contains pure helpers used by both apps. Keep filesystem,
+  server, editor, and host-specific UI code out of this package.
+- Install dependencies at the root with `npm ci`; maintain only the root lockfile.
+- `.agents/skills/docshelf/` is the registration skill for both apps.
+
 ## Working commands
 
 - `npm run watch` runs the production-search build loop and local server. One
@@ -40,7 +50,9 @@ validated browser imports, without taking ownership of their source content.
   output is shown only when a build fails; `DOCSHELF_VERBOSE=1` streams it.
 - `npm run dev` is for DocShelf UI development; restart it after shelf changes.
 - Before handing off code changes, run `npm test`, `npm run check`, and
-  `npm run build`.
+  `npm run build`. For shared or plugin changes, also run the workspace checks
+  via `npm run test:all`, `npm run check:all`, and `npm run build:all`. Use the
+  plugin's disposable Obsidian runtime suite for plugin runtime changes.
 - The watcher is the portable runtime. `scripts/launchd.mjs` is an optional
   macOS-only integration.
 - On macOS, `npm run setup` installs the normal `https://shelf.localhost/` address and

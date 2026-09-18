@@ -1,5 +1,5 @@
-import { parseClaudeArtifactUrl } from './claude-artifacts.js';
-import { parseGitHubMarkdownUrl } from './github-markdown.js';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import './document-actions.css';
 
 interface DocumentArtifact {

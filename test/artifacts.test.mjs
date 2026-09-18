@@ -29,8 +29,8 @@ import { normalizeBasePath, sitePath } from '../scripts/site-path.mjs';
 import {
   createLineFragment,
   parseLineFragment,
-} from '../src/lib/line-permalinks.js';
-import { parseGitHubMarkdownUrl } from '../src/lib/github-markdown.js';
+} from '@docshelf/core/line-permalinks';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import { renderRemoteMarkdownContent } from '../src/lib/remote-markdown-content.js';
 import {
   artifactsShareRemoteSource,
@@ -765,7 +765,7 @@ test('bundled README images resolve locally and beneath a Pages deployment prefi
       { version: 1, artifacts: [artifact] }, { basePath },
     );
     const images = findElements(parse(html), 'img');
-    for (const filename of ['docshelf-overview.png', 'docshelf-line-range.png']) {
+    for (const filename of ['docshelf-overview.png', 'docshelf-obsidian.png']) {
       const screenshot = images.find((node) => attr(node, 'src') === `${basePath}${filename}`);
       assert.ok(screenshot, `${filename} must resolve beneath ${basePath}`);
       assert.ok(attr(screenshot, 'alt'));

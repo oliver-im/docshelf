@@ -1,4 +1,9 @@
-# Running and updating DocShelf
+# Running and updating DocShelf Web
+
+This guide covers DocShelf Web and its local server. The Obsidian plugin
+runs independently; see its
+[installation and update guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md)
+and the [shared-shelf setup](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
 
 ## Install with a stable local address
 
@@ -9,7 +14,7 @@ npm run setup
 ```
 
 Setup initializes a new local shelf with the README, preserving an existing
-`shelf.local.json` or legacy `artifacts.local.json`. It installs a DocShelf login
+`shelf.local.json`. It installs a DocShelf login
 service and verifies the first successful build at **https://shelf.localhost/**.
 The backend stays on `127.0.0.1:4321`; a shared
 [Portless](https://github.com/vercel-labs/portless) proxy provides HTTPS on port
@@ -54,6 +59,8 @@ there if migrating; registered local documents are unaffected.
 
 ## Foreground server
 
+For a new installation, first [create a local shelf](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#register-local-documents).
+
 Run DocShelf with production search and automatic rebuilding in a terminal:
 
 ```sh
@@ -76,6 +83,12 @@ content-hash names beneath `_astro/` are served as immutable. Everything else
 uses `no-cache` with an `ETag`, allowing unchanged files to receive a
 `304 Not Modified` response. Set `DOCSHELF_VERBOSE=1` to stream Astro's output
 for every build.
+
+Registered symlinks and their resolved targets are both watched, including
+symlinked source directories. Retargeting a link rebuilds the document without
+requiring a shelf edit. Source reads recheck workspace containment and file
+identity when taking and verifying build snapshots; a changed target requires
+a fresh shelf load before it can be published.
 
 Set a different port when needed:
 
@@ -140,18 +153,14 @@ Use the same site origin (scheme, host, and port) to keep access to existing
 browser imports and preferences. A Git pull that cannot fast-forward needs
 your local branch changes resolved before continuing.
 
-Older installations may still use `artifacts.local.json`. If there is no
-`shelf.local.json`, rename the old file:
-
-```sh
-mv artifacts.local.json shelf.local.json
-```
-
-If both files exist, DocShelf uses `shelf.local.json`. Merge any missing entries
-into that file before retiring the older file.
-
 After restarting, open the printed URL and confirm your documents appear.
 `/__docshelf/status` should report `state: "ready"` for the new watcher instance.
+
+The unified repository installs all workspaces with the root `npm ci` command.
+Updating the web app does not update an installed Obsidian plugin. To update
+that too, run `npm run package:obsidian` and follow the
+[plugin upgrade steps](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#update-an-existing-plugin),
+preserving its settings and recovery files.
 
 ## Why the site can look stale
 
@@ -244,13 +253,20 @@ Use `npm run dev` for pages, components, and styles. Restart it after changing
 the shelf. Search is generated only during production builds and is unavailable
 in the development server.
 
-Before handing off code changes, run:
+From the repository root, verify all workspaces before handing off changes:
 
 ```sh
-npm test
-npm run check
-npm run build
+npm run test:all
+npm run check:all
+npm run build:all
 ```
+
+Root `npm test`, `npm run check`, and `npm run build` target only the web app.
+For plugin runtime changes, build first and then run
+`npm run test:obsidian --workspace obsidian-docshelf`. The actual-host suite
+uses a disposable profile and vault; see the
+[plugin verification guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#develop-and-verify)
+for runtime requirements.
 
 `npm run preview` serves the standard `dist/` build. The watcher is the runtime
 that provides production search, source updates, and macOS Finder actions.

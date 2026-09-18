@@ -22,6 +22,7 @@ import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { createLocalActionsHandler } from './local-actions.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import { siteInputsSignature } from './site-inputs.mjs';
+import { SourceWatcher } from './source-watcher.mjs';
 import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
@@ -77,7 +78,10 @@ let debounceTimer;
 let shuttingDown = false;
 let buildSequence = 0;
 const pendingReasons = new Set();
-const watchedSources = new Set();
+const sourceWatcher = new SourceWatcher(
+  reason => scheduleBuild(reason),
+  error => console.error(`[watch] ${formatError(error)}`),
+);
 
 const watcher = chokidar.watch([defaultShelfPath, localShelfPath, legacyLocalShelfPath], {
   ignoreInitial: true,
@@ -279,25 +283,9 @@ function runAstroBuild(buildRoot) {
 
 async function refreshSourceWatches(existingShelf) {
   const shelf = existingShelf || (await loadShelf());
-  const nextSources = new Set(
-    shelf.artifacts.flatMap((artifact) =>
-      artifact.sourcePath ? [artifact.sourcePath] : [],
-    ),
-  );
-
-  for (const sourcePath of watchedSources) {
-    if (!nextSources.has(sourcePath)) {
-      watcher.unwatch(sourcePath);
-      watchedSources.delete(sourcePath);
-    }
-  }
-
-  for (const sourcePath of nextSources) {
-    if (!watchedSources.has(sourcePath)) {
-      watcher.add(sourcePath);
-      watchedSources.add(sourcePath);
-    }
-  }
+  await sourceWatcher.update(shelf.artifacts.flatMap(artifact =>
+    artifact.sourcePath ? [path.resolve(docShelfRoot, artifact.source), artifact.sourcePath] : [],
+  ));
 }
 
 async function findLatestBuild() {
@@ -514,6 +502,7 @@ async function shutdown(signal) {
   clearTimeout(debounceTimer);
   shutdownController.abort();
   await watcher.close();
+  await sourceWatcher.close();
   await stopBuild();
   await new Promise((resolve) => server.close(resolve));
   // The rebuild has settled, so nothing can mutate the runtime directories from here on; let a

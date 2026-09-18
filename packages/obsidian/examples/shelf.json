@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "project": "Getting started",
+      "source": "guide.md",
+      "route": "examples/guide.html",
+      "title": "Project field notes",
+      "description": "Review notes with source-line references, a checklist, and an example table.",
+      "assets": ["assets/mark.svg"]
+    },
+    {
+      "project": "Getting started",
+      "source": "report.html",
+      "route": "examples/report.html",
+      "title": "Release report",
+      "description": "An interactive local HTML report with explicitly registered images and styles.",
+      "assets": ["assets/report.css", "assets/mark.svg"]
+    }
+  ]
+}

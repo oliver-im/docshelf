@@ -1,5 +1,14 @@
 # Third-party notices
 
+## Obsidian plugin bundle
+
+`npm run package:obsidian` includes `THIRD_PARTY_NOTICES.txt` in the installable
+`packages/obsidian/dist/docshelf/` folder. Each plugin build generates this file
+from the installed license and notice texts of the dependencies that contribute
+code to `main.js`, including transitive dependencies and multiple bundled
+versions. Keep it with the plugin's own `LICENSE` when distributing or installing
+the bundle. The sections below cover the web app's diagram and theme resources.
+
 ## Mermaid
 
 Markdown diagrams are rendered with [Mermaid](https://mermaid.js.org/).

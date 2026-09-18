@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release report</title>
+  <link rel="stylesheet" href="assets/report.css">
+</head>
+<body>
+  <main>
+    <img src="assets/mark.svg" width="36" height="36" alt="DocShelf mark">
+    <p class="eyebrow">PROJECT / SEPTEMBER 2026</p>
+    <h1>Ready for a closer look.</h1>
+    <p class="intro">An interactive HTML report, displayed beside the project notes.</p>
+    <section aria-label="Release progress">
+      <div><strong>3</strong><span>Documents reviewed</span></div>
+      <div><strong id="checks">0</strong><span>Checks completed</span></div>
+    </section>
+    <button id="run-check">Run a check</button>
+    <p id="result" role="status">Run the interactive check to confirm scripts are working.</p>
+    <a href="guide.md#L7-L9">Open the field notes at lines 7–9</a>
+  </main>
+  <script>
+    let count = 0;
+    document.getElementById('run-check').addEventListener('click', () => {
+      document.getElementById('checks').textContent = String(++count);
+      document.getElementById('result').textContent = 'Interactive check completed.';
+    });
+  </script>
+</body>
+</html>

@@ -6,7 +6,7 @@
       "source": "README.md",
       "route": "docshelf/readme.html",
       "title": "DocShelf README",
-      "description": "DocShelf setup, viewer behavior, and Markdown rendering documentation."
+      "description": "DocShelf Web and the Obsidian plugin: features, setup, and the registration skill."
     }
   ]
 }

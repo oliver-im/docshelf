@@ -1,0 +1,101 @@
+.docshelf-shelf { padding: 14px; }
+.docshelf-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.docshelf-toolbar button, .docshelf-empty button { min-height: 32px; cursor: pointer; }
+.docshelf-toolbar button[aria-pressed="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }
+.docshelf-search { width: 100%; min-height: 36px; }
+.docshelf-status { color: var(--text-muted); font-size: var(--font-ui-small); margin: 12px 0; }
+.docshelf-status:empty { margin: 0; }
+.docshelf-results { margin-top: 8px; }
+.docshelf-error { color: var(--text-error); overflow-wrap: anywhere; }
+.docshelf-project { position: relative; margin-bottom: 8px; }
+.docshelf-project.docshelf-drop-before::before, .docshelf-project.docshelf-drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--interactive-accent); pointer-events: none; }
+.docshelf-project.docshelf-drop-before::before { top: -4px; }
+.docshelf-project.docshelf-drop-after::after { bottom: -4px; }
+.docshelf-project-heading { margin: 0; }
+button.docshelf-project-toggle { display: flex; align-items: center; gap: 6px; width: 100%; height: auto; min-height: 30px; padding: 4px; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: 600; text-align: left; white-space: normal; background: transparent; border: 0; box-shadow: none; cursor: pointer; }
+button.docshelf-project-toggle:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.docshelf-project-chevron { display: flex; flex-shrink: 0; color: var(--icon-color); }
+.docshelf-project-chevron svg { width: 14px; height: 14px; }
+.docshelf-project-toggle[aria-expanded="true"] .docshelf-project-chevron { transform: rotate(90deg); }
+.docshelf-project-name { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: grab; }
+.docshelf-project-toggle.is-dragging, .docshelf-item.is-dragging { opacity: 0.5; }
+.docshelf-project-count { flex-shrink: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 400; }
+.docshelf-project-items[hidden] { display: none; }
+.docshelf-project-items { padding-left: 20px; }
+button.docshelf-item { display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; height: auto; min-height: 28px; gap: 4px; margin: 0; padding: 4px 6px; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: 400; text-align: left; white-space: normal; background: transparent; box-shadow: none; border: 0; border-radius: var(--radius-s); cursor: pointer; }
+button.docshelf-item:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+button.docshelf-item[draggable="true"] { position: relative; cursor: grab; }
+.docshelf-item.docshelf-drop-before::before, .docshelf-item.docshelf-drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--interactive-accent); pointer-events: none; }
+.docshelf-item.docshelf-drop-before::before { top: -1px; }
+.docshelf-item.docshelf-drop-after::after { bottom: -1px; }
+.docshelf-item-heading { display: flex; align-items: center; min-width: 0; gap: 6px; }
+.docshelf-item-icon { display: flex; flex-shrink: 0; color: var(--icon-color); }
+.docshelf-item-icon svg { width: 14px; height: 14px; }
+.docshelf-item-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
+button.docshelf-search-result { margin-bottom: 4px; padding: 8px 6px; }
+.docshelf-search-result .docshelf-item-title { color: var(--text-normal); font-weight: 600; }
+.docshelf-item-description { margin-left: 20px; color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.docshelf-item-project { margin-left: 20px; color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.4; }
+.docshelf-muted { color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.5; }
+.docshelf-empty { padding: 20px 2px; color: var(--text-muted); line-height: 1.6; }
+.docshelf-empty h3 { color: var(--text-normal); }
+.docshelf-empty button { margin: 8px 8px 0 0; }
+.docshelf-document { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.docshelf-document-header { flex: 0 0 auto; padding: 18px 24px 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.docshelf-document-header h1 { font-size: 22px; line-height: 1.3; margin: 6px 0; }
+.docshelf-eyebrow { color: var(--text-muted); font-size: var(--font-ui-small); }
+.docshelf-source-path { color: var(--text-faint); font-size: var(--font-ui-smaller); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 14px; }
+.docshelf-selection-status { color: var(--text-muted); font-size: var(--font-ui-smaller); min-height: 18px; margin-top: 12px; }
+.docshelf-selection-status.docshelf-error { color: var(--text-error); }
+.docshelf-document-body { overflow: auto; flex: 1 1 auto; min-height: 0; position: relative; }
+.docshelf-webview { width: 100%; height: 100%; display: flex; border: 0; background: var(--background-primary); }
+.docshelf-reading { max-width: 920px; padding: 24px 28px 60px 10px; margin: 0 auto; line-height: 1.6; overflow-wrap: anywhere; }
+.docshelf-reading-block { --docshelf-gutter-width: 48px; container-type: inline-size; display: grid; grid-template-columns: var(--docshelf-gutter-width) minmax(0, 1fr); gap: 14px; position: relative; }
+.docshelf-reading-gutter { display: flex; flex-direction: column; align-items: stretch; padding: 0; border-right: 1px solid var(--background-modifier-border); }
+.docshelf-block-content { min-width: 0; }
+.docshelf-block-content > :first-child { margin-top: 0; }
+.docshelf-block-content > :last-child { margin-bottom: 0; }
+.docshelf-reading img { max-width: 100%; height: auto; }
+.docshelf-reading pre { overflow: auto; }
+.docshelf-reading table { display: block; overflow-x: auto; }
+button.docshelf-line-button { font-family: var(--font-monospace); font-size: 11px; background: transparent; color: var(--text-faint); border: 0; border-radius: 0; padding: 0 9px 0 2px; margin: 0; min-height: 18px; height: auto; line-height: 18px; text-align: right; box-shadow: none; cursor: pointer; flex: 1 0 18px; }
+button.docshelf-line-button:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
+button.docshelf-line-button.is-selected { color: var(--text-on-accent); background: var(--interactive-accent); }
+.docshelf-reading-gutter .docshelf-line-button { position: relative; overflow: visible; }
+.docshelf-reading-gutter .docshelf-line-button.is-selected::after { content: ''; position: absolute; pointer-events: none; top: 0; bottom: 0; left: 100%; width: calc(100cqw - var(--docshelf-gutter-width)); background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
+.docshelf-source-view { padding: 16px 0 40px; font-family: var(--font-monospace); font-size: 13px; }
+.docshelf-source-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); min-height: 24px; }
+.docshelf-source-row code { white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 20px 2px 12px; background: none; color: var(--text-normal); font-size: inherit; border-radius: 0; }
+.docshelf-source-row.is-selected { background: var(--text-highlight-bg); }
+.docshelf-source-pager { position: sticky; top: 0; z-index: 1; padding: 10px 14px; background: var(--background-primary); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); }
+.docshelf-shelf :focus-visible, .docshelf-document :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+@media (max-width: 600px) { .docshelf-document-header { padding: 14px; } .docshelf-reading { padding: 18px 12px 40px 0; } .docshelf-reading-block { --docshelf-gutter-width: 38px; gap: 8px; } }
+.view-content.docshelf-native { display: flex; flex-direction: column; padding: 0; }
+.docshelf-native .inline-title { display: none; }
+.docshelf-native-unavailable > .markdown-source-view, .docshelf-native-unavailable > .markdown-preview-view { display: none !important; }
+.docshelf-native > .markdown-source-view, .docshelf-native > .markdown-preview-view { flex: 1; min-height: 0; }
+.docshelf-editor-status { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 16px; color: var(--text-muted); font-size: var(--font-ui-smaller); border-top: 1px solid var(--background-modifier-border); }
+.docshelf-editor-status:empty { display: none; }
+.docshelf-editor-problem { color: var(--text-warning); }
+.docshelf-editor-status button { font-size: var(--font-ui-smaller); height: auto; padding: 3px 8px; }
+.docshelf-review-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.docshelf-review-columns textarea { width: 100%; height: 300px; resize: vertical; font-family: var(--font-monospace); font-size: var(--font-smaller); }
+/* Keep the text centered; its left margin also holds source labels and the
+   native heading-fold controls. The host still sets the readable max width. */
+.view-content.docshelf-native > .markdown-source-view.mod-cm6 > .cm-editor > .cm-scroller { --docshelf-gutter-gap: 20px; padding-inline: calc(var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap) + 8px); }
+.docshelf-native .markdown-source-view.mod-cm6 .cm-gutters-before { left: calc(-1 * (var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap))); margin-inline-start: calc(-1 * (var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap))); margin-inline-end: var(--docshelf-gutter-gap); }
+.docshelf-native .cm-gutter.docshelf-source-gutter { min-width: 20px; color: var(--text-faint); }
+/* CodeMirror gives gutters display: flex !important. */
+.docshelf-native .cm-gutter.cm-lineNumbers { display: none !important; }
+.docshelf-native .docshelf-source-gutter .cm-gutterElement { padding: 0; }
+/* Obsidian supplies each gutter row's first-line height and heading padding.
+   Keep the smaller label centered in that line, including blank source lines. */
+.docshelf-native .docshelf-source-gutter .docshelf-source-label { display: block; padding: 0 2px; font: 11px var(--font-monospace); line-height: inherit; white-space: nowrap; }
+.docshelf-native button.docshelf-source-control { width: 100%; height: auto; min-height: 0; color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; cursor: pointer; }
+.docshelf-native button.docshelf-source-control:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
+.docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); background: transparent; }
+/* Tint above rendered blocks so opaque table/code backgrounds cannot break
+   the selection into pieces. Pointer events still reach the native editor. */
+.docshelf-native .docshelf-source-layer { pointer-events: none; }
+.docshelf-native .docshelf-source-highlight { background: color-mix(in srgb, var(--interactive-accent) 16%, transparent); pointer-events: none; }
+.docshelf-reference-label { color: var(--text-accent); }

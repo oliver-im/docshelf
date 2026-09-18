@@ -28,6 +28,11 @@ test('the site signature follows DocShelf files and ignores generated output', a
 
   await writeFile(path.join(root, 'public', 'theme.css'), 'body {}\n');
   assert.notEqual(await siteInputsSignature(root), edited);
+
+  const beforeCore = await siteInputsSignature(root);
+  await mkdir(path.join(root, 'packages/core/src'), { recursive: true });
+  await writeFile(path.join(root, 'packages/core/src/links.js'), 'export const version = 1;\n');
+  assert.notEqual(await siteInputsSignature(root), beforeCore);
 });
 
 test('the site signature hashes contents rather than sizes and timestamps', async (t) => {

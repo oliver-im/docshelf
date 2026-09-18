@@ -1,4 +1,8 @@
 {
   "extends": "astro/tsconfigs/strict",
-  "exclude": ["${configDir}/dist", "${configDir}/worktrees"]
+  "exclude": [
+    "${configDir}/dist",
+    "${configDir}/worktrees",
+    "${configDir}/packages/obsidian"
+  ]
 }

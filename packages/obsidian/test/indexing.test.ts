@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm, realpath, symlink, unlink, stat, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { IndexSources } from '../src/core/index-sources';
+import { ShelfSearch } from '../src/core/search';
+import type { Artifact } from '../src/core/types';
+
+test('index cache revalidates containment, replacements, same-size edits, and text budgets', async t => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'docshelf-index-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'note.md'), link = path.join(root, 'link.md');
+  await writeFile(file, 'First');
+  await symlink(file, link);
+  const cache = new IndexSources();
+  const first = await cache.read(link, [root], 100);
+  assert.equal((await cache.read(link, [root], 100)).revision, first.revision);
+  const before = await stat(file);
+  await writeFile(file, 'Other');
+  await utimes(file, before.atime, before.mtime);
+  const changed = await cache.read(link, [root], 100);
+  assert.equal(changed.source, 'Other');
+  assert.notEqual(changed.revision, first.revision, 'Restoring mtime on a same-size edit must not reuse stale text.');
+  assert.equal((await cache.read(link, [root], 0)).source, undefined);
+  assert.equal((await cache.read(link, [root], 100)).source, 'Other');
+  await unlink(link);
+  await symlink(import.meta.filename, link);
+  await assert.rejects(cache.read(link, [root], 100), /outside/);
+  await unlink(link);
+  await symlink(file, link);
+  await rm(file);
+  await assert.rejects(cache.read(link, [root], 100), /ENOENT/);
+  await writeFile(file, 'Again');
+  assert.equal((await cache.read(link, [root], 100)).source, 'Again');
+});
+
+test('search updates only changed entries and keeps metadata, removals, and visible Markdown text correct', async t => {
+  const search = new ShelfSearch();
+  const one: Artifact = { id: 'one', source: 'one.md', route: 'one.html', title: 'First', project: 'Project', description: '', kind: 'markdown' };
+  const two: Artifact = { ...one, id: 'two', source: 'two.md', route: 'two.html', title: 'Second' };
+  const contents = new Map([['one', '---\nhiddenkey: hiddenvalue\n---\n\n**Zebracorn** and [visiblelabel](https://hiddenurl.example).\n\n<script>hiddenscript</script>\n'], ['two', 'Originalword']]);
+  await search.replace([one, two], contents);
+  assert.equal(search.search('zebracorn').length, 1);
+  for (const hidden of ['hiddenkey', 'hiddenvalue', 'hiddenurl', 'hiddenscript']) assert.equal(search.search(hidden).length, 0);
+  const updates = t.mock.method((search as any).index, 'replace');
+  await search.replace([one, two], contents);
+  assert.equal(updates.mock.callCount(), 0, 'Unchanged documents must not be re-indexed.');
+  contents.set('two', 'Replacementword');
+  await search.replace([one, two], contents);
+  assert.equal(updates.mock.callCount(), 1);
+  assert.equal(updates.mock.calls[0].arguments[0].id, 'two');
+  assert.equal(search.search('Originalword').length, 0);
+  assert.equal(search.search('Replacementword')[0].artifact.id, 'two');
+  await search.replace([{ ...one, title: 'Renamed', description: 'Newdescription' }], contents);
+  assert.equal(search.search('Replacementword').length, 0);
+  assert.equal(search.search('Newdescription')[0].artifact.title, 'Renamed');
+});

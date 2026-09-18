@@ -23,7 +23,12 @@
     "setup": "node scripts/setup.mjs",
     "daemon:install": "node scripts/launchd.mjs install",
     "daemon:status": "node scripts/launchd.mjs status",
-    "daemon:uninstall": "node scripts/launchd.mjs uninstall"
+    "daemon:uninstall": "node scripts/launchd.mjs uninstall",
+    "links": "node scripts/links.mjs",
+    "test:all": "npm test && npm run test --workspaces",
+    "check:all": "npm run check --workspace @docshelf/core && npm run check && npm run check --workspace obsidian-docshelf",
+    "build:all": "npm run build --workspace @docshelf/core && npm run build && npm run build --workspace obsidian-docshelf",
+    "package:obsidian": "npm run package --workspace obsidian-docshelf"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.2.4",
@@ -34,10 +39,15 @@
     "marked": "^18.0.11",
     "mermaid": "^11.17.2",
     "pagefind": "^1.5.2",
-    "parse5": "^7.3.0"
+    "parse5": "^7.3.0",
+    "@docshelf/core": "*"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "typescript": "^6.0.3"
-  }
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/obsidian"
+  ]
 }

@@ -1,58 +1,93 @@
 ---
 name: docshelf
-description: Register local HTML or Markdown documents and published Claude Artifacts with DocShelf when the user asks to add them to the shelf, preserving their sources and verifying the resulting local URLs.
+description: Register finished documents in DocShelf when asked to add them to the shelf, preserving original files and returning DocShelf Web, Obsidian, and source-line links for the configured apps.
 ---
 
 # DocShelf
 
-## Find DocShelf
+## Find the shared shelf
 
-- Use `DOCSHELF_ROOT` when it points to a DocShelf checkout.
-- Otherwise, use the current repository when it is DocShelf or find an unambiguous sibling `docshelf` checkout.
-- If no checkout can be identified safely, ask the user where DocShelf is installed.
+Use `DOCSHELF_ROOT`, the current DocShelf repository, or an unambiguous sibling
+checkout. Read its `AGENTS.md` and the registration instructions for the configured
+app: `docs/usage.md` for DocShelf Web or `packages/obsidian/README.md` for Obsidian.
+If no checkout is identifiable, ask where DocShelf is installed.
 
-## Register the artifact
+For DocShelf Web, use the checkout's ignored `shelf.local.json` (or existing
+legacy `artifacts.local.json`). Create it from the empty `shelf.json` only when
+neither local shelf exists. Never put private registrations in the tracked template.
 
-- Resolve “this” from an explicitly named, attached, current, or just-created
-  file, or from an explicitly supplied published Claude Artifact URL. If more
-  than one source is plausible, ask which one.
-- When creation and registration are requested together, register only after the
-  source artifact has been finished and verified by the authoring task.
-- Accept only HTML or Markdown files supported by DocShelf and contained within
-  its workspace, or an exact public HTTPS Claude Artifact link of the form
-  `claude.ai/public/artifacts/<id>`. Do not register other remote URLs.
-- Read DocShelf's `AGENTS.md` and the registration section of its `README.md` before changing the shelf.
-- Add the source to `shelf.local.json`, creating that file from `shelf.json` if needed. Never add registrations to `shelf.json`.
-- Preserve existing registrations and update an existing entry instead of creating a duplicate.
-- Infer metadata without asking when it is clear:
-  - derive `project` from the owning repository or project directory;
-  - store local `source` paths relative to the DocShelf checkout, and store
-    Claude Artifact sources as their canonical public links;
-  - use a stable, lowercase `<project>/<document>.html` route;
-  - take `title` from the document title or primary heading, falling back to a humanized filename;
-  - write a short factual `description` based on the document's purpose.
-- Ask only when the source or required metadata cannot be inferred safely.
-- For a Claude Artifact, tell the user that its owner must add the DocShelf
-  origin to the Artifact's **Allowed domains** in Claude's **Get embed code**
-  settings. Do not download or modify the Artifact.
-- Before changing the shelf, probe
-  `http://shelf.localhost:<port>/__docshelf/status`. If it is available, record
-  its `instanceId` and `generation` so the resulting rebuild can be identified.
-- Do not modify the source artifact, commit machine-local registrations, or edit
-  generated DocShelf files.
+For Obsidian, find the intended vault's
+`.obsidian/plugins/docshelf/data.json`. `shelfPath` is absolute or relative to
+that vault, defaulting to `shelf.local.json`. Respect an explicitly supplied
+shelf path. Do not guess between multiple vaults or change a vault's settings
+to make it use a different shelf. Both apps can point to the same file at the
+web checkout root. Separate configured shelves are not automatically synchronized.
 
-## Verify the result
+## Register the document
 
-- If the DocShelf watcher is running, let it rebuild; never start a second watcher for verification.
-- When a watcher status was recorded before registration, poll the status endpoint
-  for up to 150 seconds. Wait for a terminal `ready` or `failed` state from a newer
-  generation of the same instance, or from a replacement instance. On `failed`,
-  stop waiting and report `error.message`, using the bounded `error.details` when
-  useful for diagnosis. Do not mistake the older `ready` state for this rebuild.
-- After a `ready` result, confirm that the registered route is available and
-  reflects the current source. If no watcher is running, validate with DocShelf's
-  sync and build commands without installing or starting a daemon unless requested.
-- Return the stable URL in the form
-  `http://shelf.localhost:4321/?artifact=<encoded-route>` at the default port;
-  when `DOCSHELF_PORT` is set, use its value instead of `4321`.
-- If the local server is unavailable, report the successfully validated route and say that it will be served when DocShelf runs.
+Resolve the source from the explicit request or the finished document just
+created. Ask if ambiguous. Register after authoring and verification; this skill
+does not author or restyle source documents. The optional [HTML theme](references/theme.md)
+is a separate authoring resource.
+
+Preserve existing entries and update a matching source instead of duplicating it.
+Infer project, title, and a stable lowercase `project/document.html` route.
+A concise factual description is optional. Keep local source paths relative to
+the shelf file; for a shared shelf this file must be at the web checkout root.
+Reread before writing if the shelf changed concurrently. Never edit the source,
+commit local registrations, or edit generated files.
+
+Local `.md`, `.markdown`, `.html`, and `.htm` files and exact published Claude
+Artifact URLs work in both apps. Preserve each app's configured containment
+boundary; do not widen it to admit an unrelated file. The web root is controlled
+by `DOCSHELF_WORKSPACE`; Obsidian's saved `workspaceRoot` is relative to the shelf
+directory. Defaults are the parent of that directory. The checkout/shelf directory
+is also allowed. Resolve symlinks before checking containment.
+
+For shared shelves, keep the web-compatible relative source and lowercase route
+shape. Obsidian-only shelves also accept absolute paths and public GitHub Markdown
+URLs. The web app imports GitHub Markdown into browser storage, not shelf JSON;
+do not add a GitHub registration to a shared shelf. Read `docs/unification.md`
+in the checkout before using host-specific features.
+Obsidian's optional `assets` lists individual files beneath the source directory;
+it does not make those neighboring files available to the web app.
+
+A Claude Artifact must be an exact published `claude.ai/public/artifacts/<id>`
+link. For the web app's embed, the owner must allow the installed DocShelf origin
+in Claude's **Get embed code → Allowed domains**. Obsidian opens it at top level
+and does not require that embed setting. Never download or modify the artifact.
+
+## Verify and return links
+
+For DocShelf Web, determine the actual installed site from configuration or a verified
+running server. Normal macOS setup uses `https://shelf.localhost/`; direct mode
+uses `http://shelf.localhost:<port>/` (default 4321). Preserve any mount path.
+Before editing, probe its `/__docshelf/status` endpoint and record `instanceId`
+and `generation` if available. Let an existing watcher rebuild; never start a
+second watcher or remove locks. Poll for up to 150 seconds for a newer terminal
+`ready` or `failed` generation, allowing a replacement instance. Report a failure's
+message and useful bounded details. After ready, verify the route. Without a
+watcher, run `npm run check` and `npm run build`; do not install a daemon.
+
+For Obsidian, validate from the unified repository root:
+
+```sh
+npm run validate:shelf --workspace obsidian-docshelf -- /absolute/shelf.local.json --workspace /absolute/workspace --vault name-or-id
+```
+
+Use the configured workspace, and saved `vaultId` when present, otherwise the
+vault name. Validation does not launch Obsidian or prove its viewer opened.
+
+For a shared shelf, print both links with:
+
+```sh
+npm run links -- project/document.html --site https://shelf.localhost/ --vault name-or-id --lines 7-11
+```
+
+Omit `--lines` for the whole document and `--vault` when Obsidian is not configured.
+Use the real site address; the command does not infer or start a server. For an
+Obsidian-only shelf, use the validator's URLs. Add an ordered positive `lines`
+range when requested. URI keys are `vault`, `source`, and `lines`; never `path`,
+which Obsidian consumes before dispatch. Encode spaces as `%20`, not `+`.
+Return local source references as `/absolute/file.md:7-11`. All line links are
+positional; editing can move the passage. State which apps were actually verified.

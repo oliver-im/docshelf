@@ -1,0 +1,11 @@
+node_modules/
+.local/
+dist/
+main.js
+main.js.map
+/THIRD_PARTY_NOTICES.txt
+data.json
+shelf.local.json
+.DS_Store
+coverage/
+recovery/

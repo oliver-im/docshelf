@@ -1,6 +1,74 @@
-# Using DocShelf
+# Using DocShelf Web
 
-See the [README](https://github.com/oliver-im/docshelf/blob/main/README.md) for installation and local source registration.
+This guide covers DocShelf Web. For native Markdown editing, recovery,
+and desktop document links, use the
+[Obsidian plugin guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md).
+The apps can [share one shelf](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md),
+but browser imports stay in browser storage.
+
+See the [README](https://github.com/oliver-im/docshelf/blob/main/README.md#get-started) for installation.
+
+## Register local documents
+
+The web app reads registrations from the ignored `shelf.local.json` in the
+DocShelf checkout. On macOS, `npm run setup` creates a first shelf containing
+the README. For a new foreground installation, copy `.github/pages-shelf.json`
+to `shelf.local.json` to start with the same example, or copy the empty
+`shelf.json` template. Keep an existing local shelf rather than replacing it.
+
+Edit the `artifacts` array in `shelf.local.json`. Keep the README entry if you
+want it, and add entries for files that already exist:
+
+```json
+{
+  "project": "Example Project",
+  "source": "../example-project/docs/overview.md",
+  "route": "example-project/overview.html",
+  "title": "Project overview",
+  "description": "An overview of the example project."
+}
+```
+
+- `source` is relative to the DocShelf checkout and must end in `.html`, `.htm`,
+  `.md`, or `.markdown`.
+- The source must resolve inside the workspace root: DocShelf's parent
+  directory, unless `DOCSHELF_WORKSPACE` names another directory, absolute or
+  relative to the checkout. Files inside the checkout itself are also allowed.
+  Set that variable for every DocShelf command when using a custom workspace;
+  `npm run setup` records it in the login service.
+- `route` is a unique, lowercase path ending in `.html`, even for Markdown.
+  Keep routes stable so bookmarks keep working.
+- `project` and `title` label the sidebar groups and document rows.
+- `description` is optional; it can be omitted or empty.
+
+The web app creates generated snapshots and never edits original files. Links
+between registered sources are rewritten only in generated output. It does not
+crawl or serve unregistered neighboring files, including images. The tracked
+`shelf.json` stays an empty template; personal registrations belong in
+`shelf.local.json`.
+
+The watcher rebuilds when registrations or source documents change. In
+`npm run dev`, restart after shelf changes. Choose the document in the sidebar
+or search for a word in its contents.
+
+Obsidian can use the same shelf, but its editor saves local Markdown edits to
+the original. Its optional `assets` array does not publish neighboring files
+in the web app. Public GitHub shelf registrations and absolute source paths
+are Obsidian-only; keep them out of a shared shelf. See
+[shared setup and differences](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
+
+## Content and search
+
+| Source | Stored content | Full-text search | Requirements |
+| --- | --- | --- | --- |
+| Registered local HTML or Markdown | Generated local snapshot; original stays in its project | Yes | File inside the workspace or checkout |
+| Browser-imported GitHub Markdown | Source link in browser storage; fetched again on reload | No | Public HTTPS `.md` or `.markdown` file |
+| Published Claude Artifact | Claude-hosted cross-origin embed | No | Exact published Artifact URL and DocShelf origin allowed by its owner |
+
+Register only local HTML you trust: it can run scripts with DocShelf's origin.
+GitHub Markdown is sanitized, but its images and links can contact remote sites.
+Keep the server's default loopback binding for a personal shelf. See the
+[security policy](https://github.com/oliver-im/docshelf/blob/main/SECURITY.md).
 
 ## Browser imports
 
@@ -16,7 +84,9 @@ directly in the browser, omits raw HTML, sanitizes the result, and renders it
 with the DocShelf Markdown theme. Relative images resolve from the raw file's
 directory, while relative links from a GitHub file-view URL point back into the
 same repository. General GitHub pages and arbitrary remote hosts are rejected.
-Private repositories and authenticated requests are not supported.
+Downloads are limited to 2 MB. Private repositories and authenticated requests
+are not supported. GitHub URLs cannot be registered in the web shelf JSON;
+that registration type is currently supported only by Obsidian.
 
 Imported Markdown is fetched again after a page reload. It is not copied into
 the built site, available offline, or included in full-text search. It retains
@@ -44,8 +114,9 @@ DocShelf accepts only exact HTTPS links of the form
 too). It embeds Claude's dedicated cross-origin `/embed` page; a Claude chat,
 home page, or other arbitrary URL is rejected. The Artifact owner must use
 Claude's **Get embed code** settings to add the complete DocShelf origin—such
-as `https://oliver-im.github.io` or `http://shelf.localhost:4321`—to **Allowed
-domains**. See Claude's
+as `https://shelf.localhost` after normal macOS setup,
+`http://shelf.localhost:4321` in direct mode, or `https://oliver-im.github.io`
+for the hosted demo—to **Allowed domains**. See Claude's
 [publishing and sharing instructions](https://support.claude.com/en/articles/9547008-publish-and-share-artifacts).
 
 Claude remains the content host. These entries are therefore not copied into
@@ -102,6 +173,8 @@ visible rows after paragraph wrapping. The range is written to the URL using the
 `#L14-L20` form. Use **Copy link** in the document's **⋯** menu in the sidebar
 to share the exact artifact and range.
 
+![Markdown source lines 7–11 selected in DocShelf Web, with the Copy link control visible](../public/docshelf-line-range.png)
+
 ## Markdown rendering
 
 Registered Markdown artifacts support GitHub-flavored tables, task lists,
@@ -139,3 +212,7 @@ DocShelf does not serve surrounding project directories. Relative image paths
 that point into DocShelf's own `public/` directory use the bundled asset, with
 the deployment's URL prefix applied. This lets the README's screenshot work in
 both a local shelf and the Pages demo.
+
+Obsidian's per-document `assets` list does not change the web app's file-access boundary.
+Links to unregistered neighboring Markdown or HTML are not published either;
+register the destination or use its public URL.
