@@ -40,12 +40,12 @@ test('descriptions are optional and searchable while malformed values are reject
     await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, description }] }));
     const artifact = (await loadCatalog(f.shelfPath, f.workspace)).artifacts[0];
     assert.equal(artifact.description, description?.trim() || '');
-    search.replace([artifact], new Map([[artifact.id, '# Notes\nBodykeyword remains searchable.']]));
+    await search.replace([artifact], new Map([[artifact.id, '# Notes\nBodykeyword remains searchable.']]));
     assert.equal(search.search('')[0].excerpt, '');
     assert.equal(search.search('   ')[0].excerpt, '');
     assert.match(search.search('Bodykeyword')[0].excerpt, /Bodykeyword/);
     if (description?.trim()) assert.equal(search.search('Curated')[0].artifact.id, artifact.id);
-    search.replace([artifact], new Map());
+    await search.replace([artifact], new Map());
     assert.equal(search.search('Project')[0].excerpt, description?.trim() || '');
   }
   for (const description of [null, 42, {}, [], 'x'.repeat(8193), 'bad\0text']) {
@@ -142,7 +142,7 @@ test('search includes document contents and excludes scripts and styles', async 
   const f = await fixture(); t.after(f.cleanup);
   const artifact = (await loadCatalog(f.shelfPath, f.workspace)).artifacts[0];
   const search = new ShelfSearch();
-  search.replace([artifact], new Map([[artifact.id, '# Notes\n\nDistinctive zebracorn phrase.']]));
+  await search.replace([artifact], new Map([[artifact.id, '# Notes\n\nDistinctive zebracorn phrase.']]));
   assert.equal(search.search('zebracorn')[0].artifact.id, artifact.id);
   assert.equal(extractText('<body><h1>Visible</h1><script>secretjs</script><style>secretcss</style></body>'), 'Visible');
 });

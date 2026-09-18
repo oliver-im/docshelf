@@ -1,4 +1,4 @@
-import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, Transaction, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, gutter, ViewPlugin, type BlockInfo, type ViewUpdate } from '@codemirror/view';
 import { editorInfoField } from 'obsidian';
 import type { LineRange } from '../core/types';
@@ -21,6 +21,20 @@ const references = StateField.define<ReferenceSelection | null>({
 });
 
 const editors = new WeakMap<object, EditorView>();
+
+/** Map existing selections/history through a disk change, without making that
+ * change a local Undo step. Keep unchanged text outside the replacement. */
+export function applyExternalText(owner: object, text: string): boolean {
+  const view = editors.get(owner);
+  if (!view) return false;
+  const before = view.state.doc.toString();
+  if (before === text) return true;
+  let from = 0, oldEnd = before.length, newEnd = text.length;
+  while (from < oldEnd && from < newEnd && before[from] === text[from]) from++;
+  while (oldEnd > from && newEnd > from && before[oldEnd - 1] === text[newEnd - 1]) { oldEnd--; newEnd--; }
+  view.dispatch({ changes: { from, to: oldEnd, insert: text.slice(from, newEnd) }, annotations: Transaction.addToHistory.of(false) });
+  return true;
+}
 
 function rangeIn(state: EditorState): LineRange | null {
   const selected = state.field(references, false);

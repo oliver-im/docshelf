@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { testNativeEditing } from './test-native-editing.mjs';
 import { testNativeLines } from './test-native-lines.mjs';
 import { testNativeLayout } from './test-native-layout.mjs';
+import { testNativeRegressions } from './test-native-regressions.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -321,6 +322,7 @@ try {
   await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });
   await testNativeLines({ page, poll, workspace });
   await testNativeLayout({ page, poll, workspace });
+  await testNativeRegressions({ page, poll, workspace });
   await page.evaluate(() => {
     const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
     view.editor.setSelection({ line: 6, ch: 0 }, { line: 8, ch: view.editor.getLine(8).length });

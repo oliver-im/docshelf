@@ -52,6 +52,19 @@ export function renderMarkdown(source: string): { html: string; lineCount: numbe
   return { html: markdown.renderer.render(tokens, markdown.options, {}), lineCount: sourceLines(source).length };
 }
 
+/** Search needs visible text, not a rendered and reparsed HTML document. */
+export function markdownText(source: string): string {
+  const parts: string[] = [];
+  const visit = (tokens: Token[]) => {
+    for (const token of tokens) {
+      if (token.children) visit(token.children);
+      else if (['text', 'code_inline', 'fence', 'code_block'].includes(token.type)) parts.push(token.content);
+    }
+  };
+  visit(markdown.parse(withoutFrontmatter(source.replace(/\r\n?/g, '\n')), {}));
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 function addHeadingIds(tokens: Token[]): void {
   const used = new Map<string, number>();
   for (let i = 0; i < tokens.length; i++) {

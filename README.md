@@ -135,9 +135,15 @@ choose **Save edited version**, or choose **Use disk version**. Saving checks th
 file again, so an external change made while the dialog is open also conflicts.
 Missing files and removed registrations cannot be recreated by autosave.
 
-Before saving, DocShelf keeps the original snapshot and edited text in a private
-JSON recovery record under `.obsidian/plugins/docshelf/recovery/`. Each editor
-pane has its own record. Pending edits are recovered when the document reopens;
+Before saving, DocShelf keeps the original snapshot and edited text under
+`.obsidian/plugins/docshelf/recovery/`. Each editor pane has its own JSON metadata
+record referring to a baseline file and a draft text file. The baseline is reused
+until it changes; superseded checkpoint files are removed only after their
+replacement is persisted. Older, self-contained JSON records still load.
+While typing, recovery is checkpointed at most once every 150 ms, and immediately
+before saving or closing the pane. A crash can lose typing since the latest
+checkpoint; source writes always wait for recovery to be persisted.
+Pending edits are recovered when the document reopens, including plugin reloads;
 review is required before writing a recovered draft. A successful save retains
 the preceding snapshot and edited text until the next edit in that pane. Choosing
 the disk version archives the old draft. **DocShelf: Reveal Markdown recovery
@@ -148,6 +154,11 @@ Writes preserve the file's inode, permissions, UTF-8 BOM, and LF/CRLF convention
 Invalid UTF-8 and documents over 8 MB are rejected. Conflict checks and recovery
 reduce data-loss risk, but separate editors do not share a filesystem lock;
 exactly simultaneous writes are not guaranteed to be conflict-free.
+
+External refreshes do not become local undo steps. Earlier local undo history is
+mapped through the update; history overlapping externally replaced text may no
+longer be undoable. This prevents Undo from silently restoring an older file over
+an agent's changes.
 
 The editor has no vault `TFile`: native text editing works, but features and
 plugins that require a vault file (backlinks, graph,

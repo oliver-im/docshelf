@@ -1,4 +1,4 @@
-import { constants, closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { constants, closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { within } from './files';
@@ -101,43 +101,122 @@ export function saveEditableFile(file: string, roots: string[], baseline: FileSn
   } finally { closeSync(fd); }
 }
 
-/** Private recovery records, separate from the shelf and Obsidian's layout. */
+interface RecoveryPointer extends Omit<Recovery, 'version' | 'baseline' | 'text'> {
+  version: 2;
+  baselineFile: string;
+  textFile: string;
+}
+type StoredRecovery = Recovery | RecoveryPointer;
+interface OwnedRecovery { stored?: StoredRecovery; bytes?: Buffer; text?: string }
+
+/** Private checkpoints. Version 2 keeps immutable baseline/text blobs behind an
+ * atomically replaced metadata record. Older, self-contained records still load. */
 export class RecoveryStore {
+  private owned = new Map<string, OwnedRecovery>();
   constructor(readonly directory: string) {}
+
+  adopt(draft: Recovery): void {
+    const current = this.read(draft.id);
+    if (!current || current.source !== draft.source || current.route !== draft.route || current.updated !== draft.updated || current.text !== draft.text || current.baseline !== draft.baseline) throw new Error('The recovery draft changed. Reopen the document to review it.');
+    this.owned.set(draft.id, { stored: this.metadata(draft.id) || undefined, bytes: Buffer.from(draft.baseline, 'base64'), text: draft.text });
+  }
+
+  release(id: string): void { this.owned.delete(id); }
 
   private file(id: string): string {
     if (!/^[a-f\d-]{36}$/.test(id)) throw new Error('Invalid recovery identifier.');
     return path.join(this.directory, `${id}.json`);
   }
 
-  record(id: string, source: string, route: string, snapshot: FileSnapshot, text: string, pending: boolean): void {
-    const recovery: Recovery = { version: 1, id, source, route, canonicalPath: snapshot.canonicalPath, baseline: snapshot.bytes.toString('base64'), text, pending, updated: Date.now() };
-    const serialized = JSON.stringify(recovery);
-    if (Buffer.byteLength(serialized) > MAX_DOCUMENT_BYTES * 8) throw new Error('Recovery record exceeds 64 MB. Reduce the document size before saving.');
-    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    const target = this.file(id);
+  private write(name: string, contents: string | Buffer): void {
+    const target = path.join(this.directory, name);
     const temporary = `${target}.${randomUUID()}.tmp`;
-    const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    try { writeFileSync(fd, serialized); fsyncSync(fd); } finally { closeSync(fd); }
-    renameSync(temporary, target);
+    try {
+      const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      try { writeFileSync(fd, contents); fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(temporary, target);
+    } finally { rmSync(temporary, { force: true }); }
+  }
+
+  record(id: string, source: string, route: string, snapshot: FileSnapshot, text: string, pending: boolean): void {
+    this.file(id);
+    let owned = this.owned.get(id);
+    if (!owned) {
+      const stored = this.metadata(id) || undefined;
+      if (stored?.pending) throw new Error('A pending recovery draft must be adopted before it can be replaced.');
+      owned = { stored };
+    }
+    const previous = owned.stored;
+    if (previous?.pending && (previous.source !== source || previous.route !== route)) throw new Error('A pending recovery draft belongs to another document.');
+    if (snapshot.bytes.length > MAX_DOCUMENT_BYTES || Buffer.byteLength(text) + snapshot.bytes.length > MAX_DOCUMENT_BYTES * 8) throw new Error('Recovery record exceeds 64 MB. Reduce the document size before saving.');
+    const sameBaseline = !!owned.bytes?.equals(snapshot.bytes) && previous?.canonicalPath === snapshot.canonicalPath;
+    const sameText = owned.text === text;
+    if (previous && sameBaseline && sameText && previous.pending === pending && previous.source === source && previous.route === route) return;
+    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    const created: string[] = [];
+    const blob = (suffix: string, content: string | Buffer): string => {
+      const name = `${id}.${randomUUID()}.${suffix}`;
+      this.write(name, content);
+      created.push(name);
+      return name;
+    };
+    let stored: RecoveryPointer;
+    try {
+      const baselineFile = sameBaseline && previous?.version === 2 ? previous.baselineFile : blob('baseline', snapshot.bytes);
+      const textFile = sameText && previous?.version === 2 ? previous.textFile : blob('text', text);
+      stored = { version: 2, id, source, route, canonicalPath: snapshot.canonicalPath, baselineFile, textFile, pending, updated: Date.now() };
+      // Both blobs are fsynced before the metadata can refer to them, and the
+      // caller waits for this checkpoint before touching the original source.
+      this.write(`${id}.json`, JSON.stringify(stored));
+    } catch (error) {
+      for (const name of created) rmSync(path.join(this.directory, name), { force: true });
+      throw error;
+    }
+    this.owned.set(id, { stored, bytes: snapshot.bytes, text });
+    if (previous?.version === 2) {
+      for (const name of [previous.baselineFile, previous.textFile]) if (name !== stored.baselineFile && name !== stored.textFile) {
+        // The previous pointer is already replaced. Cleanup failure must not
+        // turn a successfully persisted checkpoint into a save failure.
+        try { rmSync(path.join(this.directory, name), { force: true }); } catch { /* Leave an unreferenced blob. */ }
+      }
+    }
+  }
+
+  private metadata(id: string): StoredRecovery | null {
+    try {
+      const file = this.file(id);
+      if (statSync(file).size > MAX_DOCUMENT_BYTES * 8) return null;
+      const value = JSON.parse(readFileSync(file, 'utf8')) as StoredRecovery;
+      if (value.id !== id || typeof value.source !== 'string' || typeof value.route !== 'string' || typeof value.canonicalPath !== 'string' || typeof value.pending !== 'boolean' || !Number.isFinite(value.updated)) return null;
+      if (value.version === 1) {
+        if (typeof value.baseline !== 'string' || typeof value.text !== 'string' || Buffer.from(value.baseline, 'base64').length > MAX_DOCUMENT_BYTES) return null;
+      } else if (value.version === 2) {
+        const valid = (name: string, suffix: string) => typeof name === 'string' && name.startsWith(`${id}.`) && new RegExp(`^[a-f0-9-]{36}\\.[a-f0-9-]{36}\\.${suffix}$`).test(name);
+        if (!valid(value.baselineFile, 'baseline') || !valid(value.textFile, 'text')) return null;
+      } else return null;
+      return value;
+    } catch { return null; }
   }
 
   read(id: string): Recovery | null {
     try {
-      const file = this.file(id);
-      if (statSync(file).size > MAX_DOCUMENT_BYTES * 8) return null;
-      const value = JSON.parse(readFileSync(file, 'utf8')) as Recovery;
-      if (value.version !== 1 || value.id !== id || typeof value.source !== 'string' || typeof value.route !== 'string' || typeof value.canonicalPath !== 'string' || typeof value.baseline !== 'string' || typeof value.text !== 'string' || typeof value.pending !== 'boolean') return null;
-      if (Buffer.from(value.baseline, 'base64').length > MAX_DOCUMENT_BYTES) return null;
-      return value;
+      const stored = this.metadata(id);
+      if (!stored || stored.version === 1) return stored;
+      const baseline = path.join(this.directory, stored.baselineFile), text = path.join(this.directory, stored.textFile);
+      if (statSync(baseline).size > MAX_DOCUMENT_BYTES || statSync(text).size > MAX_DOCUMENT_BYTES * 8) return null;
+      return { ...stored, version: 1, baseline: readFileSync(baseline).toString('base64'), text: readFileSync(text, 'utf8') };
     } catch { return null; }
   }
 
   pending(source: string, route: string, excluded: Set<string>): Recovery | undefined {
     let names: string[];
     try { names = readdirSync(this.directory); } catch { return undefined; }
-    return names.filter(name => name.endsWith('.json')).map(name => this.read(name.slice(0, -5)))
-      .filter((value): value is Recovery => !!value?.pending && value.source === source && value.route === route && !excluded.has(value.id))
-      .sort((a, b) => b.updated - a.updated)[0];
+    // Completed v2 records require only a small metadata read, never loading
+    // their document contents just to discover that they aren't pending.
+    const candidates = names.filter(name => name.endsWith('.json')).map(name => this.metadata(name.slice(0, -5)))
+      .filter((value): value is StoredRecovery => !!value?.pending && value.source === source && value.route === route && !excluded.has(value.id))
+      .sort((a, b) => b.updated - a.updated);
+    for (const candidate of candidates) { const draft = this.read(candidate.id); if (draft) return draft; }
+    return undefined;
   }
 }

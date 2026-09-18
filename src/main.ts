@@ -16,6 +16,7 @@ import { ConfigureModal, ShelfSettingsTab } from './ui/settings';
 import { DOCSHELF_ICON, DOCSHELF_ICON_SVG } from './ui/icon';
 import { NativeMarkdownView, NATIVE_MARKDOWN_VIEW, nativeMarkdownExtension } from './ui/native-markdown';
 import { RecoveryStore } from './core/editing';
+import { IndexSources } from './core/index-sources';
 
 export default class DocShelfPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -31,7 +32,9 @@ export default class DocShelfPlugin extends Plugin {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
-  private refreshTail: Promise<void> = Promise.resolve();
+  private refreshPending: Promise<void> | null = null;
+  private refreshRequested = false;
+  private indexSources = new IndexSources();
   private remoteCache = new Map<string, string>();
   private remoteRequests = new Map<string, Promise<string>>();
   private abort = new AbortController();
@@ -104,6 +107,7 @@ export default class DocShelfPlugin extends Plugin {
     this.listeners.clear();
     this.remoteCache.clear();
     this.remoteRequests.clear();
+    this.indexSources.clear();
   }
 
   basePath(): string {
@@ -122,13 +126,25 @@ export default class DocShelfPlugin extends Plugin {
     this.abort = new AbortController();
     this.remoteCache.clear();
     this.remoteRequests.clear();
+    this.indexSources.clear();
     await this.refresh();
   }
 
   refresh(): Promise<void> {
     if (this.disposed) return Promise.resolve();
-    this.refreshTail = this.refreshTail.catch(() => {}).then(() => this.refreshNow());
-    return this.refreshTail;
+    this.refreshRequested = true;
+    if (!this.refreshPending) this.refreshPending = Promise.resolve().then(async () => {
+      try {
+        while (this.refreshRequested && !this.disposed) { this.refreshRequested = false; await this.refreshNow(); }
+      } finally { this.refreshPending = null; }
+    });
+    return this.refreshPending;
+  }
+
+  scheduleRefresh(): void {
+    if (this.disposed) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
   }
 
   private async refreshNow(): Promise<void> {
@@ -143,10 +159,14 @@ export default class DocShelfPlugin extends Plugin {
       const revisions = new Map<string, string>();
       const failures: string[] = [];
       let indexedBytes = 0;
+      this.indexSources.retain(new Set(catalog.artifacts.flatMap(artifact => artifact.sourcePath ? [artifact.sourcePath] : [])));
       for (const artifact of catalog.artifacts) {
         if (this.disposed || settings !== this.settings) return;
         try {
-          const source = artifact.sourcePath ? (await readBoundedFile(artifact.sourcePath, catalog.roots, MAX_DOCUMENT_BYTES)).toString('utf8') : this.remoteCache.get(artifact.source);
+          const budget = 16 * 1024 * 1024 - indexedBytes;
+          const local = artifact.sourcePath ? await this.indexSources.read(artifact.sourcePath, catalog.roots, budget) : undefined;
+          const source = local ? local.source : this.remoteCache.get(artifact.source);
+          const contentRevision = local?.revision || createHash('sha256').update(source || '').digest('hex');
           const assets = await Promise.all((artifact.assets || []).map(async asset => {
             try {
               const assetPath = await canonicalFile(path.resolve(path.dirname(artifact.sourcePath!), asset), catalog.roots);
@@ -158,23 +178,24 @@ export default class DocShelfPlugin extends Plugin {
               return [asset, failure];
             }
           }));
-          revisions.set(artifact.route, createHash('sha256').update(JSON.stringify([artifact, assets, settings.runHtmlScripts])).update(source || '').digest('hex'));
+          revisions.set(artifact.route, createHash('sha256').update(JSON.stringify([artifact, assets, settings.runHtmlScripts, contentRevision])).digest('hex'));
           if (source !== undefined && indexedBytes + source.length <= 16 * 1024 * 1024) {
             contents.set(artifact.id, source);
             indexedBytes += source.length;
-          } else if (source !== undefined) failures.push('Search content limit reached; remaining documents are searchable by title.');
+          } else if (source !== undefined || local) failures.push('Search content limit reached; remaining documents are searchable by title.');
         } catch (error) { failures.push(`${artifact.title}: ${message(error)}`); }
       }
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
       this.server.setCatalog(catalog, settings.runHtmlScripts);
-      this.search.replace(catalog.artifacts, contents);
+      await this.search.replace(catalog.artifacts, contents, () => !this.disposed && settings === this.settings);
+      if (this.disposed || settings !== this.settings) return;
       this.revisions = revisions;
       this.error = failures[0] || '';
       await this.updateWatcher(catalog);
     } catch (error) {
       this.error = `${message(error)}${this.catalog ? ' Showing the last valid shelf.' : ''}`;
-      if (!this.catalog) this.search.replace([], new Map());
+      if (!this.catalog) await this.search.replace([], new Map());
       await this.updateWatcher(this.catalog);
     } finally {
       this.loading = false;
@@ -214,8 +235,7 @@ export default class DocShelfPlugin extends Plugin {
     this.watcher = watcher;
     const schedule = () => {
       if (this.disposed || this.watcher !== watcher) return;
-      if (this.timer) clearTimeout(this.timer);
-      this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
+      this.scheduleRefresh();
     };
     watcher.on('all', schedule);
     // Re-read after startup too, covering writes during watcher replacement.
@@ -264,7 +284,13 @@ export default class DocShelfPlugin extends Plugin {
       return open?.route === artifact.route && (!native || open.sourcePath === artifact.sourcePath);
     });
     const leaf = target || existing || this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type, active: true, state: { ...(existing === leaf ? leaf.view.getState() : {}), route: artifact.route, mode: native ? 'source' : artifact.kind === 'html' && range ? 'source' : 'reading', lines: range ? `${range.start}-${range.end}` : undefined, hash } });
+    const previous = existing === leaf ? leaf.view.getState() : {};
+    // A shelf activation preserves the mode. Explicit source/heading links
+    // still reveal their requested location in the native editor.
+    const mode = native
+      ? (range || hash ? 'source' : previous.mode || 'source')
+      : (artifact.kind === 'html' && range ? 'source' : 'reading');
+    await leaf.setViewState({ type, active: true, state: { ...previous, route: artifact.route, mode, lines: range ? `${range.start}-${range.end}` : undefined, hash } });
     await this.app.workspace.revealLeaf(leaf);
   }
 

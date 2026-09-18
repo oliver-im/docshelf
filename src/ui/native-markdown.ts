@@ -9,7 +9,7 @@ import { checkRange, createAgentReference, createPermalink, parseRange } from '.
 import { parseLineFragment } from '../core/line-permalinks.js';
 import { message, type Artifact, type LineRange } from '../core/types';
 import { markdownHeadingLine, markdownLink } from '../core/markdown';
-import { nativeSourceControls, setSourceReference, sourceReference } from './native-lines';
+import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference } from './native-lines';
 
 export const NATIVE_MARKDOWN_VIEW = 'docshelf-markdown';
 
@@ -22,11 +22,14 @@ export const nativeMarkdownExtension = [
   Prec.highest(EditorView.domEventHandlers({
     click(event, editor) {
       const owner = editor.state.field(editorInfoField, false);
-      if (!(owner instanceof NativeMarkdownView) || !(event.metaKey || event.ctrlKey)) return false;
+      if (!(owner instanceof NativeMarkdownView)) return false;
       const anchor = (event.target as HTMLElement).closest<HTMLElement>('.cm-link, .cm-hmd-internal-link, .cm-url');
       if (!anchor) return false;
+      // Raw source mode keeps plain clicks available for editing link text.
+      // Never fall through to a vault-file link handler in this external view.
+      if (owner.getState().source === true && !(event.metaKey || event.ctrlKey)) { event.preventDefault(); return true; }
       const offset = editor.posAtCoords({ x: event.clientX, y: event.clientY });
-      if (offset === null) return false;
+      if (offset === null) { event.preventDefault(); return true; }
       const line = editor.state.doc.lineAt(offset);
       const href = markdownLink(editor.state.doc.toString(), line.number - 1, offset - line.from, anchor.textContent || undefined);
       if (href) owner.openShelfLink(href);
@@ -54,6 +57,9 @@ export class NativeMarkdownView extends MarkdownView {
   private saveProblem = '';
   private shelfRevision = '';
   private loadGeneration = 0;
+  private recoveryRoute: string | null = null;
+  private recoveryTimer?: ReturnType<typeof setTimeout>;
+  private draftChanged = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) {
     super(leaf);
@@ -64,7 +70,7 @@ export class NativeMarkdownView extends MarkdownView {
       // MarkdownView transfers this public TextFileView buffer between modes.
       // Keep it current even while saving is delayed or blocked by a conflict.
       this.data = this.getViewData();
-      this.preserveDraft();
+      this.scheduleDraft();
       this.updateSaveStatus();
       requestSave();
     };
@@ -79,7 +85,7 @@ export class NativeMarkdownView extends MarkdownView {
   }
   onSourceReferenceChanged(): void { this.updateSaveStatus(); this.app.workspace.requestSaveLayout(); }
   get hasUnsavedEdits(): boolean { return !!this.externalSnapshot && this.getViewData() !== this.externalBaseline; }
-  get acceptsEditorChanges(): boolean { return this.applyingExternal || !!this.externalSnapshot; }
+  get acceptsEditorChanges(): boolean { return this.applyingExternal || (!!this.externalSnapshot && !this.recoveryRoute); }
 
   async onOpen(): Promise<void> {
     await super.onOpen();
@@ -106,13 +112,16 @@ export class NativeMarkdownView extends MarkdownView {
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     const state = (value || {}) as Record<string, unknown>;
     const route = typeof state.route === 'string' ? state.route : this.route;
-    if (this.route && route !== this.route && this.hasUnsavedEdits) {
+    if (this.route && route !== this.route) {
       await this.save();
       if (this.hasUnsavedEdits) { new Notice('Resolve the unsaved edits before changing this tab’s document.'); return; }
     }
     const changed = route !== this.route || !this.externalSnapshot;
     this.route = route;
     if (changed) {
+      this.cancelDraftTimer();
+      this.plugin.recovery.release(this.draftId);
+      this.draftChanged = false;
       this.artifact = null;
       this.externalSnapshot = undefined;
       this.externalBaseline = '';
@@ -139,6 +148,8 @@ export class NativeMarkdownView extends MarkdownView {
 
   async onClose(): Promise<void> {
     await this.save();
+    this.cancelDraftTimer();
+    this.plugin.recovery.release(this.draftId);
     this.externalClosed = true;
     this.loadGeneration++;
     this.unsubscribeShelf?.();
@@ -152,13 +163,19 @@ export class NativeMarkdownView extends MarkdownView {
   }
 
   private setExternalContents(text: string, clear: boolean): void {
-    const selections = !clear ? this.editor.listSelections() : undefined;
     this.applyingExternal = true;
-    try { this.data = text; this.setViewData(text, clear); if (selections) this.editor.setSelections(selections); }
+    try {
+      this.data = text;
+      if (clear || !applyExternalText(this, text)) this.setViewData(text, true);
+      else this.setViewData(text, false);
+    }
     finally { this.applyingExternal = false; }
   }
 
   async refreshSource(recover = false): Promise<void> {
+    // Catalog notifications can supersede the initial load while ready is
+    // pending. Recovery belongs to the route, not the superseded invocation.
+    if (recover) this.recoveryRoute = this.route;
     const generation = ++this.loadGeneration;
     await this.plugin.ready;
     if (this.externalClosed || generation !== this.loadGeneration) return;
@@ -174,20 +191,23 @@ export class NativeMarkdownView extends MarkdownView {
         title.contentEditable = 'false';
         title.removeAttribute('tabindex');
       }
-      if (recover) {
+      if (this.recoveryRoute === this.route) {
         const occupied = new Set(this.plugin.nativeViews().filter(view => view !== this).map(view => view.draftId));
         const exact = this.plugin.recovery.read(this.draftId);
         const draft = exact?.pending && exact.source === artifact.sourcePath && exact.route === this.route ? exact : this.plugin.recovery.pending(artifact.sourcePath!, this.route, occupied);
         if (draft) {
+          this.plugin.recovery.adopt(draft);
           this.draftId = draft.id;
           this.externalSnapshot = { canonicalPath: draft.canonicalPath, bytes: Buffer.from(draft.baseline, 'base64') };
           this.externalBaseline = editorText(this.externalSnapshot.bytes);
           this.setExternalContents(draft.text, true);
           this.saveProblem = 'Recovered unsaved edits. Review them before saving.';
+          this.recoveryRoute = null;
           this.contentEl.removeClass('docshelf-native-unavailable');
           this.updateSaveStatus();
           return;
         }
+        this.recoveryRoute = null;
       }
       const current = readEditableFile(artifact.sourcePath!, this.plugin.catalog!.roots);
       if (this.hasUnsavedEdits) {
@@ -206,17 +226,37 @@ export class NativeMarkdownView extends MarkdownView {
   }
 
   private preserveDraft(): boolean {
-    if (!this.externalSnapshot || !this.artifact?.sourcePath) return false;
+    if (this.recoveryRoute || !this.externalSnapshot || !this.artifact?.sourcePath) return false;
     try {
       this.plugin.recovery.record(this.draftId, this.artifact.sourcePath, this.route, this.externalSnapshot, this.getViewData(), this.hasUnsavedEdits);
+      this.draftChanged = false;
       return true;
     } catch (error) { this.saveProblem = `Could not keep a recovery copy: ${message(error)}`; return false; }
   }
 
+  private cancelDraftTimer(): void {
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+  }
+
+  private scheduleDraft(): void {
+    this.draftChanged = true;
+    // A short checkpoint interval bounds crash exposure even while typing
+    // continuously; never serialize/fsync a full document on each keystroke.
+    if (this.recoveryTimer) return;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      this.preserveDraft();
+      this.updateSaveStatus();
+    }, 150);
+  }
+
   async save(): Promise<void> {
     if (this.applyingExternal || this.externalClosed) return;
+    this.cancelDraftTimer();
     this.data = this.getViewData();
-    if (!this.externalSnapshot || !this.hasUnsavedEdits) return;
+    if (!this.externalSnapshot) return;
+    if (!this.hasUnsavedEdits) { if (this.draftChanged) this.preserveDraft(); this.updateSaveStatus(); return; }
     if (!this.preserveDraft()) { this.updateSaveStatus(); return; }
     if (this.saveProblem) { this.updateSaveStatus(); return; }
     try {
@@ -229,7 +269,7 @@ export class NativeMarkdownView extends MarkdownView {
       // write too; the next edit replaces this pane's bounded recovery record.
       this.plugin.recovery.record(this.draftId, artifact.sourcePath!, this.route, before, text, false);
       this.saveProblem = '';
-      void this.plugin.refresh();
+      this.plugin.scheduleRefresh();
     } catch (error) { this.saveProblem = message(error); }
     this.updateSaveStatus();
   }
@@ -268,6 +308,7 @@ export class NativeMarkdownView extends MarkdownView {
         // version; it must not disappear when they start a new edit afterward.
         if (useDisk) {
           this.plugin.recovery.record(this.draftId, artifact.sourcePath!, this.route, this.externalSnapshot!, this.getViewData(), false);
+          this.plugin.recovery.release(this.draftId);
           this.draftId = randomUUID();
         }
         this.externalSnapshot = disk;
