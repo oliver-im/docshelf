@@ -1,4 +1,4 @@
-import { StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, gutter, ViewPlugin, type BlockInfo, type ViewUpdate } from '@codemirror/view';
 import { editorInfoField } from 'obsidian';
 import type { LineRange } from '../core/types';
@@ -97,15 +97,25 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
     const selected = rangeIn(view.state);
     return new SourceMarker(start, end, !!selected && selected.start <= end && selected.end >= start);
   }
+  const gutterScope = new Compartment();
+  const noGutter: Extension = [];
+  const sourceGutter = gutter({
+    class: 'docshelf-source-gutter',
+    // Obsidian also calls lineMarker for block widgets. Let widgetMarker
+    // handle those once, including on upstream CodeMirror implementations.
+    lineMarker: (view, block) => block.widget ? null : marker(view, block),
+    widgetMarker: (view, _widget, block) => marker(view, block),
+    lineMarkerChange: update => update.startState.field(references) !== update.state.field(references),
+  });
+  const gutterFor = (state: EditorState): Extension => applies(state.field(editorInfoField, false)) ? sourceGutter : noGutter;
   return [
     references,
-    gutter({
-      class: 'docshelf-source-gutter',
-      // Obsidian also calls lineMarker for block widgets. Let widgetMarker
-      // handle those once, including on upstream CodeMirror implementations.
-      lineMarker: (view, block) => block.widget ? null : marker(view, block),
-      widgetMarker: (view, _widget, block) => marker(view, block),
-      lineMarkerChange: update => update.startState.field(references) !== update.state.field(references),
+    gutterScope.of(noGutter),
+    // An empty gutter still adds the host's gutter margin to ordinary notes.
+    // Mount it only in DocShelf editors, including when the owner changes.
+    EditorState.transactionExtender.of(transaction => {
+      const wanted = gutterFor(transaction.state);
+      return gutterScope.get(transaction.state) === wanted ? null : { effects: gutterScope.reconfigure(wanted) };
     }),
     EditorView.decorations.compute([references, 'doc', editorInfoField], state => {
       if (!applies(state.field(editorInfoField, false))) return Decoration.none;
@@ -126,14 +136,30 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
       private owner?: object;
       private frame = 0;
       private lastRange = '';
-      constructor(private view: EditorView) { this.updateOwner(); this.accessibleGutter(); }
+      private destroyed = false;
+      constructor(private view: EditorView) {
+        this.updateOwner();
+        this.accessibleGutter();
+        // Initial state creation doesn't run transaction extenders. Defer until
+        // construction finishes, when dispatching a configuration is allowed.
+        queueMicrotask(() => {
+          if (this.destroyed) return;
+          const wanted = gutterFor(view.state);
+          if (gutterScope.get(view.state) !== wanted) view.dispatch({ effects: gutterScope.reconfigure(wanted) });
+        });
+      }
       update(update: ViewUpdate): void {
         this.updateOwner();
         if (update.docChanged || update.viewportChanged || update.geometryChanged || update.startState.field(references) !== update.state.field(references)) this.accessibleGutter();
       }
       private updateOwner(): void {
         const owner = this.view.state.field(editorInfoField, false);
-        if (!owner || !applies(owner)) return;
+        if (!owner || !applies(owner)) {
+          if (this.owner && editors.get(this.owner) === this.view) editors.delete(this.owner);
+          this.owner = undefined;
+          this.view.scrollDOM.style.removeProperty('--docshelf-gutter-width');
+          return;
+        }
         this.owner = owner;
         editors.set(owner, this.view);
         const key = JSON.stringify(rangeIn(this.view.state));
@@ -146,6 +172,17 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
           this.frame = 0;
           const gutter = this.view.scrollDOM.querySelector<HTMLElement>('.docshelf-source-gutter');
           if (!gutter) return;
+          // The text column stays centered while the gutter hangs into its
+          // left margin. Measure actual labels so ranges and font changes fit.
+          this.view.requestMeasure({
+            key: this,
+            read: () => gutter.parentElement?.offsetWidth || 0,
+            write: width => {
+              if (!width || this.destroyed || !this.owner) return;
+              const value = `${width}px`;
+              if (this.view.scrollDOM.style.getPropertyValue('--docshelf-gutter-width') !== value) this.view.scrollDOM.style.setProperty('--docshelf-gutter-width', value);
+            },
+          });
           // CodeMirror hides decorative gutters from accessibility APIs. These
           // are interactive controls, so expose their group with one tab stop.
           gutter.parentElement?.removeAttribute('aria-hidden');
@@ -170,7 +207,9 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
         });
       }
       destroy(): void {
+        this.destroyed = true;
         if (this.frame) this.view.dom.ownerDocument.defaultView!.cancelAnimationFrame(this.frame);
+        this.view.scrollDOM.style.removeProperty('--docshelf-gutter-width');
         if (this.owner && editors.get(this.owner) === this.view) editors.delete(this.owner);
       }
     }),

@@ -7,6 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { testNativeEditing } from './test-native-editing.mjs';
 import { testNativeLines } from './test-native-lines.mjs';
+import { testNativeLayout } from './test-native-layout.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -319,6 +320,7 @@ try {
   console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
   await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });
   await testNativeLines({ page, poll, workspace });
+  await testNativeLayout({ page, poll, workspace });
   await page.evaluate(() => {
     const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
     view.editor.setSelection({ line: 6, ch: 0 }, { line: 8, ch: view.editor.getLine(8).length });

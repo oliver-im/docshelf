@@ -80,11 +80,15 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 .docshelf-editor-status button { font-size: var(--font-ui-smaller); height: auto; padding: 3px 8px; }
 .docshelf-review-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
 .docshelf-review-columns textarea { width: 100%; height: 300px; resize: vertical; font-family: var(--font-monospace); font-size: var(--font-smaller); }
-.cm-gutter.docshelf-source-gutter { display: none; }
-.docshelf-native .cm-gutter.docshelf-source-gutter { display: block; min-width: 42px; color: var(--text-faint); }
-.docshelf-native .cm-lineNumbers { display: none; }
-.docshelf-native .docshelf-source-gutter .cm-gutterElement { padding: 0 5px; }
-.docshelf-native button.docshelf-source-control { display: block; width: 100%; height: auto; min-height: 20px; padding: 0 3px; font: 11px/1.5 var(--font-monospace); color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; cursor: pointer; }
+/* Keep the text centered; its left margin also holds source labels and the
+   native heading-fold controls. The host still sets the readable max width. */
+.view-content.docshelf-native > .markdown-source-view.mod-cm6 > .cm-editor > .cm-scroller { --docshelf-gutter-gap: 20px; padding-inline: calc(var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap) + 8px); }
+.docshelf-native .markdown-source-view.mod-cm6 .cm-gutters-before { left: calc(-1 * (var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap))); margin-inline-start: calc(-1 * (var(--docshelf-gutter-width, 24px) + var(--docshelf-gutter-gap))); margin-inline-end: var(--docshelf-gutter-gap); }
+.docshelf-native .cm-gutter.docshelf-source-gutter { min-width: 20px; color: var(--text-faint); }
+/* CodeMirror gives gutters display: flex !important. */
+.docshelf-native .cm-gutter.cm-lineNumbers { display: none !important; }
+.docshelf-native .docshelf-source-gutter .cm-gutterElement { padding: 0; }
+.docshelf-native button.docshelf-source-control { display: block; width: 100%; height: auto; min-height: 20px; padding: 0 2px; font: 11px/1.5 var(--font-monospace); color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; white-space: nowrap; cursor: pointer; }
 .docshelf-native button.docshelf-source-control:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
 .docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); background: var(--text-selection); }
 .docshelf-native .docshelf-referenced-line, .docshelf-native .docshelf-referenced-block { background: var(--text-selection); }
