@@ -275,6 +275,7 @@ export class NativeMarkdownView extends MarkdownView {
           this.saveProblem = 'Recovered unsaved edits. Review them before saving.';
           this.recoveryRoute = null;
           this.contentEl.removeClass('docshelf-native-unavailable');
+          this.resolveShelfImages();
           this.updateSaveStatus();
           return;
         }
@@ -300,6 +301,9 @@ export class NativeMarkdownView extends MarkdownView {
         if (first || this.getViewData() !== text) this.setExternalContents(text, first);
       }
     } catch (error) { this.saveProblem = message(error); }
+    // Asset/registration revisions can change while the editor text stays the
+    // same, including in a dirty editor. Refresh embeds without touching text.
+    this.resolveShelfImages();
     this.contentEl.toggleClass('docshelf-native-unavailable', !this.externalSnapshot);
     this.updateSaveStatus();
   }
@@ -447,10 +451,14 @@ export class NativeMarkdownView extends MarkdownView {
     if (!this.artifact) return;
     for (const embed of this.contentEl.querySelectorAll<HTMLElement>('.internal-embed[src]')) {
       const source = embed.getAttribute('src')!;
-      if (embed.dataset.docshelfResolved === source) continue;
-      embed.dataset.docshelfResolved = source;
+      const image = this.artifact.assets?.includes(source) && /\.(png|jpe?g|gif|webp|avif|svg|ico)$/i.test(source)
+        ? new URL(this.plugin.server.assetUrl(this.artifact, source)) : null;
+      if (image) image.searchParams.set('revision', this.shelfRevision);
+      const resolution = image?.href || JSON.stringify([this.artifact.id, source, 'unregistered']);
+      if (embed.dataset.docshelfResolved === resolution) continue;
+      embed.dataset.docshelfResolved = resolution;
       embed.empty();
-      if (this.artifact.assets?.includes(source) && /\.(png|jpe?g|gif|webp|avif|svg|ico)$/i.test(source)) embed.createEl('img', { attr: { src: this.plugin.server.assetUrl(this.artifact, source), alt: embed.getAttribute('alt') || source } });
+      if (image) embed.createEl('img', { attr: { src: image.href, alt: embed.getAttribute('alt') || source } });
       else embed.createSpan({ text: `Unregistered embed: ${source}`, cls: 'docshelf-empty' });
     }
   }

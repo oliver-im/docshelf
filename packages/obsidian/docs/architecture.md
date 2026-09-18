@@ -61,6 +61,9 @@ the report. This uses the host's Electron remote bridge for session access;
 if it is unavailable, the local report is not loaded. Cleanup removes the
 handler when the viewer is replaced or closed. Authored anchor targets are
 removed so new-tab links use this same path; script-created popups stay blocked.
+The session survives reloads of the same report. Changing the document's route
+or source identity allocates a new partition, so another report opened in that
+leaf cannot inherit its localStorage or saved capability URLs.
 
 The installed Obsidian host additionally strips webview preloads, enforces Node
 and sandbox settings, and prevents non-HTTP(S) guest navigation. These are host
@@ -94,6 +97,8 @@ between two panes cannot replace each other's recovery copies.
 
 Clean editors adopt external updates. Dirty editors retain their buffer and
 block saves on conflicts, missing sources, or removed/changed registrations.
+Asset and registration revisions also refresh native Markdown embeds, using
+revisioned image URLs without replacing the editor buffer or its undo history.
 If registration and reads recover with the same target and baseline bytes,
 temporary errors clear and the delayed save is scheduled again. Recovery review
 intent is tracked separately so a read error cannot silently approve a draft.

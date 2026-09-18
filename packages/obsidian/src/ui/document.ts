@@ -32,6 +32,7 @@ export class DocumentView extends ItemView {
   private hash = '';
   private lastRevision = '';
   private releaseReportNavigation?: () => void;
+  private localReportIdentity = '';
   private localPartition = `docshelf-local-${randomBytes(16).toString('hex')}`;
   private remotePartition = `docshelf-remote-${randomBytes(16).toString('hex')}`;
 
@@ -72,6 +73,14 @@ export class DocumentView extends ItemView {
     if (this.closed || generation !== this.generation) return;
     const revision = this.plugin.documentRevision(this.route);
     this.artifact = this.plugin.catalog?.artifacts.find(item => item.route === this.route) || null;
+    const identity = this.artifact?.kind === 'html'
+      ? JSON.stringify([this.artifact.route, this.artifact.sourcePath, this.artifact.canonicalPath]) : '';
+    if (identity !== this.localReportIdentity) {
+      // Reloads retain this report's state; navigating this leaf to another
+      // source must not give it the previous report's storage or capabilities.
+      this.localReportIdentity = identity;
+      this.localPartition = `docshelf-local-${randomBytes(16).toString('hex')}`;
+    }
     if (!this.artifact) {
       this.lastRevision = revision;
       this.clearContent();

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { selectNativeMode } from './test-native-modes.mjs';
+import { testNativeAssets } from './test-native-assets.mjs';
 
 export async function testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath }) {
   const file = path.join(workspace, 'guide.md');
@@ -57,6 +58,7 @@ export async function testNativeEditing({ page, poll, workspace, shelfPath, shel
   await setMode('preview');
   await page.locator('.docshelf-native .markdown-preview-view:visible h1').waitFor();
   await poll(() => page.locator('.docshelf-native .markdown-preview-view:visible img').evaluateAll(images => images.some(image => image.naturalWidth === 36)), 'Registered images did not render in native reading mode.');
+  await testNativeAssets({ page, poll, workspace, shelfPath, shelf });
   await setMode('source');
   assert.equal(await page.locator('.view-header-title:visible').last().textContent(), 'Project field notes');
   await page.evaluate(() => {

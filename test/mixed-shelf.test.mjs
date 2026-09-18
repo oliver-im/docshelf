@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -8,14 +9,7 @@ import { artifactRevisionFile, contentRevision } from '../scripts/artifact-html.
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 
 test('mixed shelves sync and pass the build hook without emitting Claude files', async (t) => {
-  // Copy the implementation into an isolated checkout so sync cannot touch the
-  // developer's registrations, generated output, or running watcher.
-  const fixture = await temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'mixed-shelf-');
-  for (const entry of ['scripts', 'src/lib', '.agents/skills/docshelf/assets', 'package.json']) {
-    await cp(path.join(docShelfRoot, entry), path.join(fixture, entry), { recursive: true });
-  }
-  await symlink(path.join(docShelfRoot, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
-  const implementation = await import(pathToFileURL(path.join(fixture, 'scripts/artifacts.mjs')).href);
+  const { fixture, implementation } = await isolatedArtifacts(t);
   const source = '<!doctype html><html><head><title>Local</title></head><body><h1>Local document</h1><a href="local.html">Self</a></body></html>';
   await writeFile(path.join(fixture, 'local.html'), source);
   const claudeUrl = 'https://claude.ai/public/artifacts/12345678-1234-1234-1234-123456789abc';
@@ -46,3 +40,62 @@ test('mixed shelves sync and pass the build hook without emitting Claude files',
   const repeated = await implementation.syncArtifacts(shelf);
   assert.deepEqual(repeated, revisions);
 });
+
+for (const replacement of ['file', 'directory']) {
+  test(`sync and revision checks reject a ${replacement} symlink escaping after shelf loading`, async t => {
+    const { fixture, implementation } = await isolatedArtifacts(t);
+    const outside = await temporaryDirectory(t, tmpdir(), 'docshelf-outside-');
+    const source = '<!doctype html><body>Identical bytes cannot authorize a new target</body>';
+    await mkdir(path.join(fixture, 'notes'));
+    await writeFile(path.join(fixture, 'notes/report.html'), source);
+    await writeFile(path.join(outside, 'report.html'), source);
+    const shelfPath = path.join(fixture, 'shelf.json');
+    await writeFile(shelfPath, JSON.stringify({ version: 1, artifacts: [
+      { project: 'Review', source: 'notes/report.html', route: 'report.html', title: 'Report' },
+    ] }));
+    const shelf = await implementation.loadShelfFrom(shelfPath, { workspaceRoot: fixture });
+    const revisions = await implementation.syncArtifacts(shelf);
+    const output = path.join(implementation.generatedArtifactsRoot, 'report.html');
+    const before = await readFile(output, 'utf8');
+    const replaced = path.join(fixture, replacement === 'file' ? 'notes/report.html' : 'notes');
+    await rm(replaced, { recursive: true });
+    await symlink(replacement === 'file' ? path.join(outside, 'report.html') : outside, replaced);
+    assert.equal(await implementation.artifactSourcesMatch(shelf, revisions), false);
+    await assert.rejects(implementation.syncArtifacts(shelf), /outside the workspace/);
+    assert.equal(await readFile(output, 'utf8'), before, 'A refused sync must retain the last valid output.');
+  });
+}
+
+test('sync follows the loaded workspace setting and refuses a stale registered symlink', async t => {
+  const { fixture, implementation } = await isolatedArtifacts(t);
+  const workspace = await temporaryDirectory(t, tmpdir(), 'docshelf-workspace-');
+  const source = '<!doctype html><body>Same bytes, different document</body>';
+  for (const name of ['a.html', 'b.html']) await writeFile(path.join(workspace, name), source);
+  const registered = path.join(workspace, 'current.html');
+  await symlink('a.html', registered);
+  const shelfPath = path.join(fixture, 'shelf.json');
+  await writeFile(shelfPath, JSON.stringify({ version: 1, artifacts: [
+    { project: 'Review', source: path.relative(fixture, registered), route: 'report.html', title: 'Report' },
+  ] }));
+  const shelf = await implementation.loadShelfFrom(shelfPath, { workspaceRoot: workspace });
+  const revisions = await implementation.syncArtifacts(shelf);
+  assert.equal(await implementation.artifactSourcesMatch(shelf, revisions), true);
+  await rm(registered);
+  await symlink('b.html', registered);
+  assert.equal(await implementation.artifactSourcesMatch(shelf, revisions), false);
+  await assert.rejects(implementation.syncArtifacts(shelf), /target changed/);
+  const refreshed = await implementation.loadShelfFrom(shelfPath, { workspaceRoot: workspace });
+  assert.equal(await implementation.artifactSourcesMatch(refreshed, await implementation.syncArtifacts(refreshed)), true);
+});
+
+async function isolatedArtifacts(t) {
+  // Copy the implementation into an isolated checkout so sync cannot touch the
+  // developer's registrations, generated output, or running watcher.
+  const fixture = await temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'mixed-shelf-');
+  for (const entry of ['scripts', 'src/lib', '.agents/skills/docshelf/assets', 'package.json']) {
+    await cp(path.join(docShelfRoot, entry), path.join(fixture, entry), { recursive: true });
+  }
+  await symlink(path.join(docShelfRoot, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
+  const implementation = await import(pathToFileURL(path.join(fixture, 'scripts/artifacts.mjs')).href);
+  return { fixture, implementation };
+}

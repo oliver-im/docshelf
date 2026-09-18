@@ -15,6 +15,7 @@ export async function testReportRegressions({ page, poll, workspace, shelfPath, 
     return { generation: view.generation, revision: plugin.documentRevision(view.artifact.route) };
   });
   const before = await state();
+  let reportLeaf;
   const preserved = async () => {
     assert.deepEqual(await state(), before, 'An unrelated shelf failure must not reload the report.');
     assert.equal(await guest('document.querySelector("#checks").textContent'), '1', 'Report interaction state must survive unrelated failures and recovery.');
@@ -83,7 +84,47 @@ export async function testReportRegressions({ page, poll, workspace, shelfPath, 
     await poll(() => guest('location.hash === "#checks"'), 'Same-report anchors should keep working.');
     await preserved();
     console.log('Report state survives unrelated failures; cross-report reads are blocked and external navigation preserves the report.');
+
+    // A leaf is reused by registered-document navigation. Storage must survive
+    // a same-document reload without following the leaf into another report.
+    const partition = () => page.locator('webview.docshelf-webview').getAttribute('partition');
+    reportLeaf = await page.evaluateHandle(() => {
+      const webview = document.querySelector('webview.docshelf-webview');
+      return app.workspace.getLeavesOfType('docshelf-document').find(leaf => leaf.view.containerEl.contains(webview));
+    });
+    const firstPartition = await partition();
+    await guest('localStorage.setItem("report-state", "first-report"); localStorage.setItem("report-url", location.href); true');
+    await page.evaluate(leaf => leaf.view.loadDocument(), reportLeaf);
+    await poll(() => guest('!!document.querySelector("#run-check")'), 'Same-report reload failed.');
+    assert.equal(await partition(), firstPartition);
+    assert.equal(await guest('localStorage.getItem("report-state")'), 'first-report');
+    const openInSameLeaf = route => page.evaluate(async ({ route, leaf }) => {
+      const plugin = app.plugins.getPlugin('docshelf');
+      await plugin.openArtifact(plugin.catalog.artifacts.find(item => item.route === route), null, '', leaf);
+    }, { route, leaf: reportLeaf });
+    await openInSameLeaf(other.route);
+    await poll(() => guest('document.body.textContent.includes("Private report body")'), 'Second report did not load in the existing leaf.');
+    assert.notEqual(await partition(), firstPartition);
+    assert.deepEqual(await guest('({state:localStorage.getItem("report-state"), url:localStorage.getItem("report-url")})'), { state: null, url: null });
+    await guest('localStorage.setItem("report-state", "second-report"); true');
+
+    // Reusing a route for a different source also changes document identity.
+    const secondPartition = await partition();
+    await writeFile(shelfPath, JSON.stringify({ ...expanded, artifacts: [expanded.artifacts[0], { ...expanded.artifacts[1], source: other.source }] }));
+    await refresh();
+    await openInSameLeaf(shelf.artifacts[1].route);
+    await poll(() => guest('document.body.textContent.includes("Private report body")'), 'Reassigned report route did not load.');
+    const reassignedPartition = await partition();
+    assert.notEqual(reassignedPartition, secondPartition);
+    await guest('localStorage.setItem("report-state", "reassigned-report"); true');
+    await writeFile(shelfPath, JSON.stringify(expanded));
+    await refresh();
+    await poll(() => guest('!!document.querySelector("#run-check")'), 'Original report did not restore.');
+    assert.notEqual(await partition(), reassignedPartition);
+    assert.equal(await guest('localStorage.getItem("report-state")'), null);
+    console.log('Same-report reloads retain storage; different reports and reassigned routes receive isolated sessions.');
   } finally {
+    await reportLeaf?.dispose();
     await page.evaluate(() => {
       const plugin = app.plugins.getPlugin('docshelf');
       if (window.docshelfOriginalOpenExternal) plugin.openExternal = window.docshelfOriginalOpenExternal;

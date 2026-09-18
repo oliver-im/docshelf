@@ -77,6 +77,12 @@ uses `no-cache` with an `ETag`, allowing unchanged files to receive a
 `304 Not Modified` response. Set `DOCSHELF_VERBOSE=1` to stream Astro's output
 for every build.
 
+Registered symlinks and their resolved targets are both watched, including
+symlinked source directories. Retargeting a link rebuilds the document without
+requiring a shelf edit. Source reads recheck workspace containment and file
+identity when taking and verifying build snapshots; a changed target requires
+a fresh shelf load before it can be published.
+
 Set a different port when needed:
 
 ```sh
