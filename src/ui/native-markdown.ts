@@ -1,4 +1,4 @@
-import { editorInfoField, MarkdownView, Menu, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { editorInfoField, MarkdownView, Menu, Modal, Notice, Platform, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import { EditorState, Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +9,7 @@ import { checkRange, createAgentReference, createPermalink, parseRange } from '.
 import { parseLineFragment } from '../core/line-permalinks.js';
 import { message, type Artifact, type LineRange } from '../core/types';
 import { markdownHeadingLine, markdownLink } from '../core/markdown';
-import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference } from './native-lines';
+import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference, sourceReferenceAt } from './native-lines';
 
 export const NATIVE_MARKDOWN_VIEW = 'docshelf-markdown';
 
@@ -95,7 +95,15 @@ export class NativeMarkdownView extends MarkdownView {
     this.addAction('quote', 'Copy source reference', () => { void this.copyReference(); });
     this.addAction('folder-open', 'Reveal source', () => { if (this.artifact) void this.plugin.revealArtifact(this.artifact); });
     this.registerDomEvent(this.contentEl, 'click', event => this.followShelfLink(event), true);
-    this.registerDomEvent(this.contentEl, 'contextmenu', event => this.showMarginMenu(event), true);
+    // Stop the native editor/table from moving the cursor before contextmenu.
+    for (const name of ['pointerdown', 'mousedown'] as const) this.registerDomEvent(this.contentEl, name, event => {
+      if ((event.button === 2 || Platform.isMacOS && event.button === 0 && event.ctrlKey) && sourceReferenceAt(this, event)) {
+        event.preventDefault(); event.stopPropagation();
+      }
+    }, true);
+    this.registerDomEvent(this.contentEl, 'contextmenu', event => {
+      if (!this.showReferenceMenu(event)) this.showMarginMenu(event);
+    }, true);
     this.scope?.register(['Mod'], 'Enter', () => {
       const cursor = this.editor.getCursor();
       const href = markdownLink(this.editor.getValue(), cursor.line, cursor.ch);
@@ -108,6 +116,19 @@ export class NativeMarkdownView extends MarkdownView {
     this.unsubscribeShelf = this.plugin.subscribe(() => {
       if (!this.plugin.loading && this.shelfRevision !== this.plugin.documentRevision(this.route)) void this.refreshSource();
     });
+  }
+
+  private showReferenceMenu(event: MouseEvent): boolean {
+    const range = sourceReferenceAt(this, event);
+    if (!range) return false;
+    event.preventDefault(); event.stopPropagation();
+    new Menu()
+      .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
+      .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
+      .addSeparator()
+      .addItem(item => item.setTitle('Clear selection').setIcon('x').onClick(() => setSourceReference(this, null)))
+      .showAtMouseEvent(event);
+    return true;
   }
 
   private showMarginMenu(event: MouseEvent): void {
@@ -350,14 +371,14 @@ export class NativeMarkdownView extends MarkdownView {
     const to = this.editor.getCursor('to');
     return { start: from.line + 1, end: to.ch === 0 && to.line > from.line ? to.line : to.line + 1 };
   }
-  async copyLink(): Promise<void> {
+  async copyLink(range: LineRange | null = this.selectedRange()): Promise<void> {
     if (!this.artifact) return;
-    try { await navigator.clipboard.writeText(createPermalink(this.plugin.vaultIdentity(), this.artifact, this.selectedRange())); new Notice('DocShelf link copied.'); }
+    try { await navigator.clipboard.writeText(createPermalink(this.plugin.vaultIdentity(), this.artifact, range)); new Notice('DocShelf link copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
   }
-  async copyReference(): Promise<void> {
+  async copyReference(range: LineRange | null = this.selectedRange()): Promise<void> {
     if (!this.artifact) return;
-    try { await navigator.clipboard.writeText(createAgentReference(this.artifact, this.selectedRange())); new Notice('Source reference copied.'); }
+    try { await navigator.clipboard.writeText(createAgentReference(this.artifact, range)); new Notice('Source reference copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
   }
 

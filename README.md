@@ -115,6 +115,12 @@ clear a gutter reference. Gutter buttons also support Space/Enter and arrow-key
 navigation, with Shift-arrow extending the range. References track source
 positions as you edit and are saved with the pane's workspace state.
 
+Selected source ranges form one continuous highlight, including rendered blocks
+and intervening whitespace. Right-click anywhere inside it to **Copy source
+reference**, **Copy DocShelf link**, or **Clear selection**. Opening this menu
+keeps the selected range and editing cursor in place; left-click text to resume
+editing normally.
+
 ## Edit local Markdown
 
 Click a local Markdown document in the shelf and start typing. This uses

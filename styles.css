@@ -88,9 +88,14 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 /* CodeMirror gives gutters display: flex !important. */
 .docshelf-native .cm-gutter.cm-lineNumbers { display: none !important; }
 .docshelf-native .docshelf-source-gutter .cm-gutterElement { padding: 0; }
-.docshelf-native .docshelf-source-gutter .docshelf-source-label { display: block; padding: 0 2px; font: 11px/1.5 var(--font-monospace); white-space: nowrap; }
-.docshelf-native button.docshelf-source-control { width: 100%; height: auto; min-height: 20px; color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; cursor: pointer; }
+/* Obsidian supplies each gutter row's first-line height and heading padding.
+   Keep the smaller label centered in that line, including blank source lines. */
+.docshelf-native .docshelf-source-gutter .docshelf-source-label { display: block; padding: 0 2px; font: 11px var(--font-monospace); line-height: inherit; white-space: nowrap; }
+.docshelf-native button.docshelf-source-control { width: 100%; height: auto; min-height: 0; color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; cursor: pointer; }
 .docshelf-native button.docshelf-source-control:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
-.docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); background: var(--text-selection); }
-.docshelf-native .docshelf-referenced-line, .docshelf-native .docshelf-referenced-block { background: var(--text-selection); }
+.docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); }
+/* Tint above rendered blocks so opaque table/code backgrounds cannot break
+   the selection into pieces. Pointer events still reach the native editor. */
+.docshelf-native .docshelf-source-layer { pointer-events: none; }
+.docshelf-native .docshelf-source-highlight { background: color-mix(in srgb, var(--interactive-accent) 16%, transparent); pointer-events: none; }
 .docshelf-reference-label { color: var(--text-accent); }

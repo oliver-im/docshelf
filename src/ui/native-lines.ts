@@ -1,5 +1,5 @@
 import { Compartment, EditorState, StateEffect, StateField, Transaction, type Extension } from '@codemirror/state';
-import { Decoration, EditorView, GutterMarker, gutter, ViewPlugin, type BlockInfo, type ViewUpdate } from '@codemirror/view';
+import { EditorView, GutterMarker, gutter, layer, RectangleMarker, ViewPlugin, type BlockInfo, type ViewUpdate } from '@codemirror/view';
 import { editorInfoField } from 'obsidian';
 import type { LineRange } from '../core/types';
 
@@ -49,6 +49,21 @@ export function sourceReference(owner: object): LineRange | null {
   return view ? rangeIn(view.state) : null;
 }
 
+/** Use the painted selection as the hit area, including its whitespace. */
+export function sourceReferenceAt(owner: object, event: MouseEvent): LineRange | null {
+  const view = editors.get(owner);
+  if (!view || !view.scrollDOM.contains(event.target as Node)) return null;
+  const range = rangeIn(view.state);
+  if (!range) return null;
+  // A keyboard context-menu request may not supply pointer coordinates.
+  if ((event.target as Element).closest('.docshelf-source-control[aria-pressed="true"]')) return range;
+  const highlight = view.scrollDOM.querySelector<HTMLElement>('.docshelf-source-highlight');
+  if (!highlight) return null;
+  const box = highlight.getBoundingClientRect(), pane = view.scrollDOM.getBoundingClientRect();
+  return event.clientX >= Math.max(box.left, pane.left) && event.clientX < Math.min(box.right, pane.right)
+    && event.clientY >= Math.max(box.top, pane.top) && event.clientY < Math.min(box.bottom, pane.bottom) ? range : null;
+}
+
 export function setSourceReference(owner: object, range: LineRange | null): void {
   const view = editors.get(owner);
   if (!view) return;
@@ -63,6 +78,34 @@ function select(view: EditorView, start: number, end: number, extend: boolean): 
   const restoreFocus = focused?.matches('.docshelf-source-control');
   view.dispatch({ effects: setReference.of({ anchor: extend && previous ? previous.anchor : span, head: span }) });
   if (restoreFocus) view.scrollDOM.querySelector<HTMLButtonElement>(`.docshelf-source-gutter button[data-start="${start}"]`)?.focus();
+}
+
+function headingHighlightBounds(view: EditorView, number: number): { top: number; bottom: number } | null {
+  const line = view.state.doc.line(number);
+  // Off-screen DOM positions can resolve to a nearby rendered line instead.
+  if (!view.visibleRanges.some(range => range.from <= line.from && range.to >= line.to)) return null;
+  const { node } = view.domAtPos(line.from);
+  const element = node.nodeType === 1 ? node as HTMLElement : node.parentElement;
+  const heading = element?.closest<HTMLElement>('.cm-line.HyperMD-header');
+  if (!heading) return null;
+  const style = heading.ownerDocument.defaultView!.getComputedStyle(heading);
+  const box = heading.getBoundingClientRect();
+  const top = box.top + parseFloat(style.paddingTop) * view.scaleY;
+  const bottom = box.bottom - parseFloat(style.paddingBottom) * view.scaleY;
+  // Frame the complete line box (including wrapping), not the section gap
+  // above it. Use equal padding, reduced when adjacent text leaves less room.
+  let padding = 4 * view.scaleY;
+  if (number > 1) {
+    const previous = view.state.doc.line(number - 1);
+    const box = previous.text.trim() ? view.coordsAtPos(previous.to, -1) : null;
+    if (box) padding = Math.min(padding, Math.max(0, top - box.bottom) / 2);
+  }
+  if (number < view.state.doc.lines) {
+    const next = view.state.doc.line(number + 1);
+    const box = next.text.trim() ? view.coordsAtPos(next.from, 1) : null;
+    if (box) padding = Math.min(padding, Math.max(0, box.top - bottom) / 2);
+  }
+  return { top: top - padding, bottom: bottom + padding };
 }
 
 class SourceGutterSpacer extends GutterMarker {
@@ -140,7 +183,31 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
     widgetMarker: (view, _widget, block) => marker(view, block),
     lineMarkerChange: update => update.startState.field(references) !== update.state.field(references),
   });
-  const gutterFor = (state: EditorState): Extension => applies(state.field(editorInfoField, false)) ? sourceGutter : noGutter;
+  const sourceHighlight = layer({
+    above: true,
+    class: 'docshelf-source-layer',
+    update: update => update.docChanged || update.viewportChanged || update.startState.field(references) !== update.state.field(references),
+    markers(view) {
+      const range = rangeIn(view.state);
+      const gutter = view.scrollDOM.querySelector<HTMLElement>('.docshelf-source-gutter');
+      if (!range || !gutter) return [];
+      const first = view.lineBlockAt(view.state.doc.line(range.start).from);
+      const last = view.lineBlockAt(view.state.doc.line(range.end).to);
+      const startHeading = headingHighlightBounds(view, range.start);
+      const endHeading = range.end === range.start ? startHeading : headingHighlightBounds(view, range.end);
+      const startY = startHeading?.top ?? view.documentTop + first.top;
+      const endY = endHeading?.bottom ?? view.documentTop + last.bottom;
+      const content = view.contentDOM.getBoundingClientRect(), labels = gutter.getBoundingClientRect();
+      const pane = view.scrollDOM.getBoundingClientRect();
+      // Layers use scroller-relative screen pixels; CodeMirror handles zoom
+      // and viewport updates. Block bounds include wrapped lines and widgets.
+      const left = labels.left - pane.left + view.scrollDOM.scrollLeft * view.scaleX;
+      const top = startY - pane.top + view.scrollDOM.scrollTop * view.scaleY;
+      return [new RectangleMarker('docshelf-source-highlight', left, top, content.right - labels.left, endY - startY)];
+    },
+  });
+  const sourceControls = [sourceGutter, sourceHighlight];
+  const gutterFor = (state: EditorState): Extension => applies(state.field(editorInfoField, false)) ? sourceControls : noGutter;
   return [
     references,
     gutterScope.of(noGutter),
@@ -149,14 +216,6 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
     EditorState.transactionExtender.of(transaction => {
       const wanted = gutterFor(transaction.state);
       return gutterScope.get(transaction.state) === wanted ? null : { effects: gutterScope.reconfigure(wanted) };
-    }),
-    EditorView.decorations.compute([references, 'doc', editorInfoField], state => {
-      if (!applies(state.field(editorInfoField, false))) return Decoration.none;
-      const range = rangeIn(state);
-      if (!range) return Decoration.none;
-      const lines = [];
-      for (let number = range.start; number <= range.end; number++) lines.push(Decoration.line({ class: 'docshelf-referenced-line' }).range(state.doc.line(number).from));
-      return Decoration.set(lines);
     }),
     EditorView.domEventHandlers({
       keydown(event, view) {
@@ -225,19 +284,6 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
           const buttons = Array.from(gutter.querySelectorAll<HTMLButtonElement>('button'));
           const current = buttons.find(button => button === gutter.ownerDocument.activeElement) || buttons.find(button => button.getAttribute('aria-pressed') === 'true') || buttons[0];
           for (const button of buttons) button.tabIndex = button === current ? 0 : -1;
-          const range = rangeIn(this.view.state);
-          for (const element of this.view.contentDOM.querySelectorAll('.docshelf-referenced-block')) element.classList.remove('docshelf-referenced-block');
-          for (const block of this.view.viewportLineBlocks.flatMap(block => Array.isArray(block.type) ? block.type : [block])) {
-            if (!block.widget) continue;
-            const from = this.view.state.doc.lineAt(block.from).number;
-            const to = this.view.state.doc.lineAt(Math.max(block.from, block.to - 1)).number;
-            const selected = !!range && range.start <= to && range.end >= from;
-            if (!selected) continue;
-            const position = this.view.domAtPos(block.from);
-            const node = position.node.childNodes[position.offset] || position.node;
-            const element = node.nodeType === 1 ? node as HTMLElement : node.parentElement;
-            element?.closest<HTMLElement>('.cm-embed-block')?.classList.add('docshelf-referenced-block');
-          }
         });
       }
       destroy(): void {
