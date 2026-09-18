@@ -9,6 +9,7 @@ import { testNativeEditing } from './test-native-editing.mjs';
 import { testNativeLines } from './test-native-lines.mjs';
 import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
+import { testNativeModes } from './test-native-modes.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -331,6 +332,7 @@ try {
   await configurationPage.keyboard.press('Escape');
   console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
   await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });
+  await testNativeModes({ page, poll });
   await testNativeLines({ page, poll, workspace });
   await testNativeLayout({ page, poll, workspace });
   await testNativeRegressions({ page, poll, workspace });

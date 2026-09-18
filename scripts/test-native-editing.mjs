@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { selectNativeMode } from './test-native-modes.mjs';
 
 export async function testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath }) {
   const file = path.join(workspace, 'guide.md');
@@ -25,10 +26,9 @@ export async function testNativeEditing({ page, poll, workspace, shelfPath, shel
     }, 'The review dialog did not open.');
   };
 
-  const setMode = mode => page.evaluate(async mode => {
-    const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
-    await view.leaf.setViewState({ type: 'docshelf-markdown', active: true, state: { ...view.getState(), mode } });
-  }, mode);
+  const setMode = async mode => {
+    if (await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].getMode()) !== mode) await selectNativeMode(page, poll, 'Reading view');
+  };
 
   assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].file == null), true);
   assert.equal(await page.evaluate(() => app.vault.getMarkdownFiles().length), 0, 'Opening an external document must not create vault notes.');

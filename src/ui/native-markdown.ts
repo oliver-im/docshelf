@@ -1,4 +1,4 @@
-import { editorInfoField, MarkdownView, Menu, Modal, Notice, Platform, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { editorInfoField, FileView, MarkdownView, Menu, Modal, Notice, Platform, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import { EditorState, Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { randomUUID } from 'node:crypto';
@@ -77,6 +77,9 @@ export class NativeMarkdownView extends MarkdownView {
   }
 
   getViewType(): string { return NATIVE_MARKDOWN_VIEW; }
+  // Only registered routes belong here. Let vault-file navigation choose
+  // Obsidian's ordinary view instead of reusing this MarkdownView subclass.
+  canAcceptExtension(): boolean { return false; }
   getDisplayText(): string { return this.artifact?.title || 'DocShelf document'; }
   getIcon(): string { return 'file-text'; }
   getState(): Record<string, unknown> {
@@ -89,6 +92,22 @@ export class NativeMarkdownView extends MarkdownView {
 
   async onOpen(): Promise<void> {
     await super.onOpen();
+    // Native source-mode commands request a vault Markdown view even when
+    // acting on this subclass. Keep fileless transitions for this route here;
+    // opening a real vault file must still use the host's normal view.
+    const leaf = this.leaf, original = leaf.setViewState;
+    const setViewState: typeof leaf.setViewState = (state, ephemeral) => {
+      if (leaf.view === this && state.type === 'markdown' && !state.state?.file && state.state?.route === this.route) {
+        state = { ...state, type: NATIVE_MARKDOWN_VIEW };
+      }
+      return original.call(leaf, state, ephemeral);
+    };
+    leaf.setViewState = setViewState;
+    this.register(() => { if (leaf.setViewState === setViewState) leaf.setViewState = original; });
+    // The native toolbar control assumes a vault file (including Mod-click
+    // splits). Mode changes belong in our pane menu instead. Keep its object
+    // alive so the host can still update its icon while changing modes.
+    (this as this & { modeButtonEl?: HTMLElement }).modeButtonEl?.remove();
     this.contentEl.addClass('docshelf-native');
     this.saveStatusEl = this.contentEl.createDiv({ cls: 'docshelf-editor-status', attr: { role: 'status', 'aria-live': 'polite' } });
     this.addAction('link', 'Copy DocShelf link', () => { void this.copyLink(); });
@@ -116,6 +135,22 @@ export class NativeMarkdownView extends MarkdownView {
     this.unsubscribeShelf = this.plugin.subscribe(() => {
       if (!this.plugin.loading && this.shelfRevision !== this.plugin.documentRevision(this.route)) void this.refreshSource();
     });
+  }
+
+  onPaneMenu(menu: Menu, source: string): void {
+    // Retain native pane actions, but build Markdown actions for our external
+    // view instead of inheriting vault-only modes, properties, and PDF export.
+    FileView.prototype.onPaneMenu.call(this, menu, source);
+    const editing = this.getMode() === 'source';
+    const changeMode = (mode: 'source' | 'preview', raw = this.getState().source === true) => this.leaf.setViewState({
+      type: NATIVE_MARKDOWN_VIEW, state: { ...this.getState(), mode, source: raw },
+    }, { focus: true });
+    menu.addItem(item => item.setSection('pane').setTitle('Reading view').setIcon('book-open').setChecked(!editing)
+      .onClick(() => changeMode(editing ? 'preview' : 'source')));
+    if (editing) menu.addItem(item => item.setSection('pane').setTitle('Source mode').setIcon('code-2').setChecked(this.getState().source === true)
+      .onClick(() => changeMode('source', this.getState().source !== true)));
+    menu.addItem(item => item.setSection('find').setTitle('Find').setIcon('file-search').onClick(() => this.showSearch()));
+    menu.addItem(item => item.setSection('find').setTitle('Replace').setIcon('file-search').setDisabled(!editing).onClick(() => this.showSearch(true)));
   }
 
   private showReferenceMenu(event: MouseEvent): boolean {

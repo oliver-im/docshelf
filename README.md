@@ -138,9 +138,11 @@ autosave to the registered original file; **Cmd/Ctrl+S** also saves. A compact
 footer appears while saving, when source lines are selected, or when a problem
 needs attention. Otherwise it is hidden and reserves no space.
 Existing local Markdown reader tabs migrate when restored.
-The source-line gutter works in both Live Preview and source mode. Stay in Live
-Preview to read, edit, and select source references together; Obsidian's separate
-Reading mode remains available through its usual view toggle.
+The source-line gutter works in both Live Preview and source mode. Use the
+pane's **…** menu to toggle **Reading view**, or **Source mode** while editing.
+Turn Source mode off to return to Live Preview. These changes preserve the
+external document and its draft; no vault note is created. The toolbar keeps
+**Reveal source**, **Copy source reference**, and **Copy DocShelf link** visible.
 
 Clean editors refresh after external file changes. If a file changes while you
 have unsaved edits, DocShelf keeps your buffer and stops saving. **Review
