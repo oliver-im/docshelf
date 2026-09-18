@@ -6,7 +6,7 @@ import path from 'node:path';
 import type DocShelfPlugin from '../main';
 import { editorText, readEditableFile, saveEditableFile, type FileSnapshot } from '../core/editing';
 import { checkRange, createAgentReference, createPermalink, parseRange } from '../core/protocol';
-import { parseLineFragment } from '../core/line-permalinks.js';
+import { parseLineFragment } from '@docshelf/core/line-permalinks';
 import { message, type Artifact, type LineRange } from '../core/types';
 import { markdownHeadingLine, markdownLink } from '../core/markdown';
 import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference, sourceReferenceAt } from './native-lines';

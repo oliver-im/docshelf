@@ -10,18 +10,19 @@ Requires desktop Obsidian **1.13.7 or later**. The runtime checks currently cove
 Obsidian 1.13.7 with Electron 34.2.0 on macOS; Windows and Linux have not yet had
 the same runtime verification.
 
+From the unified repository root (Node.js 24 or later):
+
 ```sh
-npm install
-npm run package
+npm ci
+npm run package:obsidian
 ```
 
-Copy `dist/docshelf/` to `<vault>/.obsidian/plugins/docshelf/`, then enable
+Copy `packages/obsidian/dist/docshelf/` to `<vault>/.obsidian/plugins/docshelf/`, then enable
 **DocShelf** in Obsidian's Community plugins settings. This repository is not
 yet listed in the community directory.
 
 Open **DocShelf: Configure shelf** from the command palette. Set **Shelf file**
-to a shelf JSON file. For a working example, select this checkout's
-`examples/shelf.json`. Open the DocShelf ribbon icon or **DocShelf: Open shelf**.
+to a shelf JSON file. For a working example, select `packages/obsidian/examples/shelf.json`. Open the DocShelf ribbon icon or **DocShelf: Open shelf**.
 
 Under **Display**, **Readable line length** limits the text column's width.
 It applies immediately and shares Obsidian's vault-wide preference, so it also
@@ -265,7 +266,8 @@ rendering; the read-only GitHub viewer displays Mermaid fences as code.
 
 ## Develop and verify
 
-Use Node 22 or later for development.
+Install with `npm ci` at the repository root using Node 24 or later. The commands
+below run from `packages/obsidian/`; from the root, add `--workspace obsidian-docshelf`.
 
 ```sh
 npm test
@@ -287,10 +289,11 @@ plugin in Obsidian to pick up a new bundle. `npm run validate:shelf --
 /absolute/path/to/shelf.local.json --workspace /absolute/workspace` validates a
 shelf without launching Obsidian.
 
-The project registration skill lives in `.agents/skills/obsidian-docshelf/`.
-The revised private feasibility note is in `.local/`.
+The shared registration skill lives at the repository root in
+[`.agents/skills/docshelf/`](../../.agents/skills/docshelf/SKILL.md). It can return
+browser and Obsidian links from the same shelf; see [shared setup and differences](../../docs/unification.md).
 
 ## License
 
-MIT. URL and line-range helpers were adapted from the sibling DocShelf project;
-its copyright notice is retained in `LICENSE`.
+MIT. URL and line-range helpers are shared with the web app through
+`@docshelf/core`. The plugin bundle includes those helpers and its `LICENSE`.

@@ -1,4 +1,5 @@
-import { parseLineFragment } from './line-permalinks.js';
+import { parseLineFragment } from '@docshelf/core/line-permalinks';
+import { createObsidianLink, createSourceReference } from '@docshelf/core/links';
 import type { Artifact, LineRange } from './types';
 
 export function parseRange(value: unknown): LineRange | null {
@@ -13,17 +14,11 @@ export function parseRange(value: unknown): LineRange | null {
 export function sourceOf(artifact: Artifact): string { return artifact.sourcePath || artifact.source; }
 
 export function createPermalink(vault: string, artifact: Artifact, range: LineRange | null): string {
-  const params = new URLSearchParams({ vault, source: sourceOf(artifact) });
-  if (range) params.set('lines', range.start === range.end ? String(range.start) : `${range.start}-${range.end}`);
-  // Obsidian URI dispatch uses decodeURIComponent, not form decoding: '+' is literal.
-  return `obsidian://docshelf?${params.toString().replace(/\+/g, '%20')}`;
+  return createObsidianLink(vault, sourceOf(artifact), range);
 }
 
 export function createAgentReference(artifact: Artifact, range: LineRange | null): string {
-  const source = sourceOf(artifact);
-  if (!range) return source;
-  if (!artifact.sourcePath) return `${source}#L${range.start}${range.end === range.start ? '' : `-L${range.end}`}`;
-  return `${source}:${range.start}${range.end === range.start ? '' : `-${range.end}`}`;
+  return createSourceReference(sourceOf(artifact), Boolean(artifact.sourcePath), range);
 }
 
 export function parseProtocol(params: Record<string, unknown>): { source: string; range: LineRange | null } {

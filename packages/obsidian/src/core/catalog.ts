@@ -2,8 +2,8 @@ import path from 'node:path';
 import { realpath, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { canonicalFile, readBoundedFile } from './files';
-import { parseClaudeArtifactUrl } from './claude-artifacts.js';
-import { parseGitHubMarkdownUrl } from './github-markdown.js';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import { MAX_REMOTE_BYTES, type Artifact, type Catalog } from './types';
 
 export const ASSET_TYPES: Record<string, string> = {

@@ -158,9 +158,9 @@ const blankFrameUrl = 'about:blank';
 </div>
 
 <script>
-  import { parseClaudeArtifactUrl } from '../lib/claude-artifacts.js';
+  import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
-  import { parseGitHubMarkdownUrl } from '../lib/github-markdown.js';
+  import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
   import { createDocumentActions } from '../lib/document-actions';
 
   interface Artifact {

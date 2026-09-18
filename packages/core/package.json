@@ -1,0 +1,31 @@
+{
+  "name": "@docshelf/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Host-independent DocShelf URL and source-reference helpers.",
+  "exports": {
+    "./line-permalinks": {
+      "types": "./types/line-permalinks.d.ts",
+      "default": "./src/line-permalinks.js"
+    },
+    "./github-markdown": {
+      "types": "./types/github-markdown.d.ts",
+      "default": "./src/github-markdown.js"
+    },
+    "./claude-artifacts": {
+      "types": "./types/claude-artifacts.d.ts",
+      "default": "./src/claude-artifacts.js"
+    },
+    "./links": {
+      "types": "./types/links.d.ts",
+      "default": "./src/links.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "tsc --noEmit",
+    "build": "tsc"
+  }
+}

@@ -18,7 +18,7 @@ import {
   contentRevision,
   rewriteArtifactLinks,
 } from './artifact-html.mjs';
-import { parseClaudeArtifactUrl } from '../src/lib/claude-artifacts.js';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 import { renderMarkdownArtifact } from './markdown.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { normalizeBasePath } from './site-path.mjs';
@@ -180,7 +180,8 @@ export async function loadShelfFrom(shelfPath, options = {}) {
     const source = requiredString(entry, 'source', index);
     const route = requiredString(entry, 'route', index);
     const title = requiredString(entry, 'title', index);
-    const description = requiredString(entry, 'description', index);
+    const description = entry.description === undefined ? '' : entry.description;
+    if (typeof description !== 'string') throw new Error(`Artifact ${index + 1} description must be a string.`);
 
     validateRoute(route, index);
 
@@ -654,7 +655,7 @@ export function validateSource(source, index) {
   if (path.isAbsolute(source)) {
     throw new Error(`Artifact ${index + 1} source must be relative to DocShelf.`);
   }
-  if (!['.html', '.md'].includes(path.extname(source).toLowerCase())) {
+  if (!['.html', '.htm', '.md', '.markdown'].includes(path.extname(source).toLowerCase())) {
     throw new Error(`Artifact ${index + 1} source must be an HTML or Markdown file.`);
   }
 }
@@ -672,7 +673,7 @@ export function parseClaudeArtifactSource(source) {
 
 /** @param {string} source @returns {'html' | 'markdown'} */
 function sourceFormat(source) {
-  return path.extname(source).toLowerCase() === '.md' ? 'markdown' : 'html';
+  return ['.md', '.markdown'].includes(path.extname(source).toLowerCase()) ? 'markdown' : 'html';
 }
 
 /** @param {string} route @param {number} index */

@@ -1,5 +1,5 @@
 import https from 'node:https';
-import { parseGitHubMarkdownUrl } from './github-markdown.js';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import { MAX_REMOTE_BYTES } from './types';
 
 /** Buffer only after enforcing the limit on each received chunk. */

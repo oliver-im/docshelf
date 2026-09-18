@@ -4,7 +4,7 @@ import path from 'node:path';
 import type DocShelfPlugin from '../main';
 import type { Artifact, LineRange } from '../core/types';
 import { message } from '../core/types';
-import { parseLineFragment } from '../core/line-permalinks.js';
+import { parseLineFragment } from '@docshelf/core/line-permalinks';
 import { checkRange, createAgentReference, createPermalink, parseRange } from '../core/protocol';
 import { sourceLines } from '../core/markdown';
 import { LineSelection } from './lines';

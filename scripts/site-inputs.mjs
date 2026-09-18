@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 /** Files that shape Astro output besides the generated shelf and artifact snapshots. */
-const siteInputs = ['astro.config.mjs', 'package-lock.json', 'tsconfig.json', 'public', 'scripts', 'src'];
+const siteInputs = ['astro.config.mjs', 'package-lock.json', 'tsconfig.json', 'public', 'scripts', 'src', 'packages/core/src', 'packages/core/package.json'];
 const ignoredSiteInputs = new Set(['public/artifacts', 'src/generated']);
 
 /**

@@ -8,8 +8,8 @@ import { readBoundedFile } from '../src/core/files';
 import { createPermalink, parseProtocol, parseRange, checkRange } from '../src/core/protocol';
 import { renderMarkdown, sourceLines } from '../src/core/markdown';
 import { extractText, ShelfSearch } from '../src/core/search';
-import { parseGitHubMarkdownUrl } from '../src/core/github-markdown.js';
-import { parseClaudeArtifactUrl } from '../src/core/claude-artifacts.js';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 
 export async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'docshelf-unit-'));

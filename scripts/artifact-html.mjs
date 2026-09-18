@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse, serialize } from 'parse5';
 import { sitePath } from './site-path.mjs';
+import { createViewerLocation } from '@docshelf/core/links';
 
 export const artifactRevisionFile = '.docshelf-revisions.json';
 const defaultPublicRoot = fileURLToPath(new URL('../public/', import.meta.url));
@@ -116,9 +117,7 @@ export function contentRevision(contents) {
  * @param {string} [basePath]
  */
 export function artifactViewerUrl(route, query = '', hash = '', basePath = '/') {
-  const parameters = new URLSearchParams({ artifact: route });
-  if (query) parameters.set('artifact-query', query);
-  return `${sitePath('/', basePath)}?${parameters}${hash}`;
+  return `${sitePath('/', basePath)}${createViewerLocation(route, query, hash)}`;
 }
 
 /** @param {unknown} node @param {string} tagName @param {Array<{ attrs: Array<{ name: string, value: string }> }>} elements */
