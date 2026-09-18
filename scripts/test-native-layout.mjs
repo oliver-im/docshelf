@@ -13,7 +13,7 @@ export async function testNativeLayout({ page, poll, workspace }) {
     return {
       pane: scroller.clientWidth, width: content.width,
       left: content.left - pane.left, right: pane.left + scroller.clientWidth - content.right,
-      gap: content.left - gutter.right, edge: gutter.left - pane.left,
+      gap: content.left - gutter.right, edge: gutter.left - pane.left, gutterWidth: gutter.width,
       overflow: scroller.scrollWidth - scroller.clientWidth,
       clipped: Array.from(scroller.querySelectorAll('.docshelf-source-control')).some(button => button.scrollWidth > button.clientWidth),
     };
@@ -28,6 +28,24 @@ export async function testNativeLayout({ page, poll, workspace }) {
   const replace = async text => {
     await writeFile(file, text);
     await poll(() => page.evaluate(expected => app.plugins.getPlugin('docshelf').nativeViews()[0].getViewData() === expected, text), 'The layout fixture did not refresh.');
+  };
+  const scrollTo = async line => {
+    await page.evaluate(line => {
+      app.plugins.getPlugin('docshelf').nativeViews()[0].editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true);
+    }, line);
+    await page.waitForFunction(line => {
+      const scroller = document.querySelector('.docshelf-native .cm-scroller');
+      const button = scroller.querySelector(`button[data-start="${line + 1}"]`);
+      if (!button) return false;
+      const box = button.getBoundingClientRect(), pane = scroller.getBoundingClientRect();
+      return box.top >= pane.top && box.bottom <= pane.bottom;
+    }, line);
+    return balanced();
+  };
+  const sameColumns = (before, after) => {
+    for (const key of ['left', 'right', 'width', 'edge', 'gutterWidth']) {
+      assert.ok(Math.abs(before[key] - after[key]) < 1, `Scrolling must not move ${key}: ${before[key]} → ${after[key]}`);
+    }
   };
 
   try {
@@ -44,7 +62,7 @@ export async function testNativeLayout({ page, poll, workspace }) {
     for (const width of [960, 1180, 1700, 2300]) {
       await page.setViewportSize({ width, height: 860 });
       const box = await balanced();
-      assert.ok(box.width >= Math.min(700, box.pane - 100), 'Short line labels must leave the available width to the text.');
+      assert.ok(box.width >= Math.min(700, box.pane - 112), 'Single-digit documents must leave the available width to the text.');
       if (width === 2300) assert.equal(Math.round(box.width), 700, 'Honor the native readable line width.');
     }
     const heading = page.locator('.docshelf-native .HyperMD-header-1');
@@ -69,12 +87,17 @@ export async function testNativeLayout({ page, poll, workspace }) {
     });
     const range = page.locator('.docshelf-native button[data-start="999"][data-end="1002"]');
     await range.waitFor();
-    for (const width of [960, 1700, 2300]) {
-      await page.setViewportSize({ width, height: 860 });
-      await balanced();
+    for (const readable of [false, true]) {
+      await page.evaluate(value => { app.vault.setConfig('readableLineLength', value); app.workspace.updateOptions(); }, readable);
+      for (const width of [960, 1700, 2300]) {
+        await page.setViewportSize({ width, height: 860 });
+        const top = await scrollTo(0);
+        sameColumns(top, await scrollTo(998));
+        sameColumns(top, await scrollTo(0));
+      }
     }
     await page.setViewportSize({ width: 960, height: 860 });
-    await balanced();
+    await scrollTo(998);
     await range.click();
     assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].getState().referenceLines), '999-1002');
     await page.screenshot({ path: '.local/runtime/native-narrow-layout.png' });
@@ -93,7 +116,22 @@ export async function testNativeLayout({ page, poll, workspace }) {
     await ordinary.locator('.cm-lineNumbers:visible').waitFor();
     assert.equal(await ordinary.locator('.docshelf-source-gutter').count(), 0);
     assert.equal(await page.locator('.docshelf-native .cm-lineNumbers:visible').count(), 0, 'Do not duplicate native and source line numbers.');
-    console.log('Editor layout: balanced split panes, compact labels, four-digit table ranges, source mode, readable-width preference, and ordinary notes passed.');
+
+    // Growing/shrinking past a digit boundary updates the reservation even
+    // when the added line is off screen, without retaining an oversized gutter.
+    await replace('Line.\n'.repeat(998) + 'Last.');
+    const threeDigits = await scrollTo(0);
+    await page.evaluate(() => {
+      const editor = app.plugins.getPlugin('docshelf').nativeViews()[0].editor;
+      editor.replaceRange('\nNew.', { line: 998, ch: 5 });
+    });
+    await poll(async () => (await measure()).gutterWidth > threeDigits.gutterWidth + 8, 'Crossing 1,000 lines should widen the gutter for both range endpoints.');
+    const fourDigits = await balanced();
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].editor.replaceRange('', { line: 998, ch: 5 }, { line: 999, ch: 4 }));
+    await poll(async () => Math.abs((await measure()).gutterWidth - threeDigits.gutterWidth) < 1, 'Removing the added line should restore the smaller gutter.');
+    assert.ok(fourDigits.gutterWidth > threeDigits.gutterWidth);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
+    console.log('Editor layout: balanced split panes, stable scrolling with readable width on/off, four-digit ranges, digit-boundary edits, source mode, and ordinary notes passed.');
   } finally {
     await page.evaluate(async () => {
       app.vault.setConfig('readableLineLength', true);

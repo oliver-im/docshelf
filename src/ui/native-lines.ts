@@ -65,6 +65,18 @@ function select(view: EditorView, start: number, end: number, extend: boolean): 
   if (restoreFocus) view.scrollDOM.querySelector<HTMLButtonElement>(`.docshelf-source-gutter button[data-start="${start}"]`)?.focus();
 }
 
+class SourceGutterSpacer extends GutterMarker {
+  constructor(readonly digits: number) { super(); }
+  toDOM(view: EditorView): HTMLElement {
+    const spacer = view.dom.ownerDocument.createElement('span');
+    spacer.className = 'docshelf-source-label';
+    spacer.setAttribute('aria-hidden', 'true');
+    const number = '9'.repeat(this.digits);
+    spacer.textContent = `${number}–${number}`;
+    return spacer;
+  }
+}
+
 class SourceMarker extends GutterMarker {
   constructor(readonly start: number, readonly end: number, readonly selected: boolean) { super(); }
   eq(other: SourceMarker): boolean { return this.start === other.start && this.end === other.end && this.selected === other.selected; }
@@ -72,7 +84,7 @@ class SourceMarker extends GutterMarker {
     const button = view.dom.ownerDocument.createElement('button');
     const label = this.start === this.end ? String(this.start) : `${this.start}–${this.end}`;
     button.type = 'button';
-    button.className = 'docshelf-source-control';
+    button.className = 'docshelf-source-control docshelf-source-label';
     button.textContent = label;
     button.dataset.start = String(this.start);
     button.dataset.end = String(this.end);
@@ -115,6 +127,13 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
   const noGutter: Extension = [];
   const sourceGutter = gutter({
     class: 'docshelf-source-gutter',
+    // Reserve the widest possible range for the entire document, including
+    // off-screen blocks. Scrolling must never resize the gutter/text column.
+    initialSpacer: view => new SourceGutterSpacer(String(view.state.doc.lines).length),
+    updateSpacer: (spacer, update) => {
+      const digits = String(update.state.doc.lines).length;
+      return spacer instanceof SourceGutterSpacer && spacer.digits === digits ? spacer : new SourceGutterSpacer(digits);
+    },
     // Obsidian also calls lineMarker for block widgets. Let widgetMarker
     // handle those once, including on upstream CodeMirror implementations.
     lineMarker: (view, block) => block.widget ? null : marker(view, block),
@@ -187,7 +206,8 @@ export function nativeSourceControls(applies: (owner: unknown) => boolean, chang
           const gutter = this.view.scrollDOM.querySelector<HTMLElement>('.docshelf-source-gutter');
           if (!gutter) return;
           // The text column stays centered while the gutter hangs into its
-          // left margin. Measure actual labels so ranges and font changes fit.
+          // left margin. The document-wide spacer keeps this measurement
+          // stable while scrolling and lets it follow font/zoom changes.
           this.view.requestMeasure({
             key: this,
             read: () => gutter.parentElement?.offsetWidth || 0,

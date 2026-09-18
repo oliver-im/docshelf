@@ -1,4 +1,4 @@
-import { editorInfoField, MarkdownView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { editorInfoField, MarkdownView, Menu, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import { EditorState, Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { randomUUID } from 'node:crypto';
@@ -95,6 +95,7 @@ export class NativeMarkdownView extends MarkdownView {
     this.addAction('quote', 'Copy source reference', () => { void this.copyReference(); });
     this.addAction('folder-open', 'Reveal source', () => { if (this.artifact) void this.plugin.revealArtifact(this.artifact); });
     this.registerDomEvent(this.contentEl, 'click', event => this.followShelfLink(event), true);
+    this.registerDomEvent(this.contentEl, 'contextmenu', event => this.showMarginMenu(event), true);
     this.scope?.register(['Mod'], 'Enter', () => {
       const cursor = this.editor.getCursor();
       const href = markdownLink(this.editor.getValue(), cursor.line, cursor.ch);
@@ -107,6 +108,26 @@ export class NativeMarkdownView extends MarkdownView {
     this.unsubscribeShelf = this.plugin.subscribe(() => {
       if (!this.plugin.loading && this.shelfRevision !== this.plugin.documentRevision(this.route)) void this.refreshSource();
     });
+  }
+
+  private showMarginMenu(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (event.defaultPrevented || !target || (!target.matches('.cm-scroller, .cm-sizer, .cm-contentContainer, .markdown-preview-view') && !target.closest('.cm-gutters'))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    // The host's margin menu changes vault-wide display preferences. Keep
+    // that behavior, but omit its controls for the hidden native gutter/title.
+    // These native configuration methods are not declared in the public types.
+    const preferences = this.app.vault as typeof this.app.vault & {
+      getConfig(key: 'readableLineLength'): boolean;
+      setConfig(key: 'readableLineLength', value: boolean): void;
+    };
+    new Menu().addItem(item => item
+      .setTitle('Readable line length')
+      .setIcon('ruler')
+      .setChecked(preferences.getConfig('readableLineLength'))
+      .onClick(() => preferences.setConfig('readableLineLength', !preferences.getConfig('readableLineLength'))))
+      .showAtMouseEvent(event);
   }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
