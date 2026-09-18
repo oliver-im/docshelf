@@ -1,12 +1,12 @@
 # One repository, two apps
 
-DocShelf's browser viewer and Obsidian plugin share a repository, registration
+DocShelf Web and DocShelf for Obsidian share a repository, registration
 workflow, and URL helpers. They can read the same shelf JSON. Original documents
 stay in their owning projects.
 
 ```text
 docshelf/
-├── src/, public/, scripts/       Browser app and local server
+├── src/, public/, scripts/       DocShelf Web and local server
 ├── shelf.local.json              Ignored, shared local registrations
 ├── packages/
 │   ├── core/                     Pure URL and source-reference helpers
@@ -40,25 +40,25 @@ at its absolute path, and align **Workspace root** with `DOCSHELF_WORKSPACE` if
 customized. Source paths in this shared file are relative to its directory.
 Keep unique lowercase `.html` routes even for Markdown. Descriptions are optional.
 
-The browser does not read the plugin's settings, and the plugin does not read the
+The web app does not read the plugin's settings, and the plugin does not read the
 web service's environment. Separate configured shelves remain separate. This
 change does not copy registrations, move documents, or change existing settings.
 
 Use `npm run links -- <route-or-source> --site <installed-site> --vault <vault>`
 at the repository root to print both links. Add `--lines 7-11` for a Markdown source range.
-`DOCSHELF_SITE` can supply the browser address; otherwise `--site` is required.
+`DOCSHELF_SITE` can supply the web app's address; otherwise `--site` is required.
 The command uses this checkout's active shelf and does not guess a vault or start
-either app. Browser URLs identify the route, while Obsidian URLs identify the
+either app. Web app URLs identify the route, while Obsidian URLs identify the
 registered canonical source. Local Obsidian links expose the absolute file path.
 
-The existing browser address remains `https://shelf.localhost/` after normal
+The web app's address remains `https://shelf.localhost/` after normal
 macOS setup. No `docshelf.localhost` alias or OS-level `docshelf://` handler is
 introduced here. Current application links use `obsidian://docshelf`. A future
 neutral scheme needs an installed dispatcher and an explicit host preference.
 
 ## Differences that remain
 
-| Capability | Browser | Obsidian |
+| Capability | DocShelf Web | DocShelf for Obsidian |
 | --- | --- | --- |
 | Local Markdown | Rendered snapshot, read-only | Native editor; saves the original with conflict checks |
 | Local HTML | Generated snapshot on the web origin | Isolated read-only webview, document-scoped access |
@@ -72,7 +72,7 @@ For a shelf used by both apps, register local Markdown/HTML or published Claude
 Artifacts, use relative source paths, and keep the web-compatible lowercase route
 shape. Public GitHub shelf entries and absolute sources remain Obsidian-only.
 Do not add them to a shared shelf: the web loader rejects them. Registering an
-asset for Obsidian does not publish it in the browser.
+asset for Obsidian does not publish it in the web app.
 
 Both apps accept `.md`, `.markdown`, `.html`, and `.htm` local sources. Obsidian
 also enforces limits of 2,000 documents, 2 MB of shelf JSON, 8 MB per local
@@ -83,7 +83,7 @@ for asset paths and supported types.
 
 The initial README entry works in both apps. To display its screenshots in
 Obsidian too, add `"assets": ["public/docshelf-overview.png",
-"public/docshelf-line-range.png"]` to that entry. Browser image rendering
+"public/docshelf-obsidian.png"]` to that entry. Web app image rendering
 already uses those bundled public files.
 
 ## Update existing installations
@@ -105,7 +105,7 @@ entries and keep relative source paths anchored to the shelf directory.
 ## Development boundary
 
 `@docshelf/core` owns GitHub and Claude URL validation, source-line fragments, and
-browser/Obsidian link construction. It has no filesystem, Electron, Obsidian,
+web app and Obsidian link construction. It has no filesystem, Electron, Obsidian,
 server, or DOM dependencies. Both apps consume the package through npm workspaces.
 The private consumers use `"@docshelf/core": "*"` so a core version bump keeps
 resolving to the workspace. Refresh the root lockfile after version changes.
@@ -123,6 +123,6 @@ publish either app or change their version numbers.
 
 Next, agree on shared catalog identity and schema before extracting more code.
 Then make registration and link lookup host-independent, decide how remote
-registrations should work in the browser, and design an optional `docshelf://`
+registrations should work in the web app, and design an optional `docshelf://`
 dispatcher. Filesystem writes, recovery, HTTP serving, and UI rendering stay with
 their respective hosts until there is a concrete reason to share them.

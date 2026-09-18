@@ -31,9 +31,9 @@ Under **Display**, **Readable line length** limits the text column's width.
 It applies immediately and shares Obsidian's vault-wide preference, so it also
 affects ordinary Markdown notes. It is also available in **Settings → DocShelf**.
 
-An existing standalone DocShelf `shelf.local.json` can be used in place: its
+An existing DocShelf Web `shelf.local.json` can be used in place: its
 relative source paths continue to resolve against its containing directory.
-The plugin does not start or change the standalone server.
+The plugin does not start or change the web app's server.
 
 ## Update an existing plugin
 
@@ -108,8 +108,8 @@ Registered image changes and asset-list updates refresh open Markdown embeds,
 including when the editor has unsaved text. The refresh preserves that buffer
 and its undo history.
 
-For a shelf shared with the browser app, use relative sources and lowercase
-`.html` routes, and keep GitHub URLs out of the shelf JSON. The browser ignores
+For a shelf shared with the web app, use relative sources and lowercase
+`.html` routes, and keep GitHub URLs out of the shelf JSON. The web app ignores
 `assets` and keeps GitHub imports in browser storage. See
 [shared setup and differences](../../docs/unification.md).
 
@@ -331,7 +331,7 @@ helpers, and plugin; they do not run the actual Obsidian runtime suite.
 
 The shared registration skill lives at the repository root in
 [`.agents/skills/docshelf/`](../../.agents/skills/docshelf/SKILL.md). It can return
-browser and Obsidian links from the same shelf; see [shared setup and differences](../../docs/unification.md).
+web app and Obsidian links from the same shelf; see [shared setup and differences](../../docs/unification.md).
 
 ## License
 

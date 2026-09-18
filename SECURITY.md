@@ -18,10 +18,10 @@ not your own while investigating.
 
 ## Security boundaries
 
-The browser and Obsidian plugin share URL helpers and can share registrations,
+DocShelf Web and the Obsidian plugin share URL helpers and can share registrations,
 but use different rendering and file-access boundaries.
 
-### Browser app and local server
+### DocShelf Web and its local server
 
 - Registered local HTML is trusted content. It may execute scripts with the same
   origin and permissions as DocShelf. Registering malicious HTML is outside the
@@ -60,7 +60,7 @@ but use different rendering and file-access boundaries.
   shelf to that network and does not add authentication or transport
   encryption.
 
-### Obsidian desktop plugin
+### DocShelf for Obsidian
 
 - Local sources and listed assets must resolve within the configured
   **Workspace root** or the shelf file's directory. The workspace defaults to
@@ -94,7 +94,7 @@ but use different rendering and file-access boundaries.
   sanitized. It is cached in memory and becomes searchable after fetching.
   Images and links can contact remote sites. Exact published Claude Artifact
   URLs open as top-level remote pages in a separate webview, without requiring
-  the browser embed's allowed-domain setup. Arbitrary remote HTML is rejected.
+  the web app's embed allowed-domain setup. Arbitrary remote HTML is rejected.
 - `obsidian://docshelf` links look up existing registrations; they cannot
   register or open arbitrary paths. Local links and source references include
   absolute filesystem paths. External documents do not join vault indexing,

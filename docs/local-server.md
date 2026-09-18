@@ -1,6 +1,6 @@
-# Running and updating DocShelf
+# Running and updating DocShelf Web
 
-This guide covers the browser app and its local server. The Obsidian plugin
+This guide covers DocShelf Web and its local server. The Obsidian plugin
 runs independently; see its
 [installation and update guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md)
 and the [shared-shelf setup](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
@@ -14,7 +14,7 @@ npm run setup
 ```
 
 Setup initializes a new local shelf with the README, preserving an existing
-`shelf.local.json` or legacy `artifacts.local.json`. It installs a DocShelf login
+`shelf.local.json`. It installs a DocShelf login
 service and verifies the first successful build at **https://shelf.localhost/**.
 The backend stays on `127.0.0.1:4321`; a shared
 [Portless](https://github.com/vercel-labs/portless) proxy provides HTTPS on port
@@ -58,6 +58,8 @@ address do not automatically appear at the HTTPS address. Re-add browser imports
 there if migrating; registered local documents are unaffected.
 
 ## Foreground server
+
+For a new installation, first [create a local shelf](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#register-local-documents).
 
 Run DocShelf with production search and automatic rebuilding in a terminal:
 
@@ -150,16 +152,6 @@ The ignored shelf, source documents, and browser imports survive this update.
 Use the same site origin (scheme, host, and port) to keep access to existing
 browser imports and preferences. A Git pull that cannot fast-forward needs
 your local branch changes resolved before continuing.
-
-Older installations may still use `artifacts.local.json`. If there is no
-`shelf.local.json`, rename the old file:
-
-```sh
-mv artifacts.local.json shelf.local.json
-```
-
-If both files exist, DocShelf uses `shelf.local.json`. Merge any missing entries
-into that file before retiring the older file.
 
 After restarting, open the printed URL and confirm your documents appear.
 `/__docshelf/status` should report `state: "ready"` for the new watcher instance.

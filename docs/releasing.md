@@ -1,12 +1,13 @@
 # Releasing DocShelf
 
-The browser app uses Git tags and GitHub Releases for clone-and-run distribution.
+DocShelf Web uses Git tags and GitHub Releases for clone-and-run distribution.
 The Obsidian plugin is built separately as an installable folder. The root and
 workspace packages are private to prevent accidental npm publication.
 
-The planned first announced web version is **0.1.0**; the root package is still
-`0.0.1` until release preparation. The plugin's package and manifest are already
-`0.1.0`, and its minimum Obsidian version is `1.13.7`. Moving both apps into one
+The planned first announced version of DocShelf Web is **0.1.0**; the root
+package is still `0.0.1` until release preparation. The plugin's package and
+manifest are already `0.1.0`, and its minimum Obsidian version is `1.13.7`.
+Moving both apps into one
 repository does not synchronize their versions or publish either one.
 
 ## Versioning and cadence
@@ -20,7 +21,7 @@ Use `0.MINOR.PATCH` during early development:
 - Revisit `1.0.0` after outside users have exercised installation and upgrades
   and the compatibility commitments are ready to be treated as stable.
 
-Treat the shelf JSON format, registered routes, browser and Obsidian permalink
+Treat the shelf JSON format, registered routes, web app and Obsidian permalink
 syntax, browser import storage, plugin settings and recovery records, and
 documented commands as compatibility surfaces.
 Do not silently discard shelf entries or browser imports. Document migrations
@@ -135,7 +136,7 @@ force-moving them.
 ## Announcement preparation
 
 Suggested repository description:
-**A shared shelf for Markdown and HTML across the browser and Obsidian.**
+**Browse project documents with DocShelf Web or DocShelf for Obsidian.**
 
 Suggested repository homepage: **https://oliver-im.github.io/docshelf/**.
 Set these when preparing the public announcement. Also consider enabling GitHub
@@ -143,19 +144,29 @@ private vulnerability reporting so the preferred route in `SECURITY.md` is usabl
 
 Use a screenshot containing only deliberately public sample documents. Show
 document switching, a search result, and a precise line link. Keep the claims
-accurate: browser full-text search covers registered local documents, and browser
+accurate: web app full-text search covers registered local documents, and browser
 imports depend on their host and that browser's saved links. Obsidian also indexes
 registered GitHub Markdown after it has been fetched; Claude content is not indexed.
 
-The README includes an [overview screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
-and a [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).
-They show only repository documents, including the sample HTML report at
-`docs/examples/project-review.html`. To recreate them, use
+The README includes a [DocShelf Web overview](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
+and an [Obsidian screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-obsidian.png).
+The web app usage guide includes a [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).
+The web app captures show only repository documents, including the sample HTML
+report at `docs/examples/project-review.html`. To recreate them, use
 `docs/screenshot-shelf.json` as the local shelf in a separate checkout and use
 dark mode. For the overview, open `?artifact=reports%2Fproject-review.html`.
 For the line-range example, open `?artifact=guides%2Fusage.html#L7-L11` and open
 the document's **⋯** menu so **Copy link** is visible. Include the HTML report in the sidebar of both
 captures. The production Pages shelf remains README-only.
+
+The Obsidian image uses Tokyo Night 1.1.6 in dark mode. To recreate it, install
+the plugin and theme in a disposable vault named **DocShelf demo**, using copies
+of the documents in `packages/obsidian/examples/`. Open the release report and
+field notes in separate tabs, select source line 11 in the field notes' native
+editor, and capture at 1180 × 860. Inspect the capture before saving it to
+`public/docshelf-obsidian.png`; use only sample documents and exclude private
+paths or vault contents. The regular runtime suite uses the default Obsidian
+theme, so its screenshots are not a replacement for this themed capture.
 
 Draft X post, to tune after the README and release are final:
 

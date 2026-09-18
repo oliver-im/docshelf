@@ -1,6 +1,6 @@
 ---
 name: docshelf
-description: Register finished documents in DocShelf when asked to add them to the shelf, preserving original files and returning browser, Obsidian, and source-line links for the configured apps.
+description: Register finished documents in DocShelf when asked to add them to the shelf, preserving original files and returning DocShelf Web, Obsidian, and source-line links for the configured apps.
 ---
 
 # DocShelf
@@ -8,10 +8,11 @@ description: Register finished documents in DocShelf when asked to add them to t
 ## Find the shared shelf
 
 Use `DOCSHELF_ROOT`, the current DocShelf repository, or an unambiguous sibling
-checkout. Read its `AGENTS.md` and registration instructions in `README.md`.
+checkout. Read its `AGENTS.md` and the registration instructions for the configured
+app: `docs/usage.md` for DocShelf Web or `packages/obsidian/README.md` for Obsidian.
 If no checkout is identifiable, ask where DocShelf is installed.
 
-For the browser, use the checkout's ignored `shelf.local.json` (or existing
+For DocShelf Web, use the checkout's ignored `shelf.local.json` (or existing
 legacy `artifacts.local.json`). Create it from the empty `shelf.json` only when
 neither local shelf exists. Never put private registrations in the tracked template.
 
@@ -45,20 +46,20 @@ is also allowed. Resolve symlinks before checking containment.
 
 For shared shelves, keep the web-compatible relative source and lowercase route
 shape. Obsidian-only shelves also accept absolute paths and public GitHub Markdown
-URLs. The browser imports GitHub Markdown into browser storage, not shelf JSON;
+URLs. The web app imports GitHub Markdown into browser storage, not shelf JSON;
 do not add a GitHub registration to a shared shelf. Read `docs/unification.md`
 in the checkout before using host-specific features.
 Obsidian's optional `assets` lists individual files beneath the source directory;
-it does not make those neighboring files available to the web viewer.
+it does not make those neighboring files available to the web app.
 
 A Claude Artifact must be an exact published `claude.ai/public/artifacts/<id>`
-link. For the browser embed, the owner must allow the installed DocShelf origin
+link. For the web app's embed, the owner must allow the installed DocShelf origin
 in Claude's **Get embed code → Allowed domains**. Obsidian opens it at top level
 and does not require that embed setting. Never download or modify the artifact.
 
 ## Verify and return links
 
-For the web, determine the actual installed site from configuration or a verified
+For DocShelf Web, determine the actual installed site from configuration or a verified
 running server. Normal macOS setup uses `https://shelf.localhost/`; direct mode
 uses `http://shelf.localhost:<port>/` (default 4321). Preserve any mount path.
 Before editing, probe its `/__docshelf/status` endpoint and record `instanceId`

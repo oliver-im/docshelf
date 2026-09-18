@@ -32,7 +32,7 @@ validated browser imports, without taking ownership of their source content.
 
 ## Repository layout
 
-- The web app stays at the root so existing services and shelf paths keep working.
+- DocShelf Web stays at the root so existing services and shelf paths keep working.
 - `packages/obsidian/` contains the desktop plugin and its own safety guidance.
 - `packages/core/` contains pure helpers used by both apps. Keep filesystem,
   server, editor, and host-specific UI code out of this package.
