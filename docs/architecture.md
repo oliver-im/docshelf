@@ -36,10 +36,13 @@ state. The extension is scoped to DocShelf editors.
    source-line range links and references. Local images remain explicitly
    registered assets; external links between documents resolve via the shelf.
 4. Local HTML loads in a separate webview from the plugin's loopback server.
-   Every request must carry the random path token and correct Host. The server
+   Every request must carry a document-specific path token and correct Host. The server
    accepts only GET/HEAD and serves registered HTML plus explicitly listed
    assets, rechecking path containment and byte limits. Registered document
    links are rewritten in the served copy; no original files are changed.
+   Read and navigation tokens are HMACs with distinct purposes and document IDs,
+   derived from a private session key. A report never receives that key or
+   another document's read token through a rewritten link.
 5. A custom URI handler uses `vault` for host dispatch and `source` for lookup
    against the loaded catalog. It never auto-registers URI-supplied paths.
 
@@ -50,6 +53,14 @@ The webview therefore uses HTTP, a nonpersistent partition separate from
 Obsidian and remote artifact pages, context isolation, no Node, and sandboxing.
 The report response adds a CSP sandbox and denies frames, objects, workers,
 forms, and access to file/app schemes. Scripts may use self/HTTPS resources.
+Each local viewer installs a request handler on its own nonpersistent session
+before attaching the webview. Main-frame navigation stays on that document's
+URL; other registered-document links are dispatched to DocShelf and external
+HTTP(S) links to the system browser. The request is cancelled before replacing
+the report. This uses the host's Electron remote bridge for session access;
+if it is unavailable, the local report is not loaded. Cleanup removes the
+handler when the viewer is replaced or closed. Authored anchor targets are
+removed so new-tab links use this same path; script-created popups stay blocked.
 
 The installed Obsidian host additionally strips webview preloads, enforces Node
 and sandbox settings, and prevents non-HTTP(S) guest navigation. These are host
@@ -83,6 +94,9 @@ between two panes cannot replace each other's recovery copies.
 
 Clean editors adopt external updates. Dirty editors retain their buffer and
 block saves on conflicts, missing sources, or removed/changed registrations.
+If registration and reads recover with the same target and baseline bytes,
+temporary errors clear and the delayed save is scheduled again. Recovery review
+intent is tracked separately so a read error cannot silently approve a draft.
 The comparison dialog allows merging or choosing a version; the reviewed disk
 snapshot becomes the baseline for another checked save. HTML server routes are
 still GET/HEAD only and expose no editor or write bridge.

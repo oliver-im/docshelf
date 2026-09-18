@@ -10,6 +10,7 @@ import { testNativeLines } from './test-native-lines.mjs';
 import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
 import { testNativeModes } from './test-native-modes.mjs';
+import { testReportRegressions } from './test-report-regressions.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -391,6 +392,7 @@ try {
   assert.deepEqual(probes, { file: 'blocked', app: 'blocked', unregistered: 'blocked', parent: 'undefined' });
   await page.screenshot({ path: '.local/runtime/report.png' });
   console.log('HTML scripts, relative CSS/image, and local-file isolation checks passed.');
+  await testReportRegressions({ page, poll, workspace, shelfPath, shelf, guest });
 
   await guest('document.querySelector("a").click()');
   await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews().some(view => view.contentEl.offsetParent !== null && view.editor.getCursor('from').line === 6 && view.editor.getCursor('to').line === 8)), 'The HTML-to-Markdown range link did not navigate.');

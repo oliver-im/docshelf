@@ -55,6 +55,7 @@ export class NativeMarkdownView extends MarkdownView {
   private saveStatusEl?: HTMLElement;
   private saveStatusKey = '';
   private saveProblem = '';
+  private recoveryReviewRequired = false;
   private shelfRevision = '';
   private loadGeneration = 0;
   private recoveryRoute: string | null = null;
@@ -193,6 +194,7 @@ export class NativeMarkdownView extends MarkdownView {
       this.artifact = null;
       this.externalSnapshot = undefined;
       this.externalBaseline = '';
+      this.recoveryReviewRequired = false;
       const occupied = this.plugin.nativeViews().filter(view => view !== this).map(view => view.draftId);
       this.draftId = typeof state.draftId === 'string' && /^[a-f\d-]{36}$/.test(state.draftId) && !occupied.includes(state.draftId) ? state.draftId : randomUUID();
     }
@@ -269,6 +271,7 @@ export class NativeMarkdownView extends MarkdownView {
           this.externalSnapshot = { canonicalPath: draft.canonicalPath, bytes: Buffer.from(draft.baseline, 'base64') };
           this.externalBaseline = editorText(this.externalSnapshot.bytes);
           this.setExternalContents(draft.text, true);
+          this.recoveryReviewRequired = true;
           this.saveProblem = 'Recovered unsaved edits. Review them before saving.';
           this.recoveryRoute = null;
           this.contentEl.removeClass('docshelf-native-unavailable');
@@ -280,11 +283,19 @@ export class NativeMarkdownView extends MarkdownView {
       const current = readEditableFile(artifact.sourcePath!, this.plugin.catalog!.roots);
       if (this.hasUnsavedEdits) {
         if (!current.bytes.equals(this.externalSnapshot!.bytes) || current.canonicalPath !== this.externalSnapshot!.canonicalPath) this.saveProblem = 'The file changed outside this editor. Your edits have been kept.';
+        else {
+          const retry = !!this.saveProblem && !this.recoveryReviewRequired;
+          this.saveProblem = this.recoveryReviewRequired ? 'Recovered unsaved edits. Review them before saving.' : '';
+          // A temporarily missing file/registration can recover after the host's
+          // delayed save has already fired. Resume even without another edit.
+          if (retry) this.requestSave();
+        }
       } else {
         const text = editorText(current.bytes);
         const first = !this.externalSnapshot;
         this.externalSnapshot = current;
         this.externalBaseline = text;
+        this.recoveryReviewRequired = false;
         this.saveProblem = '';
         if (first || this.getViewData() !== text) this.setExternalContents(text, first);
       }
@@ -326,7 +337,7 @@ export class NativeMarkdownView extends MarkdownView {
     if (!this.externalSnapshot) return;
     if (!this.hasUnsavedEdits) { if (this.draftChanged) this.preserveDraft(); this.updateSaveStatus(); return; }
     if (!this.preserveDraft()) { this.updateSaveStatus(); return; }
-    if (this.saveProblem) { this.updateSaveStatus(); return; }
+    if (this.saveProblem || this.recoveryReviewRequired) { this.updateSaveStatus(); return; }
     try {
       const artifact = this.registered();
       const text = this.getViewData();
@@ -381,6 +392,7 @@ export class NativeMarkdownView extends MarkdownView {
         }
         this.externalSnapshot = disk;
         this.externalBaseline = editorText(disk.bytes);
+        this.recoveryReviewRequired = false;
         this.saveProblem = '';
         this.setExternalContents(text, false);
         if (!useDisk) void this.save();

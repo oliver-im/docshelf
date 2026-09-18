@@ -163,20 +163,27 @@ export async function testNativeEditing({ page, poll, workspace, shelfPath, shel
   await poll(async () => (await problem()).includes('no longer registered'), 'Removing a registration did not stop editing saves.');
   assert.equal(await readFile(file, 'utf8'), original);
   assert.ok((await value()).includes('Removed registration draft.'));
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
   await writeFile(shelfPath, JSON.stringify(shelf));
   await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
-  await openReview();
-  await review.getByRole('button', { name: 'Use disk version', exact: true }).click();
+  await poll(async () => await readFile(file, 'utf8') === `${original}Removed registration draft.\n`, 'Restoring the same registration must resume autosave without another edit.');
+  assert.equal(await page.locator('.docshelf-editor-problem').count(), 0);
+  await setValue(original);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
 
   // Missing sources must not be recreated by autosave.
   await setValue(`${original}Missing source draft.\n`);
   await rm(file);
   await poll(async () => (await problem()).includes('ENOENT'), 'A missing file did not stop editing saves.');
   assert.ok((await value()).includes('Missing source draft.'));
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
+  await assert.rejects(readFile(file), { code: 'ENOENT' }, 'Autosave must not recreate a missing source.');
   await writeFile(file, original);
   await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
-  await openReview();
-  await review.getByRole('button', { name: 'Use disk version', exact: true }).click();
+  await poll(async () => await readFile(file, 'utf8') === `${original}Missing source draft.\n`, 'Restoring unchanged source bytes must resume autosave without another edit.');
+  assert.equal(await page.locator('.docshelf-editor-problem').count(), 0);
+  await setValue(original);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
   assert.equal(await value(), original);
   assert.equal(await readFile(file, 'utf8'), original);
   // Two panes have independent buffers and recovery records.

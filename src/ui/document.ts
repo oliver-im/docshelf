@@ -13,6 +13,9 @@ import { renderReading } from './render';
 export const DOCUMENT_VIEW = 'docshelf-document';
 interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
 interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown> }
+interface ReportWebRequest {
+  onBeforeRequest(filter: { urls: string[] }, listener: ((details: { url: string; resourceType: string }, callback: (response: { cancel?: boolean }) => void) => void) | null): void;
+}
 
 export class DocumentView extends ItemView {
   artifact: Artifact | null = null;
@@ -28,6 +31,7 @@ export class DocumentView extends ItemView {
   private page = 0;
   private hash = '';
   private lastRevision = '';
+  private releaseReportNavigation?: () => void;
   private localPartition = `docshelf-local-${randomBytes(16).toString('hex')}`;
   private remotePartition = `docshelf-remote-${randomBytes(16).toString('hex')}`;
 
@@ -54,7 +58,13 @@ export class DocumentView extends ItemView {
       if (!this.plugin.loading && this.lastRevision !== this.plugin.documentRevision(this.route)) void this.loadDocument();
     });
   }
-  async onClose(): Promise<void> { this.closed = true; this.generation++; this.unsubscribe?.(); this.contentEl.empty(); }
+  async onClose(): Promise<void> { this.closed = true; this.generation++; this.unsubscribe?.(); this.clearContent(); }
+
+  private clearContent(): void {
+    this.contentEl.empty();
+    this.releaseReportNavigation?.();
+    this.releaseReportNavigation = undefined;
+  }
 
   async loadDocument(): Promise<void> {
     const generation = ++this.generation;
@@ -64,7 +74,7 @@ export class DocumentView extends ItemView {
     this.artifact = this.plugin.catalog?.artifacts.find(item => item.route === this.route) || null;
     if (!this.artifact) {
       this.lastRevision = revision;
-      this.contentEl.empty();
+      this.clearContent();
       this.contentEl.createEl('p', { text: 'This document is no longer registered. Open DocShelf to choose another document.', cls: 'docshelf-empty' });
       return;
     }
@@ -86,7 +96,7 @@ export class DocumentView extends ItemView {
     } catch (error) {
       if (this.closed || generation !== this.generation) return;
       this.lastRevision = revision;
-      this.contentEl.empty();
+      this.clearContent();
       this.contentEl.createEl('h2', { text: this.artifact.title });
       this.contentEl.createEl('p', { text: message(error), cls: 'docshelf-error', attr: { role: 'alert' } });
       this.contentEl.createEl('button', { text: 'Try again' }).onclick = () => { void this.loadDocument(); };
@@ -98,7 +108,7 @@ export class DocumentView extends ItemView {
     const artifact = this.artifact;
     const lines = sourceLines(this.source);
     if ((this.range && artifact.kind === 'html') || lines.length > 20_000) this.mode = 'source';
-    this.contentEl.empty();
+    this.clearContent();
     const header = this.contentEl.createDiv({ cls: 'docshelf-document-header' });
     header.createDiv({ text: artifact.project, cls: 'docshelf-eyebrow' });
     header.createEl('h1', { text: artifact.title });
@@ -168,14 +178,35 @@ export class DocumentView extends ItemView {
     webview.setAttribute('webpreferences', 'contextIsolation=yes,sandbox=yes,nodeIntegration=no,webSecurity=yes');
     webview.setAttribute('src', url);
     webview.setAttribute('aria-label', this.artifact?.title || 'Document');
-    webview.addEventListener('did-navigate', (event: Event) => {
-      if (remote) return;
-      const target = this.plugin.server.navigationTarget((event as Event & { url: string }).url);
-      if (target) void this.plugin.openArtifact(target.artifact, parseLineFragment(target.hash), target.hash, this.leaf);
-    });
+    if (!remote) {
+      // DOM webview will-navigate events cannot cancel navigation. Guard this
+      // view's private session before attaching the guest, using the async
+      // request callback (also safe across Electron's remote bridge).
+      const { session } = require('@electron/remote') as { session: { fromPartition(partition: string): { webRequest: ReportWebRequest } } };
+      const requests = session.fromPartition(this.localPartition).webRequest;
+      const document = new URL(url);
+      const filter = { urls: ['<all_urls>'] };
+      requests.onBeforeRequest(filter, (details, callback) => {
+        if (this.closed || !webview.isConnected) { callback({ cancel: true }); return; }
+        if (details.resourceType !== 'mainFrame') { callback({ cancel: details.resourceType === 'subFrame' }); return; }
+        let destination: URL;
+        try { destination = new URL(details.url); } catch { callback({ cancel: true }); return; }
+        if (destination.origin === document.origin && destination.pathname === document.pathname && !destination.username && !destination.password) {
+          callback({}); return;
+        }
+        callback({ cancel: true });
+        const target = this.plugin.server.navigationTarget(details.url);
+        if (target) {
+          void this.plugin.openArtifact(target.artifact, parseLineFragment(target.hash), target.hash, this.leaf).catch(error => new Notice(message(error)));
+        } else if (destination.origin !== document.origin && ['http:', 'https:'].includes(destination.protocol)) {
+          this.plugin.openExternal(destination.href);
+        }
+      });
+      this.releaseReportNavigation = () => requests.onBeforeRequest(filter, null);
+    }
     webview.addEventListener('did-fail-load', (event: Event) => {
       const failure = event as Event & { errorCode: number; isMainFrame: boolean };
-      if (failure.errorCode === -3 || failure.isMainFrame === false) return;
+      if (failure.errorCode === -3 || failure.isMainFrame === false || !remote && failure.errorCode === -20) return;
       this.status.setText(remote ? 'The published artifact could not load. Check the network connection and source URL.' : 'The HTML viewer could not load this document. Reload to try again.');
       this.status.addClass('docshelf-error');
     });

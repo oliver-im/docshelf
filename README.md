@@ -152,6 +152,8 @@ changes** compares the current file and your edits. You can merge in that dialog
 choose **Save edited version**, or choose **Use disk version**. Saving checks the
 file again, so an external change made while the dialog is open also conflicts.
 Missing files and removed registrations cannot be recreated by autosave.
+When the same registered source becomes available again with unchanged contents,
+autosave resumes. Recovered drafts still require review before saving.
 
 Before saving, DocShelf keeps the original snapshot and edited text under
 `.obsidian/plugins/docshelf/recovery/`. Each editor pane has its own JSON metadata
@@ -237,10 +239,17 @@ JSON file; it will not overwrite an existing shelf file.
 Interactive HTML runs in a separate, nonpersistent Electron webview session
 with Node disabled, context isolation, sandboxing, and web security. It loads
 through a plugin-owned server bound to `127.0.0.1` on an OS-assigned port. The
-server has a per-session random URL token, strict Host checks, CSP, bounded
-reads, and an explicit file allowlist. It provides no write API and closes on
+server has document-specific URL tokens, strict Host checks, CSP, bounded
+reads, and an explicit file allowlist. A report's token grants access only to
+that report and its listed assets. Cross-document navigation links cannot be
+used to read the destination's contents. It provides no write API and closes on
 plugin unload. Report code receives no privileged plugin bridge. This avoids
 using `file://` or Obsidian's `app://` resource origin for reports.
+
+Local reports stay in their viewer when following external HTTP(S) links;
+those links open in the system browser. Registered document links open in
+DocShelf, and same-report anchors remain in the page. Popups are disabled.
+Unrelated shelf errors do not reset a report's interactive state.
 
 Registered HTML can run its own scripts and load HTTPS resources or contact
 remote services named by the report. Disable **Run HTML scripts** to view it

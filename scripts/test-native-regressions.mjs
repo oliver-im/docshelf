@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 export async function testNativeRegressions({ page, poll, workspace }) {
@@ -93,6 +93,18 @@ export async function testNativeRegressions({ page, poll, workspace }) {
   await poll(async () => (await state()).problem.includes('Recovered unsaved edits'), 'Plugin reload did not recover the pending draft.');
   assert.equal((await state()).text, conflicted.text);
   assert.equal((await state()).draft, conflicted.draft);
+  // A temporary read error must not erase the recovered-draft review gate,
+  // even when the restored disk contents match the original baseline.
+  await rm(file);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  await poll(async () => (await state()).problem.includes('ENOENT'), 'The recovered pane did not observe the missing file.');
+  await writeFile(file, base);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  await poll(async () => (await state()).problem.includes('Recovered unsaved edits'), 'Recovery review intent was lost after a transient error.');
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].save());
+  assert.equal(await readFile(file, 'utf8'), base, 'A restored baseline must not silently approve a recovered draft.');
+  await writeFile(file, external);
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
   await page.evaluate(async () => {
     const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
     view.editor.replaceRange('More ', { line: 0, ch: 0 });

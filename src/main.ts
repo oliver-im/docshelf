@@ -183,7 +183,11 @@ export default class DocShelfPlugin extends Plugin {
             contents.set(artifact.id, source);
             indexedBytes += source.length;
           } else if (source !== undefined || local) failures.push('Search content limit reached; remaining documents are searchable by title.');
-        } catch (error) { failures.push(`${artifact.title}: ${message(error)}`); }
+        } catch (error) {
+          const failure = message(error);
+          failures.push(`${artifact.title}: ${failure}`);
+          revisions.set(artifact.route, createHash('sha256').update(JSON.stringify([artifact, failure])).digest('hex'));
+        }
       }
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
@@ -264,7 +268,7 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   invalidate(artifact: Artifact): void { this.remoteCache.delete(artifact.source); }
-  documentRevision(route: string): string { return `${this.revisions.get(route) || ''}:${this.error}`; }
+  documentRevision(route: string): string { return this.revisions.get(route) || ''; }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private emit(): void { for (const listener of this.listeners) listener(); }
 

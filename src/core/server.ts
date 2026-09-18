@@ -1,5 +1,5 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { parse, serialize } from 'parse5';
 import { ASSET_TYPES } from './catalog';
@@ -41,24 +41,30 @@ export class DocumentServer {
   }
 
   documentUrl(artifact: Artifact): string {
-    return `${this.origin}/${this.token}/d/${artifact.id}/${encodeURIComponent(path.basename(artifact.sourcePath || 'index.html'))}`;
+    return `${this.origin}/${this.capability('read', artifact.id)}/d/${artifact.id}/${encodeURIComponent(path.basename(artifact.sourcePath || 'index.html'))}`;
   }
 
   assetUrl(artifact: Artifact, asset: string): string {
-    return `${this.origin}/${this.token}/d/${artifact.id}/${asset.split('/').map(encodeURIComponent).join('/')}`;
+    return `${this.origin}/${this.capability('read', artifact.id)}/d/${artifact.id}/${asset.split('/').map(encodeURIComponent).join('/')}`;
   }
 
   navigationUrl(artifact: Artifact, hash = ''): string {
-    return `${this.origin}/${this.token}/open/${artifact.id}${hash}`;
+    return `${this.origin}/${this.capability('open', artifact.id)}/open/${artifact.id}${hash}`;
+  }
+
+  // Report URLs grant access to just that document and its registered assets.
+  // Navigation links carry a different capability and never grant file reads.
+  private capability(kind: 'read' | 'open', id: string): string {
+    return createHmac('sha256', this.token).update(`${kind}:${id}`).digest('hex');
   }
 
   navigationTarget(url: string): { artifact: Artifact; hash: string } | null {
     let parsed: URL;
     try { parsed = new URL(url); } catch { return null; }
     if (parsed.origin !== this.origin) return null;
-    const prefix = `/${this.token}/open/`;
-    if (!parsed.pathname.startsWith(prefix)) return null;
-    const artifact = this.catalog?.artifacts.find(item => item.id === parsed.pathname.slice(prefix.length));
+    const match = /^\/([a-f0-9]{64})\/open\/([a-f0-9]{24})$/.exec(parsed.pathname);
+    if (!match || match[1] !== this.capability('open', match[2])) return null;
+    const artifact = this.catalog?.artifacts.find(item => item.id === match[2]);
     return artifact ? { artifact, hash: parsed.hash } : null;
   }
 
@@ -72,14 +78,15 @@ export class DocumentServer {
       if (!['GET', 'HEAD'].includes(request.method || '')) { finish(405, 'Read-only server'); return; }
       if (request.headers.origin && request.headers.origin !== this.origin) { finish(403, 'Forbidden'); return; }
       const url = new URL(request.url || '/', this.origin);
-      if (url.origin !== this.origin || !url.pathname.startsWith(`/${this.token}/`)) { finish(404, 'Not found'); return; }
+      if (url.origin !== this.origin) { finish(404, 'Not found'); return; }
       const navigation = this.navigationTarget(url.href);
       if (navigation) { finish(200, 'Opening registered document…'); return; }
-      const match = new RegExp(`^/${this.token}/d/([a-f0-9]{24})/(.+)$`).exec(url.pathname);
+      const match = /^\/([a-f0-9]{64})\/d\/([a-f0-9]{24})\/(.+)$/.exec(url.pathname);
+      if (!match || match[1] !== this.capability('read', match[2])) { finish(404, 'Not found'); return; }
       const catalog = this.catalog;
-      const artifact = match && catalog?.artifacts.find(item => item.id === match[1]);
+      const artifact = catalog?.artifacts.find(item => item.id === match[2]);
       if (!artifact?.sourcePath || !catalog || !match) { finish(404, 'Not found'); return; }
-      const relative = decodeURIComponent(match[2]);
+      const relative = decodeURIComponent(match[3]);
       const document = relative === path.basename(artifact.sourcePath);
       if (!document && !artifact.assets?.includes(relative)) { finish(404, 'Asset is not registered'); return; }
       if (document && artifact.kind !== 'html') { finish(404, 'Not an HTML document'); return; }
@@ -107,6 +114,9 @@ export class DocumentServer {
         node.childNodes = node.childNodes.filter((child: any) => child.tagName !== 'base' && !(child.tagName === 'meta' && child.attrs?.some((attr: any) => attr.name === 'http-equiv' && attr.value.toLowerCase() === 'refresh')));
       }
       if (node.tagName === 'a') {
+        // Keep authored new-tab links on the same guarded navigation path.
+        // Script-created popups remain disabled by the webview and CSP.
+        node.attrs = node.attrs.filter((attr: any) => attr.name !== 'target');
         const href = node.attrs?.find((attr: any) => attr.name === 'href');
         if (href && !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href.value)) {
           try {
