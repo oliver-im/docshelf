@@ -1,4 +1,6 @@
 import { context, build } from 'esbuild';
+import { writeFile } from 'node:fs/promises';
+import { createThirdPartyNotices } from './third-party-notices.mjs';
 
 const options = {
   entryPoints: ['src/main.ts'],
@@ -9,8 +11,19 @@ const options = {
   target: 'es2022',
   outfile: 'main.js',
   sourcemap: 'external',
+  metafile: true,
   logLevel: 'info',
-  banner: { js: '/* DocShelf for Obsidian. Source: src/main.ts. MIT licensed. */' },
+  banner: { js: '/* DocShelf for Obsidian. Source: src/main.ts. DocShelf: MIT. Bundled dependency licenses: THIRD_PARTY_NOTICES.txt. */' },
+  plugins: [{
+    name: 'third-party-notices',
+    setup(builder) {
+      builder.onEnd(async result => {
+        if (result.errors.length) return;
+        const notices = await createThirdPartyNotices(result.metafile, process.cwd());
+        await writeFile('THIRD_PARTY_NOTICES.txt', notices);
+      });
+    },
+  }],
 };
 
 if (process.argv.includes('--watch')) {

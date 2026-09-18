@@ -40,7 +40,8 @@ The plugin does not start or change the standalone server.
 After updating this repository, run `npm ci` and `npm run package:obsidian`
 from its root. Save or review pending Markdown edits, then disable DocShelf in
 the vault's Community plugins settings. Copy `main.js`, `manifest.json`,
-`styles.css`, and `LICENSE` from `packages/obsidian/dist/docshelf/` into the
+`styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt` from
+`packages/obsidian/dist/docshelf/` into the
 existing `<vault>/.obsidian/plugins/docshelf/` directory and re-enable the plugin.
 
 Keep the installed `data.json` and `recovery/` directory; do not replace or
@@ -336,5 +337,9 @@ browser and Obsidian links from the same shelf; see [shared setup and difference
 
 MIT. URL and line-range helpers are shared with the web app through
 `@docshelf/core`. The plugin bundle includes those helpers and its `LICENSE`.
+Bundled third-party dependencies retain their own licenses. Each build generates
+`THIRD_PARTY_NOTICES.txt` with their license and notice texts, and packaging
+includes it beside `main.js`. Keep both license files with the installed or
+redistributed plugin.
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.

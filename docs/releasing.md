@@ -88,10 +88,18 @@ history and needs a merge commit to retain that ancestry.
 ## Package the Obsidian plugin
 
 Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and
-copies `main.js`, `manifest.json`, `styles.css`, and `LICENSE` into
+copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and
+`THIRD_PARTY_NOTICES.txt` into
 `packages/obsidian/dist/docshelf/`, with installation instructions in
 `packages/obsidian/dist/INSTALL.txt`. These are generated outputs; do not commit
 them. Packaging does not install into a vault or publish a release.
+
+Each plugin build generates `THIRD_PARTY_NOTICES.txt` from esbuild's list of
+modules contributing to the bundle and their installed package license and
+notice files. This covers bundled transitive dependencies and separate versions
+of the same dependency. Host-provided externals are excluded. A missing or empty
+license file fails the build; review the affected package when dependencies
+change. Keep the generated notices with the distributed plugin.
 
 When preparing a plugin version, keep `packages/obsidian/package.json` and
 `packages/obsidian/manifest.json` in sync, refresh the root lockfile, and add the

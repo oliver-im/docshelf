@@ -20,6 +20,19 @@ earlier commits still show its original root layout. Neither app requires the
 other to be running. The packaged plugin bundles the shared helpers, so end users
 do not need this checkout or Node.js to run it in Obsidian.
 
+The import moved the plugin into its subdirectory inside a merge commit. Plain
+path-filtered history can hide earlier plugin commits, and `git log --follow`
+may show only later edits or nothing for an unchanged imported file. From the
+repository root, inspect both merge parents while following the rename:
+
+```sh
+git log -m --follow -- packages/obsidian/src/core/files.ts
+git blame packages/obsidian/src/core/files.ts
+```
+
+The original plugin commit IDs are preserved; its older paths are relative to
+the original repository root.
+
 ## Use one shelf
 
 Keep `shelf.local.json` at the web checkout root. Point Obsidian's **Shelf file**
@@ -94,6 +107,8 @@ entries and keep relative source paths anchored to the shelf directory.
 `@docshelf/core` owns GitHub and Claude URL validation, source-line fragments, and
 browser/Obsidian link construction. It has no filesystem, Electron, Obsidian,
 server, or DOM dependencies. Both apps consume the package through npm workspaces.
+The private consumers use `"@docshelf/core": "*"` so a core version bump keeps
+resolving to the workspace. Refresh the root lockfile after version changes.
 Keep one root lockfile. CI runs `test:all`, `check:all`, and `build:all`; the real
 Obsidian suite runs locally with a disposable profile and vault.
 Core's small generated type declarations are tracked so a fresh checkout can
