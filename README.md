@@ -143,6 +143,8 @@ pane's **…** menu to toggle **Reading view**, or **Source mode** while editing
 Turn Source mode off to return to Live Preview. These changes preserve the
 external document and its draft; no vault note is created. The toolbar keeps
 **Reveal source**, **Copy source reference**, and **Copy DocShelf link** visible.
+The gear beside **…** opens **Configure DocShelf**, including the readable line
+length preference.
 
 Clean editors refresh after external file changes. If a file changes while you
 have unsaved edits, DocShelf keeps your buffer and stops saving. **Review

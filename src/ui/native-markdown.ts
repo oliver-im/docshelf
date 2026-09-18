@@ -110,6 +110,7 @@ export class NativeMarkdownView extends MarkdownView {
     (this as this & { modeButtonEl?: HTMLElement }).modeButtonEl?.remove();
     this.contentEl.addClass('docshelf-native');
     this.saveStatusEl = this.contentEl.createDiv({ cls: 'docshelf-editor-status', attr: { role: 'status', 'aria-live': 'polite' } });
+    this.addAction('settings', 'Configure DocShelf', () => this.plugin.showSettings());
     this.addAction('link', 'Copy DocShelf link', () => { void this.copyLink(); });
     this.addAction('quote', 'Copy source reference', () => { void this.copyReference(); });
     this.addAction('folder-open', 'Reveal source', () => { if (this.artifact) void this.plugin.revealArtifact(this.artifact); });
