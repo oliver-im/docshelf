@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 export async function testNativeLines({ page, poll, workspace }) {
@@ -21,7 +21,8 @@ export async function testNativeLines({ page, poll, workspace }) {
   const expectReferenceMenu = async expected => {
     await page.getByText('Copy source reference', { exact: true }).waitFor();
     assert.equal(await reference(), expected, 'Right-click must preserve the source selection.');
-    assert.deepEqual(await page.locator('.menu-item-title').allTextContents(), ['Copy source reference', 'Copy DocShelf link', 'Clear selection']);
+    assert.deepEqual(await page.locator('.menu-item-title').allTextContents(), ['Copy source reference', 'Copy DocShelf link', 'Reveal source']);
+    assert.equal(await page.locator('.menu-separator').count(), 0, 'Line menus must have no dividers.');
   };
   const nativeMenus = await page.evaluate(() => {
     const value = app.vault.getConfig('nativeMenus');
@@ -35,6 +36,21 @@ export async function testNativeLines({ page, poll, workspace }) {
   });
   await line(7).waitFor();
   const before = await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].editor.listSelections());
+  await line(7).click();
+  assert.equal(await line(7).evaluate(button => getComputedStyle(button).backgroundColor), 'rgba(0, 0, 0, 0)', 'A hovered selected number must not add a second highlight.');
+  await line(7).click();
+  assert.equal(await reference(), undefined, 'Clicking the sole selected line again must clear it.');
+  await highlight.waitFor({ state: 'detached' });
+  assert.equal(await line(7).getAttribute('aria-pressed'), 'false');
+  assert.notEqual(await line(7).evaluate(button => getComputedStyle(button).backgroundColor), 'rgba(0, 0, 0, 0)', 'Unselected numbers must retain hover feedback.');
+  await line(7).click();
+  await line(7).click({ modifiers: ['Shift'] });
+  assert.equal(await reference(), '7-7', 'Shift-clicking the selection must not toggle it off.');
+  await line(9).click({ modifiers: ['Shift'] });
+  await line(8).click();
+  assert.equal(await reference(), '8-8', 'Clicking within a larger range must select only that line.');
+  await line(8).click();
+  assert.equal(await reference(), undefined);
   await line(7).click();
   await line(9).click({ modifiers: ['Shift'] });
   assert.equal(await reference(), '7-9');
@@ -63,6 +79,38 @@ export async function testNativeLines({ page, poll, workspace }) {
   await page.getByText('Copy DocShelf link', { exact: true }).click();
   assert.equal(new URL(await page.evaluate(() => require('electron').clipboard.readText())).searchParams.get('lines'), '7-9');
 
+  // Exercise the actual reveal path without opening Finder from the test vault.
+  await page.evaluate(() => {
+    const shell = require('electron').shell;
+    window.docshelfRevealProbe = { original: shell.showItemInFolder, paths: [] };
+    shell.showItemInFolder = file => window.docshelfRevealProbe.paths.push(file);
+  });
+  try {
+    for (const [index, number] of [7, 10, 10].entries()) {
+      if (index === 2) await clear();
+      const expected = index === 2 ? undefined : '7-9';
+      await line(number).click({ button: 'right' });
+      await expectReferenceMenu(expected);
+      const copiedRange = number === 7 ? '7-9' : '10';
+      await page.locator('.menu').getByText('Copy source reference', { exact: true }).click();
+      assert.equal(await page.evaluate(() => require('electron').clipboard.readText()), `${file}:${copiedRange}`);
+      await line(number).click({ button: 'right' });
+      await page.locator('.menu').getByText('Copy DocShelf link', { exact: true }).click();
+      assert.equal(new URL(await page.evaluate(() => require('electron').clipboard.readText())).searchParams.get('lines'), copiedRange);
+      await line(number).click({ button: 'right' });
+      await expectReferenceMenu(expected);
+      assert.deepEqual(await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].editor.listSelections()), before);
+      await page.locator('.menu').getByText('Reveal source', { exact: true }).click();
+      await poll(() => page.evaluate(count => window.docshelfRevealProbe.paths.length === count, index + 1), 'Reveal source did not reach the system file manager.');
+      assert.equal(await page.evaluate(() => window.docshelfRevealProbe.paths.at(-1)), await realpath(file));
+      assert.equal(await reference(), expected);
+    }
+  } finally {
+    await page.evaluate(() => { require('electron').shell.showItemInFolder = window.docshelfRevealProbe.original; delete window.docshelfRevealProbe; });
+  }
+  await line(7).click();
+  await line(9).click({ modifiers: ['Shift'] });
+
   // Inserting a line above the reference moves its source positions with it.
   await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].editor.replaceRange('\n', { line: 0, ch: 0 }));
   assert.equal(await reference(), '8-10');
@@ -75,6 +123,11 @@ export async function testNativeLines({ page, poll, workspace }) {
   await page.keyboard.press('Space');
   assert.equal(await reference(), '7-7');
   assert.equal(await line(7).evaluate(el => el === document.activeElement), true, 'Selecting a source line must preserve keyboard focus.');
+  await page.keyboard.press('Space');
+  assert.equal(await reference(), undefined, 'Keyboard activation must toggle the selection too.');
+  assert.equal(await line(7).evaluate(el => el === document.activeElement), true, 'Clearing a source line must preserve keyboard focus.');
+  await page.keyboard.press('Enter');
+  assert.equal(await reference(), '7-7');
   await page.keyboard.press('Shift+ArrowDown');
   assert.equal(await reference(), '7-8');
   await page.keyboard.press('Escape');
@@ -97,7 +150,7 @@ export async function testNativeLines({ page, poll, workspace }) {
     for (const width of [1180, 600]) {
       await page.setViewportSize({ width, height: 860 });
       await page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews()[0].editor.scrollIntoView({ from: { line: 10, ch: 0 }, to: { line: 10, ch: 0 } }, true));
-      await line(11).click();
+      await line(11).click({ modifiers: ['Shift'] });
       await poll(async () => {
         const padding = await headingPadding();
         return padding.above > 0 && padding.above <= 4.1 && Math.abs(padding.above - padding.below) < 1;
@@ -110,7 +163,7 @@ export async function testNativeLines({ page, poll, workspace }) {
   }
   await page.setViewportSize(viewport);
   await page.evaluate(value => { app.vault.setConfig('readableLineLength', value); app.workspace.updateOptions(); }, readable);
-  await line(11).click();
+  await line(11).click({ modifiers: ['Shift'] });
   await poll(async () => Math.abs((await headingPadding()).above - 4) < 1, 'The heading highlight did not settle after resizing.');
   const headingBand = await highlight.boundingBox();
   await page.mouse.click(headingBand.x + headingBand.width - 3, headingBand.y + headingBand.height - 1, { button: 'right' });
@@ -130,8 +183,19 @@ export async function testNativeLines({ page, poll, workspace }) {
     editor.scrollIntoView({ from: { line: 16, ch: 0 }, to: { line: 19, ch: 0 } }, true);
   });
   await poll(async () => (await line(17).getAttribute('data-end')) === '20', 'The rendered table did not expose its true source range.');
+  await line(17).click({ button: 'right' });
+  await expectReferenceMenu(undefined);
+  await page.locator('.menu').getByText('Copy DocShelf link', { exact: true }).click();
+  assert.equal(new URL(await page.evaluate(() => require('electron').clipboard.readText())).searchParams.get('lines'), '17-20');
+  assert.equal(await reference(), undefined, 'Copying an unselected block must not create a highlight.');
   await line(17).click();
   assert.equal(await reference(), '17-20');
+  await line(17).click({ modifiers: ['Shift'] });
+  assert.equal(await reference(), '17-20');
+  await line(17).click();
+  assert.equal(await reference(), undefined, 'Clicking the sole selected block again must clear its whole range.');
+  await highlight.waitFor({ state: 'detached' });
+  await line(17).click();
   await page.evaluate(() => app.commands.executeCommandById('docshelf:copy-reference'));
   assert.match(await page.evaluate(() => require('electron').clipboard.readText()), /guide\.md:17-20$/);
   const table = page.locator('.docshelf-native table');
@@ -159,7 +223,8 @@ export async function testNativeLines({ page, poll, workspace }) {
   const tableBox = await table.boundingBox();
   await page.mouse.click(tableBox.x - 10, tableBox.y + 10, { button: 'right' });
   await expectReferenceMenu('15-20');
-  await page.locator('.menu').getByText('Clear selection', { exact: true }).click();
+  await page.keyboard.press('Escape');
+  await clear();
   await highlight.waitFor({ state: 'detached' });
   assert.equal(await reference(), undefined);
 
@@ -201,7 +266,8 @@ export async function testNativeLines({ page, poll, workspace }) {
   assert.equal(await reference(), '19-19');
   await page.locator('.docshelf-native .cm-line').filter({ hasText: '| Preserve original files | Ready |' }).click({ button: 'right' });
   await expectReferenceMenu('19-19');
-  await page.locator('.menu').getByText('Clear selection', { exact: true }).click();
+  await page.keyboard.press('Escape');
+  await clear();
   await page.evaluate(async () => {
     const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
     await view.setState({ ...view.getState(), source: false }, {});

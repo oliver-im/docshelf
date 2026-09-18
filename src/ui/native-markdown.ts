@@ -102,7 +102,7 @@ export class NativeMarkdownView extends MarkdownView {
       }
     }, true);
     this.registerDomEvent(this.contentEl, 'contextmenu', event => {
-      if (!this.showReferenceMenu(event)) this.showMarginMenu(event);
+      if (!this.showReferenceMenu(event)) this.suppressMarginMenu(event);
     }, true);
     this.scope?.register(['Mod'], 'Enter', () => {
       const cursor = this.editor.getCursor();
@@ -122,33 +122,23 @@ export class NativeMarkdownView extends MarkdownView {
     const range = sourceReferenceAt(this, event);
     if (!range) return false;
     event.preventDefault(); event.stopPropagation();
-    new Menu()
+    const menu = new Menu()
       .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
       .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
-      .addSeparator()
-      .addItem(item => item.setTitle('Clear selection').setIcon('x').onClick(() => setSourceReference(this, null)))
-      .showAtMouseEvent(event);
+      .addItem(item => item.setTitle('Reveal source').setIcon('folder-open').onClick(() => {
+        if (this.artifact) void this.plugin.revealArtifact(this.artifact);
+      }));
+    menu.showAtMouseEvent(event);
     return true;
   }
 
-  private showMarginMenu(event: MouseEvent): void {
+  private suppressMarginMenu(event: MouseEvent): void {
     const target = event.target as HTMLElement | null;
     if (event.defaultPrevented || !target || (!target.matches('.cm-scroller, .cm-sizer, .cm-contentContainer, .markdown-preview-view') && !target.closest('.cm-gutters'))) return;
     event.preventDefault();
     event.stopPropagation();
-    // The host's margin menu changes vault-wide display preferences. Keep
-    // that behavior, but omit its controls for the hidden native gutter/title.
-    // These native configuration methods are not declared in the public types.
-    const preferences = this.app.vault as typeof this.app.vault & {
-      getConfig(key: 'readableLineLength'): boolean;
-      setConfig(key: 'readableLineLength', value: boolean): void;
-    };
-    new Menu().addItem(item => item
-      .setTitle('Readable line length')
-      .setIcon('ruler')
-      .setChecked(preferences.getConfig('readableLineLength'))
-      .onClick(() => preferences.setConfig('readableLineLength', !preferences.getConfig('readableLineLength'))))
-      .showAtMouseEvent(event);
+    // Display preferences live in configuration. The host's margin menu also
+    // offers line-number/title controls that do not apply to DocShelf views.
   }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {

@@ -317,6 +317,17 @@ try {
       if (await candidate.getByText('Configure DocShelf', { exact: true }).isVisible()) return candidate;
     }
   }, 'The configure command did not open the configuration dialog.');
+  const readableBefore = await page.evaluate(() => app.vault.getConfig('readableLineLength'));
+  const widthToggle = configurationPage.locator('.setting-item').filter({ hasText: 'Readable line length' }).locator('.checkbox-container');
+  assert.equal(await widthToggle.evaluate(el => el.classList.contains('is-enabled')), readableBefore);
+  await widthToggle.click();
+  await page.waitForFunction(value => app.vault.getConfig('readableLineLength') === value, !readableBefore);
+  await configurationPage.keyboard.press('Escape');
+  await page.evaluate(() => app.commands.executeCommandById('docshelf:configure'));
+  await widthToggle.waitFor();
+  assert.equal(await widthToggle.evaluate(el => el.classList.contains('is-enabled')), !readableBefore, 'Display preferences must apply without Save and reload and survive reopening configuration.');
+  await widthToggle.click();
+  await page.waitForFunction(value => app.vault.getConfig('readableLineLength') === value, readableBefore);
   await configurationPage.keyboard.press('Escape');
   console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
   await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });

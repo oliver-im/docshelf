@@ -23,6 +23,10 @@ Open **DocShelf: Configure shelf** from the command palette. Set **Shelf file**
 to a shelf JSON file. For a working example, select this checkout's
 `examples/shelf.json`. Open the DocShelf ribbon icon or **DocShelf: Open shelf**.
 
+Under **Display**, **Readable line length** limits the text column's width.
+It applies immediately and shares Obsidian's vault-wide preference, so it also
+affects ordinary Markdown notes. It is also available in **Settings → DocShelf**.
+
 An existing standalone DocShelf `shelf.local.json` can be used in place: its
 relative source paths continue to resolve against its containing directory.
 The plugin does not start or change the standalone server.
@@ -110,16 +114,20 @@ links; later edits may move the passage. Out-of-bounds ranges are reported.
 Rendered tables show their actual source range, such as
 **17–20**, in the gutter. Clicking it references that whole block. Wrapped text
 keeps its original source-line number. Source mode exposes individual table rows
-and frontmatter lines. Use **Clear selection** or **Escape** to
-clear a gutter reference. Gutter buttons also support Space/Enter and arrow-key
+and frontmatter lines. Click the same number or block again to clear it when
+it is the entire selection; clicking within a larger selection selects just
+that line or block. Shift-click continues extending the range. You can also use
+**Clear selection** or **Escape**. Gutter buttons support Space/Enter and arrow-key
 navigation, with Shift-arrow extending the range. References track source
 positions as you edit and are saved with the pane's workspace state.
 
 Selected source ranges form one continuous highlight, including rendered blocks
-and intervening whitespace. Right-click anywhere inside it to **Copy source
-reference**, **Copy DocShelf link**, or **Clear selection**. Opening this menu
-keeps the selected range and editing cursor in place; left-click text to resume
-editing normally.
+and intervening whitespace. Right-click inside it or on any line number for the
+same menu: **Copy source reference**, **Copy DocShelf link**, and **Reveal source**.
+Copy actions use the highlighted range when clicked inside it, or the clicked
+line/block otherwise. The highlight and editing cursor stay in place.
+**Reveal source** shows the original file in your system file manager.
+Left-click text to resume editing normally.
 
 ## Edit local Markdown
 

@@ -93,7 +93,7 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 .docshelf-native .docshelf-source-gutter .docshelf-source-label { display: block; padding: 0 2px; font: 11px var(--font-monospace); line-height: inherit; white-space: nowrap; }
 .docshelf-native button.docshelf-source-control { width: 100%; height: auto; min-height: 0; color: var(--text-faint); background: transparent; border: 0; border-radius: var(--radius-s); box-shadow: none; text-align: right; cursor: pointer; }
 .docshelf-native button.docshelf-source-control:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
-.docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); }
+.docshelf-native button.docshelf-source-control[aria-pressed="true"] { color: var(--text-accent); background: transparent; }
 /* Tint above rendered blocks so opaque table/code backgrounds cannot break
    the selection into pieces. Pointer events still reach the native editor. */
 .docshelf-native .docshelf-source-layer { pointer-events: none; }

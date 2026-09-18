@@ -49,14 +49,17 @@ export function sourceReference(owner: object): LineRange | null {
   return view ? rangeIn(view.state) : null;
 }
 
-/** Use the painted selection as the hit area, including its whitespace. */
+/** Reference the highlighted range or an unselected gutter control without
+ * changing the current selection. Include the highlight's whitespace. */
 export function sourceReferenceAt(owner: object, event: MouseEvent): LineRange | null {
   const view = editors.get(owner);
   if (!view || !view.scrollDOM.contains(event.target as Node)) return null;
   const range = rangeIn(view.state);
-  if (!range) return null;
   // A keyboard context-menu request may not supply pointer coordinates.
-  if ((event.target as Element).closest('.docshelf-source-control[aria-pressed="true"]')) return range;
+  const button = (event.target as Element).closest<HTMLButtonElement>('.docshelf-source-control');
+  if (button) return range && button.getAttribute('aria-pressed') === 'true'
+    ? range : { start: Number(button.dataset.start), end: Number(button.dataset.end) };
+  if (!range) return null;
   const highlight = view.scrollDOM.querySelector<HTMLElement>('.docshelf-source-highlight');
   if (!highlight) return null;
   const box = highlight.getBoundingClientRect(), pane = view.scrollDOM.getBoundingClientRect();
@@ -74,9 +77,11 @@ export function setSourceReference(owner: object, range: LineRange | null): void
 function select(view: EditorView, start: number, end: number, extend: boolean): void {
   const span = { from: view.state.doc.line(start).from, to: view.state.doc.line(end).to };
   const previous = view.state.field(references);
+  const range = rangeIn(view.state);
+  const toggleOff = !extend && range?.start === start && range.end === end;
   const focused = view.dom.ownerDocument.activeElement;
   const restoreFocus = focused?.matches('.docshelf-source-control');
-  view.dispatch({ effects: setReference.of({ anchor: extend && previous ? previous.anchor : span, head: span }) });
+  view.dispatch({ effects: setReference.of(toggleOff ? null : { anchor: extend && previous ? previous.anchor : span, head: span }) });
   if (restoreFocus) view.scrollDOM.querySelector<HTMLButtonElement>(`.docshelf-source-gutter button[data-start="${start}"]`)?.focus();
 }
 

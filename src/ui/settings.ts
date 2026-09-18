@@ -19,6 +19,17 @@ function fields(container: HTMLElement, plugin: DocShelfPlugin, close?: () => vo
     } catch (error) { new Notice(String(error)); }
     finally { button.setDisabled(false); }
   }));
+
+  // Use Obsidian's existing preference so its editor settings and DocShelf
+  // always agree. These native methods are not declared in the public types.
+  const preferences = plugin.app.vault as typeof plugin.app.vault & {
+    getConfig(key: 'readableLineLength'): boolean;
+    setConfig(key: 'readableLineLength', value: boolean): void;
+  };
+  new Setting(container).setName('Display').setHeading();
+  new Setting(container).setName('Readable line length')
+    .setDesc('Limit the text column to a comfortable reading width. Applies immediately and also affects ordinary Markdown notes in this vault.')
+    .addToggle(toggle => toggle.setValue(preferences.getConfig('readableLineLength')).onChange(value => preferences.setConfig('readableLineLength', value)));
 }
 
 export class ShelfSettingsTab extends PluginSettingTab {
