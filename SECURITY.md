@@ -18,12 +18,19 @@ not your own while investigating.
 
 ## Security boundaries
 
+The browser and Obsidian plugin share URL helpers and can share registrations,
+but use different rendering and file-access boundaries.
+
+### Browser app and local server
+
 - Registered local HTML is trusted content. It may execute scripts with the same
   origin and permissions as DocShelf. Registering malicious HTML is outside the
   security model unless it bypasses a documented containment boundary.
 - Local sources must remain within the workspace root, the parent directory of
   DocShelf unless `DOCSHELF_WORKSPACE` names another directory, or within the
-  DocShelf checkout itself. DocShelf must never modify those sources.
+  DocShelf checkout itself. The web app must never modify those sources.
+  Snapshot reads and revision checks revalidate the registered path, canonical
+  target, containment, and opened file identity, including after symlink changes.
 - Browser-imported Markdown is limited to public HTTPS `.md` and `.markdown`
   file URLs on `github.com` and `raw.githubusercontent.com`. DocShelf fetches
   the raw file without credentials, enforces a 2 MB limit, omits raw HTML,
@@ -52,3 +59,46 @@ not your own while investigating.
   Setting `DOCSHELF_HOST` to a non-loopback interface deliberately exposes the
   shelf to that network and does not add authentication or transport
   encryption.
+
+### Obsidian desktop plugin
+
+- Local sources and listed assets must resolve within the configured
+  **Workspace root** or the shelf file's directory. The workspace defaults to
+  the parent of the shelf directory; the plugin does not read the web app's
+  `DOCSHELF_WORKSPACE`. Reads recheck canonical containment and enforce size
+  limits. Only registered documents and explicitly listed assets are served.
+- Local Markdown opens in Obsidian's native editor and saves to the original.
+  Before writing, the plugin persists recovery and rechecks registration,
+  canonical target, file identity, and baseline contents. It does not recreate
+  a deleted source or overwrite a detected conflict without review. Recovery
+  reduces data-loss risk; the checks are not an atomic lock against other
+  applications writing at exactly the same time.
+- Recovery records contain private baseline and draft text under the installed
+  plugin's `recovery/` directory. They remain until removed by the user and must
+  not be published. HTML, remote documents, and assets are read-only. The plugin
+  also stores settings and can create an empty shelf at the user's request.
+- Local HTML runs in a sandboxed webview with Node disabled and a nonpersistent
+  session separate from Obsidian. Changing the report's route or source identity
+  creates a new partition; same-report reloads keep their browser storage.
+  Reports load through a `127.0.0.1` server with strict Host checks,
+  document-specific read tokens, a file allowlist, and CSP. Navigation links do
+  not disclose another report's read token. The server accepts only GET/HEAD,
+  exposes no write API, and shuts down on plugin unload.
+- Reports can run scripts and contact HTTPS services. **Run HTML scripts**
+  disables script execution but does not prevent remote images or styles from
+  loading. Reports receive no privileged plugin bridge; external HTTP(S) links
+  open in the system browser. Renderer isolation is covered by the disposable
+  Obsidian runtime suite; current verification covers Obsidian 1.13.7 on macOS.
+- Public GitHub Markdown is registered in the shelf, downloaded without
+  authentication under a streaming 2 MB limit, stripped of raw HTML, and
+  sanitized. It is cached in memory and becomes searchable after fetching.
+  Images and links can contact remote sites. Exact published Claude Artifact
+  URLs open as top-level remote pages in a separate webview, without requiring
+  the browser embed's allowed-domain setup. Arbitrary remote HTML is rejected.
+- `obsidian://docshelf` links look up existing registrations; they cannot
+  register or open arbitrary paths. Local links and source references include
+  absolute filesystem paths. External documents do not join vault indexing,
+  backlinks, graph, or Obsidian Sync.
+
+See the [plugin architecture](packages/obsidian/docs/architecture.md) for the
+HTML isolation and Markdown recovery implementation.

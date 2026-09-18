@@ -1,5 +1,11 @@
 # Using DocShelf
 
+This guide covers the browser viewer. For native Markdown editing, recovery,
+and desktop document links, use the
+[Obsidian plugin guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md).
+The apps can [share one shelf](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md),
+but browser imports stay in browser storage.
+
 See the [README](https://github.com/oliver-im/docshelf/blob/main/README.md) for installation and local source registration.
 
 ## Browser imports
@@ -16,7 +22,9 @@ directly in the browser, omits raw HTML, sanitizes the result, and renders it
 with the DocShelf Markdown theme. Relative images resolve from the raw file's
 directory, while relative links from a GitHub file-view URL point back into the
 same repository. General GitHub pages and arbitrary remote hosts are rejected.
-Private repositories and authenticated requests are not supported.
+Downloads are limited to 2 MB. Private repositories and authenticated requests
+are not supported. GitHub URLs cannot be registered in the web shelf JSON;
+that registration type is currently supported only by Obsidian.
 
 Imported Markdown is fetched again after a page reload. It is not copied into
 the built site, available offline, or included in full-text search. It retains
@@ -44,8 +52,9 @@ DocShelf accepts only exact HTTPS links of the form
 too). It embeds Claude's dedicated cross-origin `/embed` page; a Claude chat,
 home page, or other arbitrary URL is rejected. The Artifact owner must use
 Claude's **Get embed code** settings to add the complete DocShelf origin—such
-as `https://oliver-im.github.io` or `http://shelf.localhost:4321`—to **Allowed
-domains**. See Claude's
+as `https://shelf.localhost` after normal macOS setup,
+`http://shelf.localhost:4321` in direct mode, or `https://oliver-im.github.io`
+for the hosted demo—to **Allowed domains**. See Claude's
 [publishing and sharing instructions](https://support.claude.com/en/articles/9547008-publish-and-share-artifacts).
 
 Claude remains the content host. These entries are therefore not copied into
@@ -139,3 +148,7 @@ DocShelf does not serve surrounding project directories. Relative image paths
 that point into DocShelf's own `public/` directory use the bundled asset, with
 the deployment's URL prefix applied. This lets the README's screenshot work in
 both a local shelf and the Pages demo.
+
+Obsidian's per-document `assets` list does not change this browser boundary.
+Links to unregistered neighboring Markdown or HTML are not published either;
+register the destination or use its public URL.

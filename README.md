@@ -11,9 +11,9 @@ browser and in Obsidian. Both can use one shelf while files stay in their projec
 
 While it is very common to have agent generated markdown or html reports, how to store and view them is surprisingly scattered. A common method is to store it in user space path such as `~/.codex`, but this makes it hard to discover. Another common way is to put them in one pre-defined path, but agents are currently bad at indexing and parsing symlink files. The most common way is to just store them in the repo that contains the context for the report, but this makes it scattered across projects.
 
-DocShelf solves this with one shelf: a JSON file that maps the locations of your documents. It adds [full-text search through Starlight and Pagefind](https://starlight.astro.build/guides/site-search/) for registered local documents and a Markdown reading theme adapted from [Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight). It also comes with a lightweight skill, so you can tell your agent to "add it to DocShelf". Public GitHub Markdown files and published Claude Artifacts can be added as remote links, too. Browser imports and Obsidian registrations have [different storage and rendering limits](docs/unification.md).
+DocShelf solves this with one shelf: a JSON file that maps the locations of your documents. It adds [full-text search through Starlight and Pagefind](https://starlight.astro.build/guides/site-search/) for registered local documents and a Markdown reading theme adapted from [Tokyo Night for Obsidian](https://github.com/tcmmichaelb139/obsidian-tokyonight). It also comes with a lightweight skill, so you can tell your agent to "add it to DocShelf". Public GitHub Markdown files and published Claude Artifacts can be added as remote links, too. Browser imports and Obsidian registrations have [different storage and rendering limits](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
 
-The browser viewer works without opening Obsidian. The [Obsidian plugin](packages/obsidian/README.md)
+The browser viewer works without opening Obsidian. The [Obsidian plugin](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md)
 adds native Markdown editing, saving to the original file with conflict checks
 and recovery. HTML and remote documents remain read-only in the plugin.
 
@@ -69,10 +69,10 @@ Copy `packages/obsidian/dist/docshelf/` into `<vault>/.obsidian/plugins/docshelf
 and enable it in Community plugins. In **DocShelf: Configure shelf**, set
 **Shelf file** to the absolute path of this checkout's `shelf.local.json`.
 If you customized the web workspace, set the plugin's **Workspace root** to the
-same absolute directory. See the [plugin guide](packages/obsidian/README.md) for
+same absolute directory. See the [plugin guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md) for
 editing, recovery, and supported Obsidian versions.
 
-To print links for a registered document and optional source range:
+To print links for a registered document, with an optional source range for Markdown:
 
 ```sh
 npm run links -- example-project/overview.html --site https://shelf.localhost/ --vault "My vault" --lines 7-11
@@ -102,6 +102,11 @@ Edit the `artifacts` array in your ignored `shelf.local.json`. Keep the README e
 
 The web app creates generated HTML snapshots and never edits the original files. The Obsidian editor saves local Markdown edits to the original. Links between registered sources are rewritten only in the generated output. It does not crawl or serve unregistered neighboring files, including images. The tracked `shelf.json` stays an empty template; your registrations belong in `shelf.local.json`.
 
+Obsidian can load neighboring images and other files listed in a document's
+optional `assets` array. The browser ignores that array and serves only its
+bundled public assets. Public GitHub Markdown registrations and absolute source
+paths are Obsidian-only; keep them out of a shelf shared with the browser.
+
 To register a published Claude Artifact in the shelf, see [supported links and embed setup](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#published-claude-artifacts).
 
 ## Read and navigate
@@ -126,15 +131,21 @@ After creating a report or note, ask your agent to **“add this to DocShelf.”
 
 ## Content boundaries
 
+The browser viewer uses these storage and rendering rules:
+
 | Source | Stored content | Full-text search | Requirements |
 | --- | --- | --- | --- |
-| Registered local HTML or Markdown | Generated local snapshot; original stays in its project | Yes | File inside the workspace |
+| Registered local HTML or Markdown | Generated local snapshot; original stays in its project | Yes | File inside the workspace or checkout |
 | Browser-imported GitHub Markdown | Source link in browser storage; fetched again on reload | No | Public HTTPS `.md` or `.markdown` file |
 | Published Claude Artifact | Claude-hosted cross-origin embed | No | Exact published Artifact URL and DocShelf origin allowed by its owner |
 
 Browser-import bookmarks depend on that browser's saved source link. Sharing the bookmark alone does not transfer the import to another visitor. Private GitHub repositories, arbitrary remote pages, and offline remote imports are not supported.
 
 Register only local HTML you trust: it can run scripts with DocShelf's origin. GitHub Markdown is sanitized, but its images and links can contact remote sites. Keep the server's default loopback binding unless you intend to expose your registered documents to the network. See the [security policy](https://github.com/oliver-im/docshelf/blob/main/SECURITY.md).
+
+Obsidian uses a separate HTML viewer and can edit local Markdown. Its
+[file access and network disclosure](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#file-access-and-network-disclosure)
+describes report isolation, recovery files, and remote connections.
 
 ## Running, developing, and releasing
 
@@ -150,7 +161,7 @@ search and automatic source updates. Root `test`, `check`, and `build` commands
 still target the web app. Run `npm run test:all`, `npm run check:all`, and
 `npm run build:all` to verify the whole repository. With desktop Obsidian installed,
 run `npm run test:obsidian --workspace obsidian-docshelf` for the disposable runtime
-suite. See [the consolidation boundary and next steps](docs/unification.md).
+suite. See [the consolidation boundary and next steps](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
 
 ## License
 

@@ -52,14 +52,42 @@ neutral scheme needs an installed dispatcher and an explicit host preference.
 | Public GitHub Markdown | Browser import stored in that origin's browser storage | Explicit shelf registration, fetched read-only |
 | Published Claude Artifact | Cross-origin embed; requires allowed-domain setup | Top-level isolated webview |
 | Neighboring assets | Only assets already published under the web app's `public/` directory | Explicit per-document `assets` registration |
-| Search | Pagefind over built local documents | Plugin index over supported registered documents |
-| Ordering and preferences | Browser storage | Plugin data in the vault |
+| Search | Pagefind over built local documents; no remote full-text search | Metadata and local contents; GitHub contents after opening and fetching |
+| Ordering and preferences | Browser storage | Shelf ordering and collapse state in the Obsidian workspace; settings in plugin data |
 
 For a shelf used by both apps, register local Markdown/HTML or published Claude
 Artifacts, use relative source paths, and keep the web-compatible lowercase route
 shape. Public GitHub shelf entries and absolute sources remain Obsidian-only.
 Do not add them to a shared shelf: the web loader rejects them. Registering an
 asset for Obsidian does not publish it in the browser.
+
+Both apps accept `.md`, `.markdown`, `.html`, and `.htm` local sources. Obsidian
+also enforces limits of 2,000 documents, 2 MB of shelf JSON, 8 MB per local
+document, and 500 explicitly listed assets per document, each at most 16 MB.
+A shared shelf must satisfy both apps' validation rules. See the
+[plugin registration guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#register-documents)
+for asset paths and supported types.
+
+The initial README entry works in both apps. To display its screenshots in
+Obsidian too, add `"assets": ["public/docshelf-overview.png",
+"public/docshelf-line-range.png"]` to that entry. Browser image rendering
+already uses those bundled public files.
+
+## Update existing installations
+
+Keep using the web checkout at its installed path. After pulling the unified
+repository, run `npm ci` there to install all workspaces. Follow the
+[web upgrade procedure](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md#updating-an-existing-installation)
+to restart its watcher or login service. A separate checkout does not inherit
+the ignored shelf, installed service, or browser origin from the existing one.
+
+Build the plugin with `npm run package:obsidian` from that same repository root,
+then follow the
+[plugin update procedure](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#update-an-existing-plugin).
+Installing the web dependencies does not replace a plugin already in a vault.
+Keep the vault's plugin settings and recovery files. Repointing **Shelf file**
+is only needed when you choose to share a different shelf; preserve its existing
+entries and keep relative source paths anchored to the shelf directory.
 
 ## Development boundary
 

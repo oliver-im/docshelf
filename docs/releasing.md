@@ -1,9 +1,13 @@
 # Releasing DocShelf
 
-DocShelf uses Git tags and GitHub Releases for distribution. It is a clone-and-run
-application; `private: true` in `package.json` prevents accidental npm publication.
-The planned first announced version is **0.1.0**. The package stays at its current
-version until a release preparation branch is created.
+The browser app uses Git tags and GitHub Releases for clone-and-run distribution.
+The Obsidian plugin is built separately as an installable folder. The root and
+workspace packages are private to prevent accidental npm publication.
+
+The planned first announced web version is **0.1.0**; the root package is still
+`0.0.1` until release preparation. The plugin's package and manifest are already
+`0.1.0`, and its minimum Obsidian version is `1.13.7`. Moving both apps into one
+repository does not synchronize their versions or publish either one.
 
 ## Versioning and cadence
 
@@ -16,8 +20,9 @@ Use `0.MINOR.PATCH` during early development:
 - Revisit `1.0.0` after outside users have exercised installation and upgrades
   and the compatibility commitments are ready to be treated as stable.
 
-Treat the shelf JSON format, registered routes and viewer permalink syntax,
-browser import storage, and documented commands as compatibility surfaces.
+Treat the shelf JSON format, registered routes, browser and Obsidian permalink
+syntax, browser import storage, plugin settings and recovery records, and
+documented commands as compatibility surfaces.
 Do not silently discard shelf entries or browser imports. Document migrations
 and how users can preserve their data when changing these surfaces. Source
 authors control their own headings and line numbers, so editing a document can
@@ -36,7 +41,10 @@ Before dispatching a release:
 2. Write `docs/releases/vX.Y.Z.md`: the user-facing changes, limitations, migration
    steps, and upgrade instructions. The workflow prepends this text to generated
    GitHub release notes when the file exists.
-3. Run `npm test`, `npm run check`, and `npm run build` on the intended source.
+3. Run `npm run test:all`, `npm run check:all`, and `npm run build:all` from the
+   repository root. For plugin changes, also run
+   `npm run test:obsidian --workspace obsidian-docshelf` after building and check
+   `npm run package:obsidian` produces the expected installable files.
 4. Smoke-test a fresh install, an existing shelf after a watcher restart, search,
    a heading link, a line-range link, and a supported browser import. Verify the
    import still loads after reloading that same site origin.
@@ -49,7 +57,8 @@ Their presence does not mean that release has been published.
 
 ## Prepare and publish the release
 
-These commands change the public repository. Run them when ready to publish.
+The workflow below publishes the web app. These commands change the public
+repository; run them when ready to publish.
 
 ```sh
 gh workflow run release.yml -f version=0.1.0
@@ -69,6 +78,31 @@ if it resolves to that commit. A mismatch fails without moving the tag.
 The GitHub Release command uses `--verify-tag`, so it cannot silently create a
 missing tag from the default branch. See the
 [GitHub CLI release documentation](https://cli.github.com/manual/gh_release_create).
+
+The release workflow verifies the web app; pull-request CI runs the aggregate
+workspace checks. It does not bump the plugin or shared-core versions, build a
+plugin distribution, or upload plugin assets. Squash-merging here applies to the
+version-only release branch. The consolidation branch imported the plugin's full
+history and needs a merge commit to retain that ancestry.
+
+## Package the Obsidian plugin
+
+Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and
+copies `main.js`, `manifest.json`, `styles.css`, and `LICENSE` into
+`packages/obsidian/dist/docshelf/`, with installation instructions in
+`packages/obsidian/dist/INSTALL.txt`. These are generated outputs; do not commit
+them. Packaging does not install into a vault or publish a release.
+
+When preparing a plugin version, keep `packages/obsidian/package.json` and
+`packages/obsidian/manifest.json` in sync, refresh the root lockfile, and add the
+version's minimum Obsidian requirement to `packages/obsidian/versions.json`.
+Verify installation and an upgrade that preserves `data.json`, `recovery/`, and
+the configured shelf. See the
+[plugin update instructions](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#update-an-existing-plugin).
+
+There is no plugin publishing workflow or community-directory submission in
+this repository yet. A web GitHub Release contains source archives, not an
+automatically attached installable plugin.
 
 ## Verify the published result
 
@@ -93,7 +127,7 @@ force-moving them.
 ## Announcement preparation
 
 Suggested repository description:
-**A searchable shelf for HTML reports, Markdown notes, and published artifacts.**
+**A shared shelf for Markdown and HTML across the browser and Obsidian.**
 
 Suggested repository homepage: **https://oliver-im.github.io/docshelf/**.
 Set these when preparing the public announcement. Also consider enabling GitHub
@@ -101,8 +135,9 @@ private vulnerability reporting so the preferred route in `SECURITY.md` is usabl
 
 Use a screenshot containing only deliberately public sample documents. Show
 document switching, a search result, and a precise line link. Keep the claims
-accurate: full-text search covers registered local documents; remote imports
-depend on their host and the current browser's saved links.
+accurate: browser full-text search covers registered local documents, and browser
+imports depend on their host and that browser's saved links. Obsidian also indexes
+registered GitHub Markdown after it has been fetched; Claude content is not indexed.
 
 The README includes an [overview screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
 and a [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).

@@ -24,6 +24,10 @@ indexing without a deliberate scope change.
   accepted remote sources. Preserve size limits and Markdown sanitization.
 - URI parameters use `vault` and `source`; `path` is reserved by Obsidian routing.
 - Use Obsidian theme variables and accessible native controls.
-- Before handing off changes run `npm test`, `npm run check`, `npm run build`.
-  Use `npm run test:obsidian` for runtime behavior when Obsidian is available.
-  Runtime tests use a disposable profile and vault, never the user's vault.
+- Install dependencies with `npm ci` at the repository root; keep only the root
+  lockfile. Run `npm run test:all`, `npm run check:all`, and `npm run build:all`
+  there before handing off changes. To target the plugin from the root, add
+  `--workspace obsidian-docshelf` to its npm commands.
+- After building, use `npm run test:obsidian --workspace obsidian-docshelf` from
+  the root for runtime behavior when Obsidian is available. Runtime tests use a
+  disposable profile and vault, never the user's vault.

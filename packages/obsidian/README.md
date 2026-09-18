@@ -22,7 +22,10 @@ Copy `packages/obsidian/dist/docshelf/` to `<vault>/.obsidian/plugins/docshelf/`
 yet listed in the community directory.
 
 Open **DocShelf: Configure shelf** from the command palette. Set **Shelf file**
-to a shelf JSON file. For a working example, select `packages/obsidian/examples/shelf.json`. Open the DocShelf ribbon icon or **DocShelf: Open shelf**.
+to a shelf JSON file using its absolute path, or a path relative to the vault.
+For a working example, enter the absolute path to this checkout's
+`packages/obsidian/examples/shelf.json`. Open the DocShelf ribbon icon or
+**DocShelf: Open shelf**.
 
 Under **Display**, **Readable line length** limits the text column's width.
 It applies immediately and shares Obsidian's vault-wide preference, so it also
@@ -31,6 +34,20 @@ affects ordinary Markdown notes. It is also available in **Settings → DocShelf
 An existing standalone DocShelf `shelf.local.json` can be used in place: its
 relative source paths continue to resolve against its containing directory.
 The plugin does not start or change the standalone server.
+
+## Update an existing plugin
+
+After updating this repository, run `npm ci` and `npm run package:obsidian`
+from its root. Save or review pending Markdown edits, then disable DocShelf in
+the vault's Community plugins settings. Copy `main.js`, `manifest.json`,
+`styles.css`, and `LICENSE` from `packages/obsidian/dist/docshelf/` into the
+existing `<vault>/.obsidian/plugins/docshelf/` directory and re-enable the plugin.
+
+Keep the installed `data.json` and `recovery/` directory; do not replace or
+delete the whole plugin directory. Your configured shelf and original documents
+stay in place. The repository's packaging command does not install into a vault
+or update its settings. The plugin and web app are updated separately; see the
+[shared-shelf guide](../../docs/unification.md#update-existing-installations).
 
 ## Register documents
 
@@ -73,15 +90,27 @@ every registered file to be available.
 - Optional `assets` lists individual files relative to the source document's
   directory. Only these assets are served. Nested paths are allowed; `..`,
   hidden paths, wildcards, and directory registration are not.
+  Supported extensions are `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`,
+  `.svg`, `.ico`, `.css`, `.js`, `.mjs`, `.json`, `.csv`, `.txt`, `.woff`,
+  `.woff2`, `.ttf`, and `.otf`.
 - Sources and assets must resolve inside **Workspace root** or the shelf file's
   directory. The default workspace is the parent of that directory. Set it
-  explicitly when your projects are elsewhere. Symlinks are checked on reads.
+  explicitly when your projects are elsewhere, using an absolute path or one
+  relative to the shelf directory. Symlinks are checked on reads.
 - Local documents are limited to 8 MB, individual assets to 16 MB, and shelf
   JSON to 2 MB. A shelf supports 2,000 documents and 500 assets per document.
 
 Relative links between registered documents open in DocShelf. Images in local
 Markdown use the same explicit `assets` list. A sibling image or stylesheet
 is not exposed merely because a registered document refers to it.
+Registered image changes and asset-list updates refresh open Markdown embeds,
+including when the editor has unsaved text. The refresh preserves that buffer
+and its undo history.
+
+For a shelf shared with the browser app, use relative sources and lowercase
+`.html` routes, and keep GitHub URLs out of the shelf JSON. The browser ignores
+`assets` and keeps GitHub imports in browser storage. See
+[shared setup and differences](../../docs/unification.md).
 
 ## Source-line links
 
@@ -251,6 +280,10 @@ Local reports stay in their viewer when following external HTTP(S) links;
 those links open in the system browser. Registered document links open in
 DocShelf, and same-report anchors remain in the page. Popups are disabled.
 Unrelated shelf errors do not reset a report's interactive state.
+Reloading the same report preserves its viewer session, including localStorage.
+Opening a different report or reassigning its route to a different source starts
+a fresh session, so reports do not inherit each other's browser storage. These
+sessions are not persisted across application restarts.
 
 Registered HTML can run its own scripts and load HTTPS resources or contact
 remote services named by the report. Disable **Run HTML scripts** to view it
@@ -282,12 +315,18 @@ Obsidian URI dispatch, live refresh, HTML isolation, script-free mode, and unloa
 cleanup. Screenshots and results are written under ignored `.local/runtime/`.
 It does not install into your existing vault. On another installation, set
 `OBSIDIAN_EXECUTABLE` and `OBSIDIAN_BUNDLE_DIRECTORY`; the runner currently
-defaults to macOS paths. `DOCSHELF_KEEP_TEST_PROFILE=1` preserves failed fixtures.
+defaults to macOS paths. `DOCSHELF_KEEP_TEST_PROFILE=1` keeps the disposable
+profile and fixtures after the run.
+Build first: the runtime runner copies the existing `main.js` into its test vault.
 
 `npm run dev` rebuilds the plugin bundle when source code changes. Reload the
 plugin in Obsidian to pick up a new bundle. `npm run validate:shelf --
 /absolute/path/to/shelf.local.json --workspace /absolute/workspace` validates a
 shelf without launching Obsidian.
+
+From the repository root, run `npm run test:all`, `npm run check:all`, and
+`npm run build:all` before handing off changes. These include the web app, shared
+helpers, and plugin; they do not run the actual Obsidian runtime suite.
 
 The shared registration skill lives at the repository root in
 [`.agents/skills/docshelf/`](../../.agents/skills/docshelf/SKILL.md). It can return
@@ -297,3 +336,5 @@ browser and Obsidian links from the same shelf; see [shared setup and difference
 
 MIT. URL and line-range helpers are shared with the web app through
 `@docshelf/core`. The plugin bundle includes those helpers and its `LICENSE`.
+See the repository [security policy](../../SECURITY.md) and
+[plugin architecture](docs/architecture.md) for the file-access boundaries.

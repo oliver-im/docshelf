@@ -1,5 +1,10 @@
 # Running and updating DocShelf
 
+This guide covers the browser app and its local server. The Obsidian plugin
+runs independently; see its
+[installation and update guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md)
+and the [shared-shelf setup](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
+
 ## Install with a stable local address
 
 On macOS, after `npm ci`, run:
@@ -159,6 +164,12 @@ into that file before retiring the older file.
 After restarting, open the printed URL and confirm your documents appear.
 `/__docshelf/status` should report `state: "ready"` for the new watcher instance.
 
+The unified repository installs all workspaces with the root `npm ci` command.
+Updating the web app does not update an installed Obsidian plugin. To update
+that too, run `npm run package:obsidian` and follow the
+[plugin upgrade steps](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#update-an-existing-plugin),
+preserving its settings and recovery files.
+
 ## Why the site can look stale
 
 The production watcher observes shelf files and registered source documents.
@@ -250,13 +261,20 @@ Use `npm run dev` for pages, components, and styles. Restart it after changing
 the shelf. Search is generated only during production builds and is unavailable
 in the development server.
 
-Before handing off code changes, run:
+From the repository root, verify all workspaces before handing off changes:
 
 ```sh
-npm test
-npm run check
-npm run build
+npm run test:all
+npm run check:all
+npm run build:all
 ```
+
+Root `npm test`, `npm run check`, and `npm run build` target only the web app.
+For plugin runtime changes, build first and then run
+`npm run test:obsidian --workspace obsidian-docshelf`. The actual-host suite
+uses a disposable profile and vault; see the
+[plugin verification guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#develop-and-verify)
+for runtime requirements.
 
 `npm run preview` serves the standard `dist/` build. The watcher is the runtime
 that provides production search, source updates, and macOS Finder actions.
