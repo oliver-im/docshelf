@@ -5,7 +5,7 @@ Browse Markdown and HTML documents across your projects.
 ## Key features
 
 - **A shelf across projects.** Register Markdown and HTML files where they live, and view them in Obsidian or in the browser.
-- **Links to exact passages.** Select Markdown source lines and copy the link (`obsidian://docshelf` for Obsidian, `https://shelf.localhost/` for the web app after local setup).
+- **Links to exact passages.** Select Markdown source lines and copy a link to that document and line range. Links start with `obsidian://docshelf` for Obsidian or `https://shelf.localhost/` for the web app after local setup.
 
 **[DocShelf Web Demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)**
 

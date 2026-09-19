@@ -25,7 +25,7 @@ Keep each prose paragraph on one source line, including prose within list items,
 - `packages/core/types/` contains tracked generated declarations. After changing the core API, regenerate them with `npm run build --workspace @docshelf/core` and include the resulting declaration changes; do not hand-edit them.
 - Use Node.js 24 or newer. Install dependencies at the root with `npm ci`; maintain only the root lockfile.
 - `.agents/skills/docshelf/` is the registration skill for both apps.
-- The imported plugin history crosses a merge-time directory move. Use `git log -m --follow -- packages/obsidian/<file>` to trace it; see [repository history and shared setup](docs/unification.md).
+- The imported plugin history crosses a merge-time directory move. To trace it, run `git log -m --follow -- packages/obsidian/FILE`, replacing `FILE` with the target file's path relative to `packages/obsidian/`. See [repository history and shared setup](docs/unification.md).
 
 ## Shared shelf compatibility
 
