@@ -670,6 +670,8 @@ mark {
   flex: 0 0 auto;
   padding: 0 0.35rem;
   border: 1px solid transparent;
+  /* Let adjacent selection backgrounds meet across the full row height. */
+  border-block-width: 0;
   border-inline-end-width: 2px;
   border-radius: 0;
   background: transparent;
