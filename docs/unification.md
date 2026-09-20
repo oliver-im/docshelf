@@ -81,10 +81,7 @@ A shared shelf must satisfy both apps' validation rules. See the
 [plugin registration guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#register-documents)
 for asset paths and supported types.
 
-The initial README entry works in both apps. To display its screenshots in
-Obsidian too, add `"assets": ["public/docshelf-overview.png",
-"public/docshelf-obsidian.png"]` to that entry. Web app image rendering
-already uses those bundled public files.
+The initial README entry works in both apps. To display its screenshots and download badge in Obsidian too, add `"assets": ["public/docshelf-web-markdown.jpg", "public/docshelf-obsidian.png", "public/docshelf-html-comparison.svg", "public/obsidian-download.svg"]` to that entry. Web app image rendering already uses those bundled public files. The version badge loads from Shields.io over HTTPS.
 
 ## Update existing installations
 

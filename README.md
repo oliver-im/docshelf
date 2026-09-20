@@ -21,15 +21,23 @@ Use either app independently, or [point both at the same shelf](https://github.c
 
 ### DocShelf Web
 
-Read Markdown, browse interactive HTML reports, and search across your local documents. Runs as a local web app, without opening Obsidian. The web app never edits your originals.
+Read Markdown, search across your local documents, and link to exact source lines. Runs as a local web app, without opening Obsidian. The web app never edits your originals.
 
-![DocShelf Web displaying an HTML report with documents grouped by project](public/docshelf-overview.png)
+![DocShelf Web at shelf.localhost, displaying Markdown with selected source lines](public/docshelf-web-markdown.jpg)
 
 ### DocShelf for Obsidian
 
-Bring project documents into Obsidian without copying them into your vault. Edit local Markdown in the native editor, with changes saved to the original file, with conflict checks and recovery. Browse HTML and remote documents read-only.
+Bring project documents into Obsidian without copying them into your vault. Edit local Markdown in the native editor, with changes saved to the original file, with conflict checks and recovery.
 
 ![DocShelf in Obsidian, showing project documents and a selected Markdown source line in the native editor](public/docshelf-obsidian.png)
+
+## Browse HTML in either app
+
+Open HTML reports alongside your Markdown notes. Reports keep their own layout, styling, and interactive elements; both apps display them without editing the source file.
+
+![The same HTML report displayed side by side in DocShelf Web (left) and DocShelf for Obsidian (right)](public/docshelf-html-comparison.svg)
+
+[Web screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-web-html.jpg) · [Obsidian screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-obsidian-html.jpg)
 
 ## Get started
 
