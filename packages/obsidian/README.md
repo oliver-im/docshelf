@@ -152,13 +152,7 @@ that line or block. Shift-click continues extending the range. You can also use
 navigation, with Shift-arrow extending the range. References track source
 positions as you edit and are saved with the pane's workspace state.
 
-Selected source ranges form one continuous highlight, including rendered blocks
-and intervening whitespace. Right-click inside it or on any line number for the
-same menu: **Copy source reference**, **Copy DocShelf link**, and **Reveal source**.
-Copy actions use the highlighted range when clicked inside it, or the clicked
-line/block otherwise. The highlight and editing cursor stay in place.
-**Reveal source** shows the original file in your system file manager.
-Left-click text to resume editing normally.
+Selected source ranges form one continuous highlight, including rendered blocks and intervening whitespace. Right-click inside it or on any line number for the same menu: **Copy DocShelf link**, **Copy source reference**, and **Reveal source**. Copy actions use the highlighted range when clicked inside it, or the clicked line/block otherwise. The highlight and editing cursor stay in place. **Reveal source** shows the original file in your system file manager. Left-click text to resume editing normally.
 
 ## Edit local Markdown
 

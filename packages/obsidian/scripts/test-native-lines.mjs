@@ -19,9 +19,9 @@ export async function testNativeLines({ page, poll, workspace }) {
     assert.equal(await highlight.count(), 1);
   };
   const expectReferenceMenu = async expected => {
-    await page.getByText('Copy source reference', { exact: true }).waitFor();
+    await page.getByText('Copy DocShelf link', { exact: true }).waitFor();
     assert.equal(await reference(), expected, 'Right-click must preserve the source selection.');
-    assert.deepEqual(await page.locator('.menu-item-title').allTextContents(), ['Copy source reference', 'Copy DocShelf link', 'Reveal source']);
+    assert.deepEqual(await page.locator('.menu-item-title').allTextContents(), ['Copy DocShelf link', 'Copy source reference', 'Reveal source']);
     assert.equal(await page.locator('.menu-separator').count(), 0, 'Line menus must have no dividers.');
   };
   const nativeMenus = await page.evaluate(() => {
