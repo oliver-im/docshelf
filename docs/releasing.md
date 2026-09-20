@@ -159,16 +159,11 @@ accurate: web app full-text search covers registered local documents, and browse
 imports depend on their host and that browser's saved links. Obsidian also indexes
 registered GitHub Markdown after it has been fetched; Claude content is not indexed.
 
-The README includes a [DocShelf Web overview](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-overview.png)
-and an [Obsidian screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-obsidian.png).
-The web app usage guide includes a [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).
-The web app captures show only repository documents, including the sample HTML
-report at `docs/examples/project-review.html`. To recreate them, use
-`docs/screenshot-shelf.json` as the local shelf in a separate checkout and use
-dark mode. For the overview, open `?artifact=reports%2Fproject-review.html`.
-For the line-range example, open `?artifact=guides%2Fusage.html#L7-L11` and open
-the document's **⋯** menu so **Copy link** is visible. Include the HTML report in the sidebar of both
-captures. The production Pages shelf remains README-only.
+The README shows [Web Markdown](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-web-markdown.jpg) and [Obsidian Markdown](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-obsidian.png) first, followed by the same HTML report in [DocShelf Web](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-web-html.jpg) and [Obsidian](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-obsidian-html.jpg). The web app usage guide keeps its separate [line-range screenshot](https://github.com/oliver-im/docshelf/blob/main/public/docshelf-line-range.png).
+
+`public/docshelf-html-comparison.svg` embeds both original HTML screenshots side by side at equal heights, separated by a transparent gap. When either capture changes, update its embedded JPEG data and dimensions in the SVG too. This keeps the README comparison borderless and compatible with Markdown renderers that omit raw HTML.
+
+The Web captures show only repository documents. Use `docs/screenshot-shelf.json` as the local shelf in a separate checkout, dark mode, and a wide internal-browser window with the `shelf.localhost` address visible. Hide the workspace sidebar and keep personal browser profiles, extension toolbars, bookmarks, and unrelated tabs out of the capture. For Markdown, open `?artifact=guides%2Fusage.html#L3-L8`; for HTML, open `?artifact=reports%2Fproject-review.html`. Use the configured loopback address and preserve existing proxy routes. The production Pages shelf remains README-only.
 
 The Obsidian image uses Tokyo Night 1.1.6 in dark mode. To recreate it, install
 the plugin and theme in a disposable vault named **DocShelf demo**, using copies
@@ -178,6 +173,8 @@ editor, and capture at 1180 × 860. Inspect the capture before saving it to
 `public/docshelf-obsidian.png`; use only sample documents and exclude private
 paths or vault contents. The regular runtime suite uses the default Obsidian
 theme, so its screenshots are not a replacement for this themed capture.
+
+For the Obsidian HTML example, copy `docs/examples/project-review.html` into a temporary public demo workspace, register it as an HTML document in a disposable demo vault, and open its Report view with Tokyo Night. Keep the source path generic, such as a directory under `/tmp`, and exclude private files and paths. Capture a wide window with the report and shelf visible. If a tiling window manager constrains the aspect ratio, temporarily pause it and restore its previous state after capture.
 
 Draft X post, to tune after the README and release are final:
 
