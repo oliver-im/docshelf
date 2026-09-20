@@ -3,7 +3,8 @@ import { pathToFileURL } from 'node:url';
 
 /** Create a local annotated release tag, or verify an existing tag without moving it. */
 export function ensureReleaseTag(tag, commit, cwd = process.cwd()) {
-  if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
+  // Web releases use vX.Y.Z; Obsidian requires a tag matching X.Y.Z exactly.
+  if (!/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
     throw new Error(`Invalid release tag: ${tag}`);
   }
   if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(commit)) {

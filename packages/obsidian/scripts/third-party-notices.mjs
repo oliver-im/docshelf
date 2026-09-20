@@ -48,8 +48,14 @@ export async function createThirdPartyNotices(metafile, workingDirectory) {
     'Generated from the installed packages contributing to main.js.',
     'Bundled dependencies retain their respective licenses below.',
     'DocShelf and its shared helpers are covered by the accompanying LICENSE.',
-    'Keep this file with main.js when copying or redistributing the plugin.',
+    'These notices and the DocShelf license are also embedded in main.js.',
     '',
     ...sections.sort(),
   ].join('\n') + '\n';
+}
+
+/** Line comments preserve arbitrary license text without allowing it to execute. */
+export function embeddedLicenses(license, notices) {
+  return '\n' + `DocShelf license\n\n${license}\n${notices}`
+    .split(/\r\n|[\n\r\u2028\u2029]/u).map(line => `// ${line}`).join('\n') + '\n';
 }
