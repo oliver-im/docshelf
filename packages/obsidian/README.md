@@ -1,8 +1,8 @@
 # DocShelf for Obsidian
 
-Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
-search project documents, and copy source-line references. Files stay in their
-original project folders; DocShelf does not create mirrored vault notes.
+Edit registered local Markdown in Obsidian's native editor, browse HTML reports, search project documents, and copy source-line references. Files stay in their original project folders; DocShelf does not create mirrored vault notes.
+
+[![DocShelf for Obsidian v0.1.0 desktop beta — release notes](../../public/obsidian-version.svg)](https://github.com/oliver-im/docshelf/releases/tag/0.1.0) [![Download DocShelf for Obsidian 0.1.0 ZIP](../../public/obsidian-download.svg)](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)
 
 ## Install
 

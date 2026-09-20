@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="184" height="28" viewBox="0 0 184 28" role="img" aria-labelledby="title">
+  <title id="title">DocShelf for Obsidian: v0.1.0 desktop beta — release notes</title>
+  <clipPath id="badge">
+    <rect width="184" height="28" rx="4" />
+  </clipPath>
+  <g clip-path="url(#badge)">
+    <path fill="#24283b" d="M0 0h84v28H0z" />
+    <path fill="#bb9af7" d="M84 0h100v28H84z" />
+  </g>
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="600" text-anchor="middle">
+    <text x="42" y="18.5" fill="#c0caf5">Obsidian</text>
+    <text x="134" y="18.5" fill="#1a1b26">v0.1.0 beta</text>
+  </g>
+</svg>

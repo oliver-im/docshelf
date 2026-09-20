@@ -2,6 +2,8 @@
 
 Browse Markdown and HTML documents across your projects.
 
+[![DocShelf for Obsidian v0.1.0 desktop beta — release notes](public/obsidian-version.svg)](https://github.com/oliver-im/docshelf/releases/tag/0.1.0) [![Download DocShelf for Obsidian 0.1.0 ZIP](public/obsidian-download.svg)](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)
+
 ## Key features
 
 - **A shelf across projects.** Register Markdown and HTML files where they live, and view them in Obsidian or in the browser.
