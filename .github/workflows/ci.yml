@@ -27,3 +27,5 @@ jobs:
       - run: npm run test:all
       - run: npm run check:all
       - run: npm run build:all
+      - run: npm run package:obsidian
+      - run: npm run test:package --workspace obsidian-docshelf

@@ -8,9 +8,11 @@
   "scripts": {
     "dev": "node scripts/build.mjs --watch",
     "build": "node scripts/build.mjs",
-    "check": "tsc --noEmit",
+    "check": "node scripts/release-metadata.mjs && tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "test:obsidian": "node scripts/test-obsidian.mjs",
+    "test:obsidian:package": "node scripts/test-obsidian.mjs --package",
+    "test:package": "node --test scripts/test-package.mjs",
     "validate:shelf": "tsx scripts/validate-shelf.ts",
     "package": "node scripts/package.mjs"
   },
@@ -20,17 +22,18 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
+    "fflate": "^0.8.3",
     "obsidian": "^1.13.1",
     "playwright-core": "^1.55.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   },
   "dependencies": {
+    "@docshelf/core": "*",
     "chokidar": "^4.0.3",
     "dompurify": "^3.4.14",
     "markdown-it": "^14.1.0",
     "minisearch": "^7.1.2",
-    "parse5": "^7.3.0",
-    "@docshelf/core": "*"
+    "parse5": "^7.3.0"
   }
 }

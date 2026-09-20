@@ -21,6 +21,7 @@ Keep each prose paragraph on one source line, including prose within list items,
 
 - DocShelf Web stays at the root so existing services and shelf paths keep working.
 - `packages/obsidian/` contains the desktop plugin and its own safety guidance.
+- Root `manifest.json` and `versions.json` are tracked mirrors for Obsidian distribution. Maintain their originals in `packages/obsidian/`, then run `npm run sync:obsidian-metadata`; plugin checks and packaging reject drift. Plugin release tags use plain `X.Y.Z`, while web releases use `vX.Y.Z`.
 - `packages/core/` contains pure helpers used by both apps. Keep filesystem, server, editor, DOM, and host-specific UI code out of this package.
 - `packages/core/types/` contains tracked generated declarations. After changing the core API, regenerate them with `npm run build --workspace @docshelf/core` and include the resulting declaration changes; do not hand-edit them.
 - Use Node.js 24 or newer. Install dependencies at the root with `npm ci`; maintain only the root lockfile.

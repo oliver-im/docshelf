@@ -1,6 +1,6 @@
 import { context, build } from 'esbuild';
-import { writeFile } from 'node:fs/promises';
-import { createThirdPartyNotices } from './third-party-notices.mjs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createThirdPartyNotices, embeddedLicenses } from './third-party-notices.mjs';
 
 const options = {
   entryPoints: ['src/main.ts'],
@@ -12,14 +12,19 @@ const options = {
   outfile: 'main.js',
   sourcemap: 'external',
   metafile: true,
+  write: false,
   logLevel: 'info',
-  banner: { js: '/* DocShelf for Obsidian. Source: src/main.ts. DocShelf: MIT. Bundled dependency licenses: THIRD_PARTY_NOTICES.txt. */' },
+  banner: { js: '/* DocShelf for Obsidian. Source: src/main.ts. MIT and bundled dependency licenses are included below. */' },
   plugins: [{
     name: 'third-party-notices',
     setup(builder) {
       builder.onEnd(async result => {
         if (result.errors.length) return;
         const notices = await createThirdPartyNotices(result.metafile, process.cwd());
+        const license = await readFile('LICENSE', 'utf8');
+        for (const output of result.outputFiles) {
+          await writeFile(output.path, output.path.endsWith('.js') ? output.text + embeddedLicenses(license, notices) : output.contents);
+        }
         await writeFile('THIRD_PARTY_NOTICES.txt', notices);
       });
     },

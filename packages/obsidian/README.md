@@ -4,28 +4,24 @@ Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
 search project documents, and copy source-line references. Files stay in their
 original project folders; DocShelf does not create mirrored vault notes.
 
-## Install locally
+## Install
 
-Requires desktop Obsidian **1.13.7 or later**. The runtime checks currently cover
-Obsidian 1.13.7 with Electron 34.2.0 on macOS; Windows and Linux have not yet had
-the same runtime verification.
+Requires desktop Obsidian **1.13.7 or later**. Runtime checks cover Obsidian 1.13.7 with Electron 34.2.0 on macOS. Windows, Linux, and Obsidian 1.14.2 are not yet verified. The **0.1.0 desktop beta** supports manual installation; the plugin is not yet listed in the community directory.
 
-From the unified repository root (Node.js 24 or later):
+**[Download DocShelf for Obsidian 0.1.0 ZIP](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)** · [Release notes](https://github.com/oliver-im/docshelf/releases/tag/0.1.0)
+
+Packaged builds install without Node.js, Git, or DocShelf Web. Extract the ZIP, copy its `docshelf` folder into `<vault>/.obsidian/plugins/`, and enable **DocShelf** in Community plugins.
+
+To build the same package from the unified repository root (Node.js 24 or later):
 
 ```sh
 npm ci
 npm run package:obsidian
 ```
 
-Copy `packages/obsidian/dist/docshelf/` to `<vault>/.obsidian/plugins/docshelf/`, then enable
-**DocShelf** in Obsidian's Community plugins settings. This repository is not
-yet listed in the community directory.
+The ZIP is written to `packages/obsidian/dist/release/docshelf-0.1.0.zip`. You can also copy `packages/obsidian/dist/docshelf/` directly into `<vault>/.obsidian/plugins/`.
 
-Open **DocShelf: Configure shelf** from the command palette. Set **Shelf file**
-to a shelf JSON file using its absolute path, or a path relative to the vault.
-For a working example, enter the absolute path to this checkout's
-`packages/obsidian/examples/shelf.json`. Open the DocShelf ribbon icon or
-**DocShelf: Open shelf**.
+Open **DocShelf: Open shelf** from the command palette and choose **Create empty shelf file**. Add documents using the [registration skill](../../.agents/skills/docshelf/SKILL.md) or [edit the shelf JSON](#register-documents). To use an existing shelf, open **DocShelf: Configure shelf** and enter its absolute path or a path relative to the vault. For a source-checkout example, use the absolute path to `packages/obsidian/examples/shelf.json`.
 
 Under **Display**, **Readable line length** limits the text column's width.
 It applies immediately and shares Obsidian's vault-wide preference, so it also
@@ -37,18 +33,9 @@ The plugin does not start or change the web app's server.
 
 ## Update an existing plugin
 
-After updating this repository, run `npm ci` and `npm run package:obsidian`
-from its root. Save or review pending Markdown edits, then disable DocShelf in
-the vault's Community plugins settings. Copy `main.js`, `manifest.json`,
-`styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt` from
-`packages/obsidian/dist/docshelf/` into the
-existing `<vault>/.obsidian/plugins/docshelf/` directory and re-enable the plugin.
+Extract the new plugin ZIP, or update this checkout and run `npm ci` followed by `npm run package:obsidian`. Save or review pending Markdown edits, then disable DocShelf in the vault's Community plugins settings. Copy `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt` from the extracted `docshelf` folder (or `packages/obsidian/dist/docshelf/`) into the existing `<vault>/.obsidian/plugins/docshelf/` directory and re-enable the plugin.
 
-Keep the installed `data.json` and `recovery/` directory; do not replace or
-delete the whole plugin directory. Your configured shelf and original documents
-stay in place. The repository's packaging command does not install into a vault
-or update its settings. The plugin and web app are updated separately; see the
-[shared-shelf guide](../../docs/unification.md#update-existing-installations).
+Keep the installed `data.json` and `recovery/` directory; do not replace or delete the whole plugin directory. Your configured shelf and original documents stay in place. The packaging command only creates distribution files. The plugin and web app are updated separately; see the [shared-shelf guide](../../docs/unification.md#update-existing-installations). The standard three-file Obsidian installation also carries the full license notices inside `main.js`.
 
 ## Register documents
 
@@ -314,6 +301,8 @@ defaults to macOS paths. `DOCSHELF_KEEP_TEST_PROFILE=1` keeps the disposable
 profile and fixtures after the run.
 Build first: the runtime runner copies the existing `main.js` into its test vault.
 
+For a packaged release, run `npm run package:obsidian` at the repository root, then `npm run test:package --workspace obsidian-docshelf` and `npm run test:obsidian:package --workspace obsidian-docshelf`. The first verifies archive contents, release assets, embedded licenses, and checksums. The second installs the ZIP in a disposable vault and exercises plugin-file replacement with existing settings and a pending recovery draft. See the [release guide](../../docs/releasing.md#package-the-obsidian-plugin).
+
 `npm run dev` rebuilds the plugin bundle when source code changes. Reload the
 plugin in Obsidian to pick up a new bundle. `npm run validate:shelf --
 /absolute/path/to/shelf.local.json --workspace /absolute/workspace` validates a
@@ -329,11 +318,6 @@ web app and Obsidian links from the same shelf; see [shared setup and difference
 
 ## License
 
-MIT. URL and line-range helpers are shared with the web app through
-`@docshelf/core`. The plugin bundle includes those helpers and its `LICENSE`.
-Bundled third-party dependencies retain their own licenses. Each build generates
-`THIRD_PARTY_NOTICES.txt` with their license and notice texts, and packaging
-includes it beside `main.js`. Keep both license files with the installed or
-redistributed plugin.
+MIT. URL and line-range helpers are shared with the web app through `@docshelf/core`. Each build embeds the plugin's MIT license and the full license and notice texts of bundled dependencies in `main.js`. Packaging also includes separate `LICENSE` and `THIRD_PARTY_NOTICES.txt` files. These notices accompany both the ZIP and the standard three-file Obsidian installation.
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
