@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { build } from 'esbuild';
-import { createThirdPartyNotices } from '../scripts/third-party-notices.mjs';
+import { runInNewContext } from 'node:vm';
+import { createThirdPartyNotices, embeddedLicenses } from '../scripts/third-party-notices.mjs';
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(path.join(tmpdir(), 'docshelf-notices-'));
@@ -74,4 +75,12 @@ test('bundle notices reject missing or empty license texts instead of silently o
   await assert.rejects(createThirdPartyNotices(result.metafile!, root), /No license text.*dependency@1.0.0/);
   await write('node_modules/dependency/LICENSE', ' \n');
   await assert.rejects(createThirdPartyNotices(result.metafile!, root), /Empty LICENSE.*dependency@1.0.0/);
+});
+
+test('embedded license text stays inert even with comment delimiters and Unicode line separators', () => {
+  const text = '*/ globalThis.injected = true;\rglobalThis.injected = true;\u2028globalThis.injected = true;\u2029globalThis.injected = true;';
+  const context = { injected: false, result: 0 };
+  runInNewContext('result = 42;' + embeddedLicenses('MIT license', text), context);
+  assert.equal(context.result, 42);
+  assert.equal(context.injected, false);
 });

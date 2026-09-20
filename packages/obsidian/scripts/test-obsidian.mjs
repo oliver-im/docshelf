@@ -5,6 +5,7 @@ import { createWriteStream } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { unzipSync } from 'fflate';
 import { testNativeEditing } from './test-native-editing.mjs';
 import { testNativeLines } from './test-native-lines.mjs';
 import { testNativeLayout } from './test-native-layout.mjs';
@@ -19,11 +20,20 @@ const profile = path.join(root, 'profile');
 const vault = path.join(root, 'DocShelf runtime vault');
 const workspace = path.join(root, 'workspace');
 const pluginPath = path.join(vault, '.obsidian', 'plugins', 'docshelf');
+const packageMode = process.argv.includes('--package');
+const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
 await mkdir(profile, { recursive: true });
 await mkdir(pluginPath, { recursive: true });
 await mkdir('.local/runtime', { recursive: true });
 await cp('examples', workspace, { recursive: true });
-for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(name, path.join(pluginPath, name));
+if (packageMode) {
+  const archive = unzipSync(await readFile(`dist/release/docshelf-${manifest.version}.zip`));
+  const files = ['main.js', 'manifest.json', 'styles.css', 'LICENSE', 'THIRD_PARTY_NOTICES.txt'];
+  assert.deepEqual(Object.keys(archive).sort(), ['INSTALL.txt', ...files.map(name => `docshelf/${name}`)].sort());
+  for (const name of files) await writeFile(path.join(pluginPath, name), archive[`docshelf/${name}`]);
+} else {
+  for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(name, path.join(pluginPath, name));
+}
 const bundleDirectory = process.env.OBSIDIAN_BUNDLE_DIRECTORY || path.join(homedir(), 'Library/Application Support/obsidian');
 const bundles = (await readdir(bundleDirectory)).filter(name => /^obsidian-[\d.]+\.asar$/.test(name)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 if (!bundles[0]) throw new Error('No installed Obsidian runtime bundle found. Set OBSIDIAN_BUNDLE_DIRECTORY.');
@@ -77,6 +87,10 @@ try {
   });
   await page.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
   console.log('Plugin loaded and indexed two external documents.');
+  if (packageMode) {
+    assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').manifest.version), manifest.version);
+    console.log(`Fresh installation from docshelf-${manifest.version}.zip passed.`);
+  }
   await page.evaluate(async () => {
     const plugin = app.plugins.getPlugin('docshelf');
     await plugin.openShelf();
@@ -336,7 +350,26 @@ try {
   await testNativeModes({ page, poll });
   await testNativeLines({ page, poll, workspace });
   await testNativeLayout({ page, poll, workspace });
-  await testNativeRegressions({ page, poll, workspace });
+  const replacePluginFiles = packageMode ? async () => {
+    const settings = await readFile(path.join(pluginPath, 'data.json'));
+    const shelfBefore = await readFile(shelfPath);
+    const recoveryPath = path.join(pluginPath, 'recovery');
+    const names = (await readdir(recoveryPath)).sort();
+    assert.ok(names.some(name => name.endsWith('.json')), 'Upgrade must exercise a real recovery draft.');
+    const recovery = await Promise.all(names.map(name => readFile(path.join(recoveryPath, name))));
+    // Simulate a stale installed asset, then follow Obsidian's three-file update.
+    await writeFile(path.join(pluginPath, 'styles.css'), '/* previous installation */');
+    for (const name of ['main.js', 'manifest.json', 'styles.css']) {
+      await copyFile(path.join('dist/release', name), path.join(pluginPath, name));
+      assert.deepEqual(await readFile(path.join(pluginPath, name)), await readFile(path.join('dist/release', name)));
+    }
+    assert.deepEqual(await readFile(path.join(pluginPath, 'data.json')), settings);
+    assert.deepEqual(await readFile(shelfPath), shelfBefore);
+    assert.deepEqual((await readdir(recoveryPath)).sort(), names);
+    for (let i = 0; i < names.length; i++) assert.deepEqual(await readFile(path.join(recoveryPath, names[i])), recovery[i]);
+    console.log('Plugin file replacement preserved settings, shelf, and recovery files byte-for-byte.');
+  } : undefined;
+  await testNativeRegressions({ page, poll, workspace, replacePluginFiles });
   await page.evaluate(() => {
     const view = app.plugins.getPlugin('docshelf').nativeViews()[0];
     view.editor.setSelection({ line: 6, ch: 0 }, { line: 8, ch: view.editor.getLine(8).length });
@@ -471,7 +504,7 @@ try {
   assert.equal(await readFile(guidePath, 'utf8'), watchedGuide);
   assert.deepEqual(pageErrors, []);
   console.log('Unload cleanup and source preservation passed.');
-  await writeFile('.local/runtime/results.json', JSON.stringify({ bundle: bundles[0], passed: true, probes, permalink, pageErrors }, null, 2));
+  await writeFile('.local/runtime/results.json', JSON.stringify({ bundle: bundles[0], passed: true, packageMode, pluginVersion: manifest.version, probes, permalink, pageErrors }, null, 2));
 } catch (error) {
   if (page) { await page.screenshot({ path: '.local/runtime/failure.png' }).catch(() => {}); }
   if (page) console.error('Plugin state:', await page.evaluate(() => {

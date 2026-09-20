@@ -62,10 +62,18 @@ test('a branch with the release name cannot stand in for a tag', async (t) => {
 
 test('invalid versions and unresolved targets create no tags', async (t) => {
   const { cwd, git, second } = await repository(t);
-  for (const tag of ['v01.0.0', 'v1.0', 'v1.0.0-beta', '--delete', '1.0.0']) {
+  for (const tag of ['v01.0.0', 'v1.0', 'v1.0.0-beta', '--delete', '01.0.0', '1.0.0-beta']) {
     assert.throws(() => ensureReleaseTag(tag, second, cwd), /Invalid release tag/);
   }
   assert.throws(() => ensureReleaseTag('v0.1.0', 'HEAD', cwd), /full Git commit ID/);
   assert.throws(() => ensureReleaseTag('v0.1.0', '0'.repeat(40), cwd));
   assert.equal(git('tag', '--list'), '');
+});
+
+test('Obsidian tags match plain manifest versions and never move on a retry', async t => {
+  const { cwd, git, first, second } = await repository(t);
+  assert.equal(ensureReleaseTag('0.1.0', first, cwd), 'created');
+  assert.equal(ensureReleaseTag('0.1.0', first, cwd), 'verified');
+  assert.throws(() => ensureReleaseTag('0.1.0', second, cwd), /Refusing to move it/);
+  assert.equal(git('rev-parse', 'refs/tags/0.1.0^{commit}'), first);
 });

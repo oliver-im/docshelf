@@ -1,0 +1,92 @@
+name: Prepare Obsidian release
+
+# Explicit dispatch only. The resulting draft stays unpublished for video/review.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact plugin version already committed on main (X.Y.Z)"
+        required: true
+        default: "0.1.0"
+        type: string
+
+concurrency:
+  group: release-obsidian
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify the requested version and notes
+        run: |
+          node packages/obsidian/scripts/release-metadata.mjs "$VERSION"
+          test -s "docs/releases/obsidian-$VERSION.md"
+      - run: npm run test:all
+      - run: npm run check:all
+      - run: npm run build:all
+      - run: npm run package:obsidian
+      - run: npm run test:package --workspace obsidian-docshelf
+      - name: Tag the verified commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node scripts/release-tag.mjs "$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/$VERSION"
+      - name: Create or resume the release draft
+        shell: bash
+        run: |
+          if ! gh release view "$VERSION" --json isDraft > /dev/null 2>&1; then
+            gh release create "$VERSION" --verify-tag --draft --latest=false \
+              --title "DocShelf for Obsidian $VERSION (desktop beta)" \
+              --notes-file "docs/releases/obsidian-$VERSION.md"
+          fi
+          is_draft=$(gh release view "$VERSION" --json isDraft --jq .isDraft)
+          existing=$(mktemp -d)
+          trap 'rm -rf "$existing"' EXIT
+          count=$(gh release view "$VERSION" --json assets --jq '.assets | length')
+          if [ "$count" -gt 0 ]; then
+            gh release download "$VERSION" --dir "$existing"
+          fi
+          release_dir=packages/obsidian/dist/release
+          # Compare everything before uploading. Never replace existing assets.
+          for asset in "$existing"/*; do
+            [ -e "$asset" ] || continue
+            name=$(basename "$asset")
+            cmp "$asset" "$release_dir/$name"
+          done
+          for asset in "$release_dir"/*; do
+            name=$(basename "$asset")
+            if [ ! -f "$existing/$name" ]; then
+              if [ "$is_draft" != true ]; then
+                echo "::error::Published release is missing $name; refusing to modify it."
+                exit 1
+              fi
+            fi
+          done
+          for asset in "$release_dir"/*; do
+            name=$(basename "$asset")
+            if [ ! -f "$existing/$name" ]; then
+              gh release upload "$VERSION" "$asset"
+            fi
+          done
+          gh release view "$VERSION" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+          echo 'Assets verified. Publishing and community-directory submission are separate steps.' >> "$GITHUB_STEP_SUMMARY"

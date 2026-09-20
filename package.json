@@ -28,7 +28,8 @@
     "test:all": "npm test && npm run test --workspaces",
     "check:all": "npm run check --workspace @docshelf/core && npm run check && npm run check --workspace obsidian-docshelf",
     "build:all": "npm run build --workspace @docshelf/core && npm run build && npm run build --workspace obsidian-docshelf",
-    "package:obsidian": "npm run package --workspace obsidian-docshelf"
+    "package:obsidian": "npm run package --workspace obsidian-docshelf",
+    "sync:obsidian-metadata": "node packages/obsidian/scripts/release-metadata.mjs --sync"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.2.4",

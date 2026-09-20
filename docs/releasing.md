@@ -88,30 +88,41 @@ history and needs a merge commit to retain that ancestry.
 
 ## Package the Obsidian plugin
 
-Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and
-copies `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and
-`THIRD_PARTY_NOTICES.txt` into
-`packages/obsidian/dist/docshelf/`, with installation instructions in
-`packages/obsidian/dist/INSTALL.txt`. These are generated outputs; do not commit
-them. Packaging does not install into a vault or publish a release.
+Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and creates `packages/obsidian/dist/docshelf/`, containing `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`. The `packages/obsidian/dist/release/` directory contains those standalone release assets, an installable `docshelf-X.Y.Z.zip`, and `SHA256SUMS`. The ZIP includes the `docshelf/` folder and `INSTALL.txt`; it has no settings, recovery records, local shelf, source map, or source documents. These are generated outputs; do not commit them. Packaging does not install into a vault or publish a release.
 
-Each plugin build generates `THIRD_PARTY_NOTICES.txt` from esbuild's list of
-modules contributing to the bundle and their installed package license and
-notice files. This covers bundled transitive dependencies and separate versions
-of the same dependency. Host-provided externals are excluded. A missing or empty
-license file fails the build; review the affected package when dependencies
-change. Keep the generated notices with the distributed plugin.
+Each build collects the full licenses and notices of bundled dependencies, including transitive dependencies, from esbuild's module list. It embeds those texts and the plugin's MIT license as comments in `main.js`, so Obsidian's three-file installation carries them. The ZIP also includes the separate license files. Host-provided externals are excluded; missing or empty dependency licenses fail the build.
 
-When preparing a plugin version, keep `packages/obsidian/package.json` and
-`packages/obsidian/manifest.json` in sync, refresh the root lockfile, and add the
-version's minimum Obsidian requirement to `packages/obsidian/versions.json`.
-Verify installation and an upgrade that preserves `data.json`, `recovery/`, and
-the configured shelf. See the
-[plugin update instructions](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#update-an-existing-plugin).
+Maintain the plugin version in `packages/obsidian/package.json` and `packages/obsidian/manifest.json`, refresh the root lockfile with `npm install --package-lock-only`, and add the minimum Obsidian requirement to `packages/obsidian/versions.json`. Preserve older compatibility entries. Run `npm run sync:obsidian-metadata` to update the tracked root `manifest.json` and `versions.json` mirrors required by Obsidian, plus the `obsidian-download` and `obsidian-release` link definitions in both READMEs. Checks and packaging reject stale metadata or README release links. Web versions remain independent.
 
-There is no plugin publishing workflow or community-directory submission in
-this repository yet. A web GitHub Release contains source archives, not an
-automatically attached installable plugin.
+Before handing the build to testers or recording a release video, run the aggregate checks, then verify the actual package:
+
+```sh
+npm run package:obsidian
+npm run test:package --workspace obsidian-docshelf
+npm run test:obsidian:package --workspace obsidian-docshelf
+```
+
+The package check verifies ZIP contents, matching standalone assets, embedded licenses, and checksums. The runtime check installs the ZIP into a disposable vault, exercises the normal suite, and replaces the three plugin files while a conflict draft exists. It verifies settings, shelf, and recovery bytes survive replacement, then checks the recovered draft after re-enabling. This tests an update/reinstall of the initial release; cross-version migrations need their own fixtures when formats change. Runtime output stays under `packages/obsidian/.local/runtime/`. Follow the [runtime requirements](../packages/obsidian/README.md#develop-and-verify); neither command installs into your own vault.
+
+## Prepare an Obsidian release draft
+
+The manually dispatched **Prepare Obsidian release** workflow (`release-obsidian.yml`) packages the exact commit selected on `main`, verifies its version and release notes, runs aggregate and package checks, creates the plain `X.Y.Z` tag, and uploads a GitHub release draft. It does not run on a push and does not publish the draft. The initial version is `0.1.0`; plugin tags omit `v` to match the manifest, while web tags keep `vX.Y.Z`. Notes belong in `docs/releases/obsidian-X.Y.Z.md`.
+
+Finish the code, metadata, notes, and runtime verification before dispatching. Creating the tag and draft changes the public repository, so dispatch only when that action is intended:
+
+```sh
+gh workflow run release-obsidian.yml --ref main -f version=0.1.0
+```
+
+The workflow refuses a requested version that differs from the checked-out manifest. It never moves an existing tag or replaces an uploaded asset. Rerunning the original workflow run verifies matching assets and uploads missing draft assets; differences fail for investigation. A published release is only verified, never repaired or edited. If `main` has advanced since the tag was created, rerun the original run instead of dispatching against a new commit with the same version.
+
+Use the packaged build for the README video. Before publishing, review the draft notes and assets, compare the tag commit with the verified workflow commit, and confirm the installation instructions and compatibility claims are accurate. Publish the reviewed draft in GitHub when ready; mark an early desktop beta as a prerelease. The video, directory listing, and public announcement can follow separately.
+
+Review the minimum Obsidian version and tested platforms in both READMEs for each release. Their Shields.io version badges follow published plugin releases, including betas, and exclude the web app's `v`-prefixed tags. The Download ZIP badges reuse a static graphic; their destinations and the install sections' release-note links are maintained by `npm run sync:obsidian-metadata`. Commit those link updates with release preparation and publish the matching release promptly after merging; the prepared links will not resolve until publication, while Shields.io continues showing the previous published version until its cache refreshes. A generic latest-release download link can point to the independently versioned web app and does not cover prereleases.
+
+## Submit the Obsidian plugin
+
+The current [Obsidian submission process](https://docs.obsidian.md/plugins/releasing/submit-plugin) uses [community.obsidian.md](https://community.obsidian.md). Sign in with an Obsidian account, link GitHub, and submit the repository. The root manifest on the default branch must match a published release whose tag is exactly its version. That release must attach `main.js`, `manifest.json`, and `styles.css` individually in addition to the convenient ZIP. The directory performs automated review; resolve its findings before announcing in-app installation. A GitHub beta release can be offered for manual installation before directory approval.
 
 ## Verify the published result
 

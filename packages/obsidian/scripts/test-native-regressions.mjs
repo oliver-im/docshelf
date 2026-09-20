@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function testNativeRegressions({ page, poll, workspace }) {
+export async function testNativeRegressions({ page, poll, workspace, replacePluginFiles }) {
   const file = path.join(workspace, 'guide.md');
   const original = await readFile(file, 'utf8');
   const vaultFiles = await page.evaluate(() => app.vault.getMarkdownFiles().map(file => file.path).sort());
@@ -89,6 +89,7 @@ export async function testNativeRegressions({ page, poll, workspace }) {
   const conflicted = await state();
   assert.match(conflicted.problem, /changed outside/);
   await page.evaluate(() => app.plugins.disablePlugin('docshelf'));
+  if (replacePluginFiles) await replacePluginFiles();
   await page.evaluate(() => app.plugins.enablePlugin('docshelf'));
   await poll(async () => (await state()).problem.includes('Recovered unsaved edits'), 'Plugin reload did not recover the pending draft.');
   assert.equal((await state()).text, conflicted.text);

@@ -160,8 +160,8 @@ export class NativeMarkdownView extends MarkdownView {
     if (!range) return false;
     event.preventDefault(); event.stopPropagation();
     const menu = new Menu()
-      .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
       .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
+      .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
       .addItem(item => item.setTitle('Reveal source').setIcon('folder-open').onClick(() => {
         if (this.artifact) void this.plugin.revealArtifact(this.artifact);
       }));
