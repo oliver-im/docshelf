@@ -92,7 +92,7 @@ Run `npm run package:obsidian` at the repository root. It rebuilds the plugin an
 
 Each build collects the full licenses and notices of bundled dependencies, including transitive dependencies, from esbuild's module list. It embeds those texts and the plugin's MIT license as comments in `main.js`, so Obsidian's three-file installation carries them. The ZIP also includes the separate license files. Host-provided externals are excluded; missing or empty dependency licenses fail the build.
 
-Maintain the plugin version in `packages/obsidian/package.json` and `packages/obsidian/manifest.json`, refresh the root lockfile with `npm install --package-lock-only`, and add the minimum Obsidian requirement to `packages/obsidian/versions.json`. Preserve older compatibility entries. Run `npm run sync:obsidian-metadata` to update the tracked root `manifest.json` and `versions.json` mirrors required by Obsidian. Checks and packaging reject differences between the mirrors, plugin package, manifest, and lockfile. Web versions remain independent.
+Maintain the plugin version in `packages/obsidian/package.json` and `packages/obsidian/manifest.json`, refresh the root lockfile with `npm install --package-lock-only`, and add the minimum Obsidian requirement to `packages/obsidian/versions.json`. Preserve older compatibility entries. Run `npm run sync:obsidian-metadata` to update the tracked root `manifest.json` and `versions.json` mirrors required by Obsidian, plus the `obsidian-download` and `obsidian-release` link definitions in both READMEs. Checks and packaging reject stale metadata or README release links. Web versions remain independent.
 
 Before handing the build to testers or recording a release video, run the aggregate checks, then verify the actual package:
 
@@ -118,7 +118,7 @@ The workflow refuses a requested version that differs from the checked-out manif
 
 Use the packaged build for the README video. Before publishing, review the draft notes and assets, compare the tag commit with the verified workflow commit, and confirm the installation instructions and compatibility claims are accurate. Publish the reviewed draft in GitHub when ready; mark an early desktop beta as a prerelease. The video, directory listing, and public announcement can follow separately.
 
-Keep the root and plugin README versions, minimum Obsidian version, tested platform, and download links in sync with the release. The initial direct download is **[Download v0.1.0 ZIP](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)**. Use the exact tag and asset name for later versions; a generic latest-release link can point to the independently versioned web app.
+Review the minimum Obsidian version and tested platforms in both READMEs for each release. Their Shields.io version badges follow published plugin releases, including betas, and exclude the web app's `v`-prefixed tags. The Download ZIP badges reuse a static graphic; their destinations and the install sections' release-note links are maintained by `npm run sync:obsidian-metadata`. Commit those link updates with release preparation and publish the matching release promptly after merging; the prepared links will not resolve until publication, while Shields.io continues showing the previous published version until its cache refreshes. A generic latest-release download link can point to the independently versioned web app and does not cover prereleases.
 
 ## Submit the Obsidian plugin
 
