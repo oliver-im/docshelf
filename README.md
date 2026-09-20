@@ -2,7 +2,7 @@
 
 Browse Markdown and HTML documents across your projects.
 
-[![DocShelf for Obsidian v0.1.0 desktop beta — release notes](public/obsidian-version.svg)](https://github.com/oliver-im/docshelf/releases/tag/0.1.0) [![Download DocShelf for Obsidian 0.1.0 ZIP](public/obsidian-download.svg)](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)
+[![Latest DocShelf for Obsidian release, including betas](https://img.shields.io/github/v/release/oliver-im/docshelf?include_prereleases&sort=semver&filter=%21v%2A&style=for-the-badge&label=Obsidian&labelColor=24283b&color=7045b3)](https://github.com/oliver-im/docshelf/releases) [![Download DocShelf for Obsidian ZIP](public/obsidian-download.svg)][obsidian-download]
 
 ## Key features
 
@@ -59,9 +59,9 @@ For a foreground server on other platforms or without automatic startup, use `np
 
 ### Install the Obsidian plugin
 
-Requires **desktop Obsidian 1.13.7 or later**. The **0.1.0 desktop beta** supports manual installation and is not yet listed in the community directory. Runtime verification covers macOS with Obsidian 1.13.7; Windows, Linux, and Obsidian 1.14.2 are not yet verified.
+Requires **desktop Obsidian 1.13.7 or later**. The **desktop beta** supports manual installation and is not yet listed in the community directory. Runtime verification covers macOS with Obsidian 1.13.7; Windows, Linux, and Obsidian 1.14.2 are not yet verified.
 
-**[Download DocShelf for Obsidian 0.1.0 ZIP](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)** · [Release notes](https://github.com/oliver-im/docshelf/releases/tag/0.1.0)
+**[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
 Extract the ZIP and copy its `docshelf` folder into `<vault>/.obsidian/plugins/`. Enable **DocShelf** in Community plugins.
 
@@ -71,7 +71,7 @@ To produce that ZIP from this checkout:
 npm run package:obsidian
 ```
 
-The ZIP is written to `packages/obsidian/dist/release/docshelf-0.1.0.zip`. You can also install the folder at `packages/obsidian/dist/docshelf/` directly. When updating, disable DocShelf and copy the new files into the existing plugin folder, preserving `data.json` and `recovery/`.
+The ZIP is written to `packages/obsidian/dist/release/docshelf-X.Y.Z.zip`, using the plugin version. You can also install the folder at `packages/obsidian/dist/docshelf/` directly. When updating, disable DocShelf and copy the new files into the existing plugin folder, preserving `data.json` and `recovery/`.
 
 Open **DocShelf: Open shelf** from the command palette and click **Create empty shelf file**. Add a document with the skill below, then select it in the sidebar. To use an existing shelf, choose it in **DocShelf: Configure shelf**. The [plugin guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md) also includes a sample shelf, workspace settings, and editing controls.
 
@@ -104,3 +104,6 @@ To register documents manually, follow the [web app registration guide](https://
 ## License
 
 MIT. Themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
+
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.1.0

@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-/** Keep Obsidian's root metadata identical to the plugin's maintained files.
+/** Keep root metadata and README release links aligned with the plugin's maintained files.
  * @param {string} root
  * @param {{ sync?: boolean, version?: string }} options
  */
@@ -31,6 +31,26 @@ export async function checkReleaseMetadata(root = repository, { sync = false, ve
   for (const [name, value] of [['manifest.json', manifest], ['versions.json', versions]]) {
     if (sync) await writeFile(path.join(root, name), JSON.stringify(value, null, 2) + '\n');
     else assert.deepEqual(await read(name), value, `${name} differs from the plugin metadata. Run npm run sync:obsidian-metadata.`);
+  }
+  const releases = 'https://github.com/oliver-im/docshelf/releases';
+  const links = {
+    'obsidian-download': `${releases}/download/${manifest.version}/docshelf-${manifest.version}.zip`,
+    'obsidian-release': `${releases}/tag/${manifest.version}`,
+  };
+  for (const name of ['README.md', 'packages/obsidian/README.md']) {
+    const file = path.join(root, name);
+    const source = await readFile(file, 'utf8');
+    let updated = source;
+    for (const [label, url] of Object.entries(links)) {
+      const definition = new RegExp(`^\\[${label}\\]:[^\\r\\n]*`, 'gm');
+      assert.equal([...source.matchAll(definition)].length, 1, `${name} must contain exactly one [${label}] link definition.`);
+      updated = updated.replace(definition, `[${label}]: ${url}`);
+    }
+    if (sync) {
+      if (updated !== source) await writeFile(file, updated);
+    } else {
+      assert.equal(source, updated, `${name} release links differ from the plugin version. Run npm run sync:obsidian-metadata.`);
+    }
   }
   return manifest;
 }

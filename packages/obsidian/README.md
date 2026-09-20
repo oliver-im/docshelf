@@ -2,13 +2,13 @@
 
 Edit registered local Markdown in Obsidian's native editor, browse HTML reports, search project documents, and copy source-line references. Files stay in their original project folders; DocShelf does not create mirrored vault notes.
 
-[![DocShelf for Obsidian v0.1.0 desktop beta — release notes](../../public/obsidian-version.svg)](https://github.com/oliver-im/docshelf/releases/tag/0.1.0) [![Download DocShelf for Obsidian 0.1.0 ZIP](../../public/obsidian-download.svg)](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)
+[![Latest DocShelf for Obsidian release, including betas](https://img.shields.io/github/v/release/oliver-im/docshelf?include_prereleases&sort=semver&filter=%21v%2A&style=for-the-badge&label=Obsidian&labelColor=24283b&color=7045b3)](https://github.com/oliver-im/docshelf/releases) [![Download DocShelf for Obsidian ZIP](../../public/obsidian-download.svg)][obsidian-download]
 
 ## Install
 
-Requires desktop Obsidian **1.13.7 or later**. Runtime checks cover Obsidian 1.13.7 with Electron 34.2.0 on macOS. Windows, Linux, and Obsidian 1.14.2 are not yet verified. The **0.1.0 desktop beta** supports manual installation; the plugin is not yet listed in the community directory.
+Requires desktop Obsidian **1.13.7 or later**. Runtime checks cover Obsidian 1.13.7 with Electron 34.2.0 on macOS. Windows, Linux, and Obsidian 1.14.2 are not yet verified. The **desktop beta** supports manual installation; the plugin is not yet listed in the community directory.
 
-**[Download DocShelf for Obsidian 0.1.0 ZIP](https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip)** · [Release notes](https://github.com/oliver-im/docshelf/releases/tag/0.1.0)
+**[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
 Packaged builds install without Node.js, Git, or DocShelf Web. Extract the ZIP, copy its `docshelf` folder into `<vault>/.obsidian/plugins/`, and enable **DocShelf** in Community plugins.
 
@@ -19,7 +19,7 @@ npm ci
 npm run package:obsidian
 ```
 
-The ZIP is written to `packages/obsidian/dist/release/docshelf-0.1.0.zip`. You can also copy `packages/obsidian/dist/docshelf/` directly into `<vault>/.obsidian/plugins/`.
+The ZIP is written to `packages/obsidian/dist/release/docshelf-X.Y.Z.zip`, using the plugin version. You can also copy `packages/obsidian/dist/docshelf/` directly into `<vault>/.obsidian/plugins/`.
 
 Open **DocShelf: Open shelf** from the command palette and choose **Create empty shelf file**. Add documents using the [registration skill](../../.agents/skills/docshelf/SKILL.md) or [edit the shelf JSON](#register-documents). To use an existing shelf, open **DocShelf: Configure shelf** and enter its absolute path or a path relative to the vault. For a source-checkout example, use the absolute path to `packages/obsidian/examples/shelf.json`.
 
@@ -321,3 +321,6 @@ web app and Obsidian links from the same shelf; see [shared setup and difference
 MIT. URL and line-range helpers are shared with the web app through `@docshelf/core`. Each build embeds the plugin's MIT license and the full license and notice texts of bundled dependencies in `main.js`. Packaging also includes separate `LICENSE` and `THIRD_PARTY_NOTICES.txt` files. These notices accompany both the ZIP and the standard three-file Obsidian installation.
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
+
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.1.0/docshelf-0.1.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.1.0
