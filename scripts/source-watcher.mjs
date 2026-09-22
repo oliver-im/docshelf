@@ -1,5 +1,4 @@
-import { lstat, realpath } from 'node:fs/promises';
-import path from 'node:path';
+import { watchScope } from '../packages/local/watch-scope.mjs';
 import chokidar from 'chokidar';
 
 /** Watch only registered paths, their targets, and symlinks along those paths.
@@ -19,37 +18,26 @@ export class SourceWatcher {
     this.onError = onError;
   }
 
-  /** @param {string[]} sources */
-  async update(sources) {
-    const candidates = new Set(sources);
-    const inspected = new Set();
-    for (const source of sources) {
-      for (let candidate = path.dirname(source); !inspected.has(candidate); candidate = path.dirname(candidate)) {
-        inspected.add(candidate);
-        if ((await lstat(candidate).catch(() => null))?.isSymbolicLink()) candidates.add(candidate);
-        if (candidate === path.dirname(candidate)) break;
-      }
-    }
-    // Normalize parent aliases such as /var, but retain each final symlink so
-    // replacing it remains observable. Its old and new targets are separate.
-    const paths = new Set(await Promise.all([...candidates].map(async source =>
-      path.join(await realpath(path.dirname(source)).catch(() => path.dirname(source)), path.basename(source)),
-    )));
-    if (this.closed || paths.size === this.paths.size && [...paths].every(file => this.paths.has(file))) return;
+  signature = '';
+  /** @param {string[]} sources @param {Array<any>} [directories] */
+  async update(sources, directories = []) {
+    const scope = await watchScope(sources, directories);
+    if (this.closed || this.watcher && this.signature === scope.signature) return;
     await this.watcher?.close();
     if (this.closed) return;
-    this.paths = paths;
-    const parents = new Set([...paths].map(file => path.dirname(file)));
-    const watcher = chokidar.watch([...parents], {
+    this.paths = scope.paths;
+    this.signature = scope.signature;
+    const watcher = chokidar.watch(scope.parents, {
       ignoreInitial: true,
       followSymlinks: false,
       atomic: true,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-      ignored: file => !paths.has(file) && ![...parents].some(parent => parent === file || parent.startsWith(`${file}${path.sep}`)),
+      depth: 34,
+      ignored: scope.ignored,
     });
     this.watcher = watcher;
     watcher.on('all', (event, file) => {
-      if (!this.closed && this.watcher === watcher) this.onChange(`${event} ${file}`);
+      if (!this.closed && this.watcher === watcher && scope.relevantChange(event, file)) this.onChange(`${event} ${file}`);
     });
     // Cover changes during watch-set replacement, including a newly selected
     // target changing after the build's last source check.

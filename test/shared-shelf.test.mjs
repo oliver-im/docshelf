@@ -11,7 +11,7 @@ const run = promisify(execFile);
 
 test('one shelf validates in both apps and the CLI emits equivalent document links', async t => {
   const root = await temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'shared-shelf-');
-  for (const entry of ['scripts', '.agents/skills/docshelf/assets', 'package.json']) {
+  for (const entry of ['packages/local', 'scripts', '.agents/skills/docshelf/assets', 'package.json']) {
     await cp(path.join(docShelfRoot, entry), path.join(root, entry), { recursive: true });
   }
   await symlink(path.join(docShelfRoot, 'node_modules'), path.join(root, 'node_modules'), 'dir');

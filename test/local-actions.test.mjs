@@ -156,3 +156,24 @@ test('invalid bodies and OS failures return bounded errors without source paths'
   assert.equal(response.status, 500);
   assert.doesNotMatch(await response.text(), /private|source\/path/);
 });
+
+test('registration uses the same loopback, origin, and session protections as document actions', async t => {
+  const calls = [];
+  const f = await fixture(t, { platform: 'linux', registration: async body => { calls.push(body); return { revision: 'preview', documents: [], foldersAdded: 1 }; } });
+  assert.equal(f.capability.add, true);
+  assert.equal(f.capability.remove, true);
+  assert.equal(typeof f.capability.token, 'string');
+  const request = (headers, body = { action: 'preview', sources: ['docs'] }) => fetch(`${f.origin}/__docshelf/register`, { method: 'POST', headers, body: JSON.stringify(body) });
+  for (const headers of [
+    { ...f.headers, Origin: 'https://other.example' },
+    { ...f.headers, 'X-DocShelf-Token': 'invalid' },
+    { ...f.headers, 'Content-Type': 'text/plain' },
+    { ...f.headers, 'X-DocShelf-Request': '' },
+  ]) {
+    assert.equal((await request(headers)).status, 403);
+    assert.equal((await request(headers, { action: 'remove', route: 'project/report.html', revision: 'confirmation' })).status, 403);
+  }
+  assert.equal(calls.length, 0);
+  assert.equal((await request(f.headers)).status, 200);
+  assert.deepEqual(calls, [{ action: 'preview', sources: ['docs'] }]);
+});

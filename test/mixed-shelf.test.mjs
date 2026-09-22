@@ -92,10 +92,29 @@ async function isolatedArtifacts(t) {
   // Copy the implementation into an isolated checkout so sync cannot touch the
   // developer's registrations, generated output, or running watcher.
   const fixture = await temporaryDirectory(t, path.join(docShelfRoot, '.docshelf-runtime'), 'mixed-shelf-');
-  for (const entry of ['scripts', 'src/lib', '.agents/skills/docshelf/assets', 'package.json']) {
+  for (const entry of ['packages/local', 'scripts', 'src/lib', '.agents/skills/docshelf/assets', 'package.json']) {
     await cp(path.join(docShelfRoot, entry), path.join(fixture, entry), { recursive: true });
   }
   await symlink(path.join(docShelfRoot, 'node_modules'), path.join(fixture, 'node_modules'), 'dir');
   const implementation = await import(pathToFileURL(path.join(fixture, 'scripts/artifacts.mjs')).href);
   return { fixture, implementation };
 }
+
+test('a folder membership change during a build prevents publishing the stale snapshot', async t => {
+  const { fixture, implementation } = await isolatedArtifacts(t);
+  await mkdir(path.join(fixture, 'notes'));
+  await writeFile(path.join(fixture, 'notes/first.md'), '# First');
+  const shelfPath = path.join(fixture, 'shelf.json');
+  const config = { version: 2, artifacts: [], directories: [{ id: 'notes', project: 'Notes', source: 'notes' }] };
+  await writeFile(shelfPath, JSON.stringify(config));
+  const shelf = await implementation.loadShelfFrom(shelfPath);
+  const revisions = await implementation.syncArtifacts(shelf);
+  assert.equal(await implementation.artifactSourcesMatch(shelf, revisions), true);
+  await writeFile(path.join(fixture, 'notes/second.md'), '# Second');
+  assert.equal(await implementation.artifactSourcesMatch(shelf, revisions), false);
+  const current = await implementation.loadShelfFrom(shelfPath);
+  const updated = await implementation.syncArtifacts(current);
+  assert.equal(await implementation.artifactSourcesMatch(current, updated), true);
+  await writeFile(shelfPath, JSON.stringify({ ...config, directories: [] }));
+  assert.equal(await implementation.artifactSourcesMatch(current, updated), false);
+});

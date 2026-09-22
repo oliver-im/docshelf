@@ -6,6 +6,10 @@
   "license": "MIT",
   "description": "Host-independent DocShelf URL and source-reference helpers.",
   "exports": {
+    "./directories": {
+      "types": "./types/directories.d.ts",
+      "default": "./src/directories.js"
+    },
     "./line-permalinks": {
       "types": "./types/line-permalinks.d.ts",
       "default": "./src/line-permalinks.js"

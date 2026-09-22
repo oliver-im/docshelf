@@ -20,6 +20,7 @@ import {
 } from './artifacts.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { createLocalActionsHandler } from './local-actions.mjs';
+import { createRegistrationHandler } from './registration.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import { siteInputsSignature } from './site-inputs.mjs';
 import { SourceWatcher } from './source-watcher.mjs';
@@ -41,6 +42,7 @@ const handleLocalAction = createLocalActionsHandler({
   listenHost: host,
   loadShelf,
   workspaceRoot,
+  registration: createRegistrationHandler(),
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -180,6 +182,7 @@ async function rebuild(reasons) {
     // A signal that arrived while waiting for the lock must not start a sync or a build now.
     throwIfShuttingDown();
     const shelf = await loadShelf();
+    await refreshSourceWatches(shelf);
     const revisionState = await syncArtifacts(shelf, { lock: false });
     await rm(buildRoot, { recursive: true, force: true });
     throwIfShuttingDown();
@@ -285,7 +288,7 @@ async function refreshSourceWatches(existingShelf) {
   const shelf = existingShelf || (await loadShelf());
   await sourceWatcher.update(shelf.artifacts.flatMap(artifact =>
     artifact.sourcePath ? [path.resolve(docShelfRoot, artifact.source), artifact.sourcePath] : [],
-  ));
+  ), shelf.directories || []);
 }
 
 async function findLatestBuild() {
