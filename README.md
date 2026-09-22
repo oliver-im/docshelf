@@ -6,7 +6,7 @@ Browse Markdown and HTML documents across your projects.
 
 ## Key features
 
-- **A shelf across projects.** Register Markdown and HTML files where they live, and view them in Obsidian or in the browser.
+- **A shelf across projects.** Add files or folders where they live, and view their Markdown and HTML in Obsidian or in the browser. Folders are discovered recursively and update automatically.
 - **Links to exact passages.** Select Markdown source lines and copy a link to that document and line range. Links start with `obsidian://docshelf` for Obsidian or `https://shelf.localhost/` for the web app after local setup.
 
 **[DocShelf Web Demo](https://oliver-im.github.io/docshelf/?artifact=docshelf%2Freadme.html)**
@@ -81,7 +81,7 @@ npm run package:obsidian
 
 The ZIP is written to `packages/obsidian/dist/release/docshelf-X.Y.Z.zip`, using the plugin version. You can also install the folder at `packages/obsidian/dist/docshelf/` directly. When updating, disable DocShelf and copy the new files into the existing plugin folder, preserving `data.json` and `recovery/`.
 
-Open **DocShelf: Open shelf** from the command palette and click **Create empty shelf file**. Add a document with the skill below, then select it in the sidebar. To use an existing shelf, choose it in **DocShelf: Configure shelf**. The [plugin guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md) also includes a sample shelf, workspace settings, and editing controls.
+Open **DocShelf: Open shelf** from the command palette and use **Add…** to choose a project, then files, folders, or a mixture. Right-clicking a project or document uses that project directly. On macOS, click **Add** in the picker to register the selection immediately. To use an existing shelf, choose it in **DocShelf: Configure shelf**. See [adding files and folders](docs/folders.md) for recursive discovery and the shared shelf format.
 
 DocShelf reads explicitly registered files outside the vault so documents can remain in their project folders. Local Markdown edits save to the originals; settings and private recovery copies stay in the plugin directory. Interactive HTML runs through an isolated viewer and a token-protected loopback server. Reports and Markdown images may load HTTPS resources; GitHub Markdown uses `raw.githubusercontent.com`, and published Claude Artifacts use `claude.ai` and resources loaded by that page. There is no telemetry or account requirement. See [file access and network disclosure](packages/obsidian/README.md#file-access-and-network-disclosure).
 

@@ -1,10 +1,6 @@
 # DocShelf for Obsidian
 
-This desktop plugin opens explicitly registered local Markdown in Obsidian's
-native editor and displays HTML and supported remote sources read-only.
-Local Markdown edits save to the original file, with recovery and conflict
-checks. Do not add mirrors, implicit folder registration, or native vault
-indexing without a deliberate scope change.
+This desktop plugin opens explicitly registered local Markdown in Obsidian's native editor and displays HTML and supported remote sources read-only. Local Markdown edits save to the original file, with recovery and conflict checks. Explicit folder registrations discover supported documents recursively within the selected folder and workspace boundary. Do not add mirrors, implicit folder registration, or native vault indexing without a deliberate scope change.
 
 - `.local/` holds private feasibility notes and local test output.
 - `shelf.local.json` and plugin `data.json` are machine-specific; never commit them.

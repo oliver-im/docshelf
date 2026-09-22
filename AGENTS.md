@@ -1,6 +1,6 @@
 # DocShelf agent guidance
 
-DocShelf Web and DocShelf for Obsidian are independent apps that catalog explicitly registered documents without taking ownership of their source content. They share pure helpers and a registration workflow, and can use the same shelf.
+DocShelf Web and DocShelf for Obsidian are independent apps that catalog explicitly registered files and folders without taking ownership of their source content. They share pure helpers and a registration workflow, and can use the same shelf.
 
 ## Markdown formatting
 
@@ -23,6 +23,7 @@ Keep each prose paragraph on one source line, including prose within list items,
 - `packages/obsidian/` contains the desktop plugin and its own safety guidance.
 - Root `manifest.json` and `versions.json` are tracked mirrors for Obsidian distribution. Maintain their originals in `packages/obsidian/`, then run `npm run sync:obsidian-metadata`; plugin checks and packaging reject drift. Plugin release tags use plain `X.Y.Z`, while web releases use `vX.Y.Z`.
 - `packages/core/` contains pure helpers used by both apps. Keep filesystem, server, editor, DOM, and host-specific UI code out of this package.
+- `packages/local/` contains shared Node filesystem discovery, registration, watch scoping, and lock helpers. Keep Obsidian and browser APIs outside it. Folder discovery must preserve workspace and selected-folder containment and skip descendant symlinks.
 - `packages/core/types/` contains tracked generated declarations. After changing the core API, regenerate them with `npm run build --workspace @docshelf/core` and include the resulting declaration changes; do not hand-edit them.
 - Use Node.js 24 or newer. Install dependencies at the root with `npm ci`; maintain only the root lockfile.
 - `.agents/skills/docshelf/` is the registration skill for both apps.

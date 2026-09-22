@@ -21,7 +21,7 @@ npm run package:obsidian
 
 The ZIP is written to `packages/obsidian/dist/release/docshelf-X.Y.Z.zip`, using the plugin version. You can also copy `packages/obsidian/dist/docshelf/` directly into `<vault>/.obsidian/plugins/`.
 
-Open **DocShelf: Open shelf** from the command palette and choose **Create empty shelf file**. Add documents using the [registration skill](../../.agents/skills/docshelf/SKILL.md) or [edit the shelf JSON](#register-documents). To use an existing shelf, open **DocShelf: Configure shelf** and enter its absolute path or a path relative to the vault. For a source-checkout example, use the absolute path to `packages/obsidian/examples/shelf.json`.
+Open **DocShelf: Open shelf** from the command palette, then use **+** or **DocShelf: Add…** to add files and folders. Choose an existing project or type a new name, select your files or folders, and click **Add** in the picker. DocShelf creates the local shelf file if needed. You can also use the [registration skill](../../.agents/skills/docshelf/SKILL.md) or [edit the shelf JSON](#register-documents). To use an existing shelf, open **DocShelf: Configure shelf** and enter its absolute path or a path relative to the vault. For a source-checkout example, use the absolute path to `packages/obsidian/examples/shelf.json`.
 
 Under **Display**, **Readable line length** limits the text column's width.
 It applies immediately and shares Obsidian's vault-wide preference, so it also
@@ -38,6 +38,8 @@ Extract the new plugin ZIP, or update this checkout and run `npm ci` followed by
 Keep the installed `data.json` and `recovery/` directory; do not replace or delete the whole plugin directory. Your configured shelf and original documents stay in place. The packaging command only creates distribution files. The plugin and web app are updated separately; see the [shared-shelf guide](../../docs/unification.md#update-existing-installations). The standard three-file Obsidian installation also carries the full license notices inside `main.js`.
 
 ## Register documents
+
+Use the shelf’s **+** button, **DocShelf: Add…**, or **Add…** from a right-click menu. The top-level action first lets you choose an existing project or type a new name. Right-clicking a project heading or document uses that project directly. On macOS, choose files, folders, or a mixture and click **Add** in the combined picker to register them immediately; there is no confirmation window afterward. Cancelling either chooser makes no changes. Other platforms accept paths in the Add form. Folders include supported documents recursively and update automatically. Existing individual registrations keep their titles and links. See [adding files and folders](../../docs/folders.md) for exclusions, limits, and version 2 shelves.
 
 The default shelf is `shelf.local.json` in your vault. Create it using the
 empty-state button or copy the empty `shelf.json` template. Edit registrations
@@ -206,23 +208,7 @@ excluded. Search indexing uses at most 16 million source characters per refresh
 and 200,000 extracted characters per document; remaining metadata stays
 searchable. Exceeding the total limit is shown in the sidebar.
 
-With no search query, documents are grouped by their registered project label
-and shown as compact rows with a file-type icon and title. Long titles are
-truncated; hover over a row to see its full title and source type. Descriptions
-stay hidden while browsing. Search results include short content excerpts.
-Click a project heading to collapse or expand it, or drag it to reorder projects.
-Drag a document row to reorder it within its project. Right-click a heading or
-document (or press **Shift+F10** while it is focused) for **Move up**, **Move down**,
-and **Reset to alphabetical**. Resetting a document's order resets its project’s
-document list. Obsidian saves these orders and collapse state with the workspace;
-new projects and documents follow their saved lists alphabetically. Document
-orders use stable registration routes, so renaming a title preserves its position.
-Reordering does not change registrations or source files, and documents cannot
-be dragged between projects. Search shows matches across all projects, including
-collapsed ones, ordered by relevance with dragging disabled. Local file changes
-refresh automatically. For a manual refresh or setup,
-use **DocShelf: Reload shelf and documents** or **DocShelf: Configure shelf** in
-Obsidian's command palette.
+With no search query, documents are grouped by their registered project label and shown as compact rows with a file-type icon and title. Long titles are truncated; hover over a row to see its full title and source type. Descriptions stay hidden while browsing. Search results include short content excerpts. Click a project heading to collapse or expand it, or drag it to reorder projects. Drag a document row to reorder it within its project. Right-click a heading or document (or press **Shift+F10** while it is focused) for **Move up** and **Move down**. **Reset to alphabetical** appears only in project heading menus and resets the project order. Document menus include **Remove from shelf…** with confirmation. Obsidian saves orders and collapse state with the workspace; new projects and documents follow their saved lists alphabetically. Document orders use stable registration routes, so renaming a title preserves its position. Reordering does not change registrations or source files, and documents cannot be dragged between projects. Search shows matches across all projects, including collapsed ones, ordered by relevance with dragging disabled. Local file changes refresh automatically. For a manual refresh or setup, use **DocShelf: Reload shelf and documents** or **DocShelf: Configure shelf** in Obsidian's command palette.
 
 The `source` field also accepts:
 

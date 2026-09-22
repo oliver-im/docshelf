@@ -1,6 +1,6 @@
 ---
 name: docshelf
-description: Register finished documents in DocShelf when asked to add them to the shelf, preserving original files and returning DocShelf Web, Obsidian, and source-line links for the configured apps.
+description: Register finished documents or explicitly selected folders in DocShelf, preserving originals and returning links for the configured apps.
 ---
 
 # DocShelf
@@ -24,6 +24,8 @@ to make it use a different shelf. Both apps can point to the same file at the
 web checkout root. Separate configured shelves are not automatically synchronized.
 
 ## Register the document
+
+For a folder request, read `docs/folders.md` in the checkout. Add a version 2 `directories` entry for the explicitly selected folder, preserving existing registrations and stable folder IDs. Discovery is recursive by default; honor requested exclusions. Do not enumerate the folder into individual entries. For a file already discovered through a registered folder, use its existing resolved route unless the user requests a metadata or asset override. Do not register its parent implicitly when the user asked only for that file. Both apps must support version 2 before using directories in a shared shelf.
 
 Resolve the source from the explicit request or the finished document just
 created. Ask if ambiguous. Register after authoring and verification; this skill
