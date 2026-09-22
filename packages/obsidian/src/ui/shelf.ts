@@ -200,16 +200,39 @@ export class ShelfView extends ItemView {
   }
 
   private showProjectMenu(project: string, toggle: HTMLButtonElement): void {
-    this.showOrderMenu(project, toggle, () => this.orderedProjects(), order => this.saveProjectOrder(order, project), !!this.projectOrder.length, project);
+    const menu = this.createMenu(project);
+    this.addMoveActions(menu, project, () => this.orderedProjects(), order => this.saveProjectOrder(order, project));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!this.documentOrder.get(project)?.length).onClick(() => {
+      this.documentOrder.delete(project);
+      this.app.workspace.requestSaveLayout();
+      this.renderResults();
+      Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-project-toggle')).find(button => button.dataset.project === project)?.focus();
+    }));
+    menu.addItem(item => item.setTitle('Reset project order').setIcon('list-restart').setDisabled(!this.projectOrder.length).onClick(() => this.saveProjectOrder([], project)));
+    this.showMenu(menu, toggle);
   }
 
-  private showOrderMenu(key: string, anchor: HTMLButtonElement, getOrder: () => string[], saveOrder: (order: string[]) => void, hasCustomOrder: boolean, project: string, artifact?: Artifact): void {
+  private showDocumentMenu(artifact: Artifact, button: HTMLButtonElement): void {
+    const { project, route } = artifact;
+    const menu = this.createMenu(project);
+    this.addMoveActions(menu, route, () => this.orderedDocuments(project).map(item => item.route), order => this.saveDocumentOrder(project, order, route));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove(artifact)));
+    this.showMenu(menu, button);
+  }
+
+  private createMenu(project: string): Menu {
     this.orderMenu?.hide();
-    const order = getOrder();
-    const index = order.indexOf(key);
     const menu = this.orderMenu = new Menu().setUseNativeMenu(false);
     menu.addItem(item => item.setTitle('Add…').setIcon('plus').onClick(() => this.plugin.showAdd(project)));
     menu.addSeparator();
+    return menu;
+  }
+
+  private addMoveActions(menu: Menu, key: string, getOrder: () => string[], saveOrder: (order: string[]) => void): void {
+    const order = getOrder();
+    const index = order.indexOf(key);
     for (const [title, icon, offset] of [['Move up', 'arrow-up', -1], ['Move down', 'arrow-down', 1]] as const) {
       menu.addItem(item => item.setTitle(title).setIcon(icon).setDisabled(index < 0 || index + offset < 0 || index + offset >= order.length).onClick(() => {
         // Read the current catalog in case it changed while the menu was open.
@@ -222,12 +245,9 @@ export class ShelfView extends ItemView {
         saveOrder(current);
       }));
     }
-    menu.addSeparator();
-    if (artifact) {
-      menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove(artifact)));
-    } else {
-      menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!hasCustomOrder).onClick(() => saveOrder([])));
-    }
+  }
+
+  private showMenu(menu: Menu, anchor: HTMLButtonElement): void {
     menu.onHide(() => { this.orderMenu = undefined; if (anchor.isConnected) anchor.focus(); });
     const bounds = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, anchor.ownerDocument);
@@ -298,8 +318,7 @@ export class ShelfView extends ItemView {
   }
 
   private makeDocumentMenu(button: HTMLButtonElement, artifact: Artifact): void {
-    const { project, route } = artifact;
-    const showMenu = () => this.showOrderMenu(route, button, () => this.orderedDocuments(project).map(artifact => artifact.route), order => this.saveDocumentOrder(project, order, route), !!this.documentOrder.get(project)?.length, project, artifact);
+    const showMenu = () => this.showDocumentMenu(artifact, button);
     button.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();

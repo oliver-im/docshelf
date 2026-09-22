@@ -6,7 +6,11 @@ On macOS, the combined file/folder picker shows the destination project in its t
 
 Local web additions require the loopback watcher (`npm run watch`). They update its local shelf, so Obsidian sees them when it uses that same shelf. Static hosting continues to offer public-document imports in browser storage; it cannot register local paths. Restart a running watcher after updating the app code to enable the new endpoint.
 
-Right-click a document and choose **Remove from shelf…**, then confirm with **Remove** or choose **Cancel**. This changes the shelf only; original files and remote documents stay untouched. A document from a watched folder is excluded by its exact path from every overlapping registered folder so it does not reappear. Other documents with the same filename stay on the shelf. Open unsaved Obsidian drafts are kept, with saving blocked until the source is registered again. You can restore a removed local document by adding that file explicitly. The local web watcher supports the same action; browser imports can also be removed individually from that browser.
+Right-click a document and choose **Remove from shelf…**, then confirm with **Remove** or choose **Cancel**. This changes the shelf only; original files and remote documents stay untouched. A document from a watched folder is excluded by its exact path from every overlapping registered folder so it does not reappear. Other documents with the same filename stay on the shelf. The local web watcher supports the same action; browser imports can also be removed individually from that browser.
+
+You can restore a removed local document by adding that file explicitly. Open unsaved Obsidian drafts are kept, with saving blocked until the source is registered again. Re-adding the same source path reconnects its open drafts even if its shelf link changes. Reopening the document can also recover a closed draft, which requires review before saving. External changes still require conflict resolution.
+
+In Obsidian, right-click a project heading and choose **Reset to alphabetical** to reset its document order. **Reset project order** resets the order of project headings. Both actions leave shelf registrations unchanged.
 
 ## Recursive discovery
 

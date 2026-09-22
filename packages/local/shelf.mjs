@@ -5,6 +5,8 @@ import { acquireRegistrationLock } from './locks.mjs';
 import { open, readFile, realpath, stat, lstat, readdir, rename, unlink } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { parseDirectories, excludedPath, documentExtensions, documentTitle } from '@docshelf/core/directories';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 
 const MAX_DOCUMENTS = 2000;
 const MAX_ENTRIES = 20000;
@@ -14,6 +16,7 @@ const portable = value => value.split(path.sep).join('/');
 const unavailable = error => ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error?.code);
 const regularDocument = file => documentExtensions.includes(path.extname(file).slice(1).toLowerCase());
 const slug = value => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 55) || 'document';
+const normalizedSource = source => parseClaudeArtifactUrl(source)?.publicUrl || parseGitHubMarkdownUrl(source)?.sourceUrl || source;
 
 async function readRegistration(shelfPath, roots) {
   const canonicalShelf = await checkedPath(path.dirname(shelfPath), roots);
@@ -167,6 +170,11 @@ export async function prepareAddition({ shelfPath, base = path.dirname(shelfPath
 export async function addToShelf(options, expectedRevision) {
   const prepared = await prepareAddition(options);
   if (prepared.revision !== expectedRevision) throw new Error('The shelf or selected paths changed. Preview again before adding.');
+  return commitAddition(prepared);
+}
+
+/** Commit a freshly prepared addition immediately; delayed previews use addToShelf to revalidate. */
+export async function commitAddition(prepared) {
   await commitRegistration(prepared, 'The shelf changed. Preview again before adding.');
   return { documentsAdded: prepared.documents.length, foldersAdded: prepared.foldersAdded };
 }
@@ -177,8 +185,8 @@ export async function prepareRemoval({ shelfPath, base = path.dirname(shelfPath)
   const { shelfFile, baseline, config } = await readRegistration(shelfPath, roots);
   const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
   const artifact = expanded.artifacts.find(entry => entry.route === route);
-  if (!artifact || expectedSource !== undefined && artifact.source !== expectedSource) throw new Error('This document changed or is no longer on the shelf. Close this dialog and try again.');
-  const source = artifact.source;
+  if (!artifact || expectedSource !== undefined && normalizedSource(artifact.source) !== normalizedSource(expectedSource)) throw new Error('This document changed or is no longer on the shelf. Close this dialog and try again.');
+  const source = normalizedSource(artifact.source);
   const remote = /^https?:/i.test(source);
   const sourcePath = path.resolve(base, source);
   const canonical = remote ? null : await realpath(sourcePath).catch(error => { if (unavailable(error)) return sourcePath; throw error; });

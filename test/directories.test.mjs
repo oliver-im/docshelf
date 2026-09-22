@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
-import { expandShelf, prepareAddition, addToShelf, prepareRemoval, removeFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
+import { expandShelf, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
 import { createRegistrationHandler } from '../scripts/registration.mjs';
 import { SourceWatcher } from '../scripts/source-watcher.mjs';
 import { loadShelfFrom, docShelfRoot } from '../scripts/artifacts.mjs';
@@ -105,6 +105,19 @@ test('web expands relative directory registrations and retains missing folders',
   assert.equal(missing.artifacts.length, 0);
   assert.equal(missing.directories.length, 1);
   assert.match(missing.warnings[0], /unavailable/);
+});
+
+test('immediate addition commits its preparation while protecting concurrent shelf edits', async t => {
+  const f = await fixture(t);
+  const options = { ...f, sources: ['docs'], project: 'Chosen' };
+  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 2, foldersAdded: 1 });
+  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 0, foldersAdded: 0 });
+  const prepared = await prepareAddition(options);
+  const edited = JSON.stringify({ ...JSON.parse(await readFile(f.shelfPath, 'utf8')), custom: 'External edit' });
+  await writeFile(f.shelfPath, edited);
+  await assert.rejects(commitAddition(prepared), /shelf changed/);
+  assert.equal(await readFile(f.shelfPath, 'utf8'), edited);
+  assert.equal(await readFile(path.join(f.base, 'docs/one.md'), 'utf8'), '# First document\n');
 });
 
 test('folder watches detect membership changes, empty folders, and restoration', { timeout: 20000 }, async t => {

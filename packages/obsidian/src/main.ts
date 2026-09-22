@@ -19,7 +19,7 @@ import { RecoveryStore } from './core/editing';
 import { IndexSources } from './core/index-sources';
 import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
-import { prepareAddition, addToShelf, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
+import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
 import { RemoveModal } from './ui/remove';
 
 export default class DocShelfPlugin extends Plugin {
@@ -335,7 +335,7 @@ export default class DocShelfPlugin extends Plugin {
       const prepared = await prepareAddition(options);
       if (this.disposed) return;
       if (this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Try adding again.');
-      const result = await addToShelf(options, prepared.revision);
+      const result = await commitAddition(prepared);
       await this.refresh();
       if (!this.disposed) new Notice(result.documentsAdded || result.foldersAdded
         ? `Added ${result.documentsAdded} document(s) and ${result.foldersAdded} watched folder(s) to ${project}.`

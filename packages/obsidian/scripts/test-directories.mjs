@@ -130,6 +130,18 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   assert.equal(await readFile(first, 'utf8'), '# Folder first externally updated\n');
   assert.ok(await page.evaluate(file => app.workspace.getLeavesOfType('docshelf-markdown').some(leaf => leaf.view.artifact?.sourcePath === file && leaf.view.hasUnsavedEdits && leaf.view.editor.getValue() === '# Kept removal draft' && !!leaf.view.saveProblem), first));
   assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories[0].exclude, ['./first.md']);
+  const removedRoute = await page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file).route, first);
+  await page.evaluate(file => app.plugins.getPlugin('docshelf').addSources([file], 'Watched project'), first);
+  await poll(() => page.evaluate(({ file, removedRoute }) => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    const view = plugin.nativeViews().find(view => view.artifact?.sourcePath === file);
+    return view?.route !== removedRoute && view?.route === plugin.catalog.artifacts.find(artifact => artifact.sourcePath === file)?.route;
+  }, { file: first, removedRoute }), 'The open draft did not reconnect to the re-added source.');
+  await page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file).save(), first);
+  assert.equal(await readFile(first, 'utf8'), '# Folder first externally updated\n', 'Re-registration must not bypass an external conflict.');
+  // Once the original baseline returns, the same open draft can resume saving.
+  await writeFile(first, '# Folder first\n');
+  await poll(async () => (await readFile(first, 'utf8')) === '# Kept removal draft', 'The reconnected draft could not save after its conflict cleared.');
   await page.getByRole('searchbox', { name: 'Search DocShelf' }).fill('');
   await page.evaluate(async file => {
     const plugin = app.plugins.getPlugin('docshelf');
@@ -154,6 +166,28 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
     const view = app.workspace.getLeavesOfType('docshelf-markdown').find(leaf => leaf.view.artifact?.sourcePath === file)?.view;
     return view?.hasUnsavedEdits && /no longer registered/.test(view.saveProblem);
   }, live), 'Removing a folder did not preserve and block its unsaved draft.');
+
+  // A closed draft must also recover when the new registration has a different route.
+  await page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file).leaf.detach(), live);
+  await page.evaluate(async file => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    await plugin.addSources([file], 'Restored');
+    await plugin.openArtifact(plugin.catalog.artifacts.find(artifact => artifact.sourcePath === file));
+  }, live);
+  await poll(() => page.evaluate(file => {
+    const view = app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file);
+    return view?.editor.getValue() === '# Unsaved folder draft' && view.recoveryReviewRequired;
+  }, live), 'A closed draft was not recovered through the new registration.');
+  assert.match(await readFile(live, 'utf8'), /updatedfromoutside/);
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  const review = await poll(async () => {
+    for (const candidate of page.context().pages()) {
+      if (await candidate.getByRole('textbox', { name: 'Your edits', exact: true }).isVisible()) return candidate;
+    }
+  }, 'Recovered draft review did not open.');
+  assert.equal(await review.getByRole('textbox', { name: 'Your edits', exact: true }).inputValue(), '# Unsaved folder draft');
+  await review.getByRole('button', { name: 'Save edited version', exact: true }).click();
+  await poll(async () => (await readFile(live, 'utf8')) === '# Unsaved folder draft', 'The recovered draft could not save after review.');
   await rm(live);
   await writeFile(shelfPath, JSON.stringify(baseline));
   await poll(() => page.evaluate(count => app.plugins.getPlugin('docshelf').catalog.artifacts.length === count, baseline.artifacts.length), 'Removing a folder left discovered documents in the catalog.');

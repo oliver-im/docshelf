@@ -136,7 +136,7 @@ export class NativeMarkdownView extends MarkdownView {
     observer.observe(this.contentEl, { childList: true, subtree: true });
     this.register(() => observer.disconnect());
     this.unsubscribeShelf = this.plugin.subscribe(() => {
-      if (!this.plugin.loading && this.shelfRevision !== this.plugin.documentRevision(this.route)) void this.refreshSource();
+      if (!this.plugin.loading && (!this.shelfRevision || this.shelfRevision !== this.plugin.documentRevision(this.route))) void this.refreshSource();
     });
   }
 
@@ -228,9 +228,16 @@ export class NativeMarkdownView extends MarkdownView {
   }
 
   private registered(): Artifact {
-    const artifact = this.plugin.catalog?.artifacts.find(item => item.route === this.route);
-    if (!artifact || artifact.kind !== 'markdown' || !artifact.sourcePath || (this.artifact && artifact.sourcePath !== this.artifact.sourcePath)) throw new Error('This Markdown source is no longer registered. Your edits have been kept.');
+    const draft = this.artifact ? null : this.plugin.recovery.read(this.draftId);
+    const source = this.artifact?.sourcePath || (draft?.pending ? draft.source : undefined);
+    const artifact = this.plugin.catalog?.artifacts.find(item => source ? item.sourcePath === source : item.route === this.route);
+    if (!artifact || artifact.kind !== 'markdown' || !artifact.sourcePath) throw new Error('This Markdown source is no longer registered. Your edits have been kept.');
     assertRegisteredSource(this.plugin.shelfPath(), artifact);
+    if (this.route !== artifact.route) {
+      this.route = artifact.route;
+      if (this.recoveryRoute) this.recoveryRoute = this.route;
+      this.app.workspace.requestSaveLayout();
+    }
     return artifact;
   }
 
@@ -255,6 +262,7 @@ export class NativeMarkdownView extends MarkdownView {
     try {
       const artifact = this.registered();
       this.artifact = artifact;
+      this.shelfRevision = this.plugin.documentRevision(this.route);
       const title = this.containerEl.querySelector<HTMLElement>('.view-header-title');
       if (title) {
         title.setText(artifact.title);
@@ -266,7 +274,7 @@ export class NativeMarkdownView extends MarkdownView {
       if (this.recoveryRoute === this.route) {
         const occupied = new Set(this.plugin.nativeViews().filter(view => view !== this).map(view => view.draftId));
         const exact = this.plugin.recovery.read(this.draftId);
-        const draft = exact?.pending && exact.source === artifact.sourcePath && exact.route === this.route ? exact : this.plugin.recovery.pending(artifact.sourcePath!, this.route, occupied);
+        const draft = exact?.pending && exact.source === artifact.sourcePath ? exact : this.plugin.recovery.pending(artifact.sourcePath!, occupied);
         if (draft) {
           this.plugin.recovery.adopt(draft);
           this.draftId = draft.id;

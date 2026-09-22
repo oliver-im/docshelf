@@ -207,7 +207,7 @@ try {
   assert.deepEqual(await projectNames(), ['Reports', 'Getting started']);
   assert.equal(await secondProject.evaluate(el => el === document.activeElement), true);
   await secondProject.click({ button: 'right' });
-  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
+  await page.locator('.menu-item').filter({ hasText: 'Reset project order' }).click();
   assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(shelf));
@@ -322,6 +322,12 @@ try {
   assert.equal(await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).count(), 1);
   await page.keyboard.press('Escape');
   assert.deepEqual(await documentRoutes(), movedDocuments);
+  await firstProject.click({ button: 'right' });
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Reset project order' }).evaluate(el => el.classList.contains('is-disabled')), true);
+  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
+  assert.deepEqual(await documentRoutes(), [zuluGuide.route, newGuide.route, alphaGuide.route, guideRoute]);
+  assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
+  assert.equal(await firstProject.evaluate(el => el === document.activeElement), true);
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(documentShelf), 'Reordering must not edit shelf registrations.');
   await writeFile(shelfPath, JSON.stringify(shelf));
   await poll(async () => (await documentRoutes()).length === 1, 'The document fixtures did not clear.');
