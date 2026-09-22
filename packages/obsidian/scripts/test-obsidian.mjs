@@ -12,6 +12,7 @@ import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
 import { testNativeModes } from './test-native-modes.mjs';
 import { testReportRegressions } from './test-report-regressions.mjs';
+import { testDirectories } from './test-directories.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -317,9 +318,10 @@ try {
   await page.locator('.menu-item').filter({ hasText: 'Move down' }).click();
   assert.deepEqual(await documentRoutes(), movedDocuments);
   await guideRow.click({ button: 'right' });
-  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
-  assert.deepEqual(await documentRoutes(), [zuluGuide.route, newGuide.route, alphaGuide.route, guideRoute]);
-  assert.equal(await page.evaluate(() => Object.keys(app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().documentOrder).length), 0);
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).count(), 0, 'Alphabetical reset belongs only in project heading menus.');
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).count(), 1);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await documentRoutes(), movedDocuments);
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(documentShelf), 'Reordering must not edit shelf registrations.');
   await writeFile(shelfPath, JSON.stringify(shelf));
   await poll(async () => (await documentRoutes()).length === 1, 'The document fixtures did not clear.');
@@ -498,6 +500,7 @@ try {
   await assert.rejects(guest('document.querySelector("#run-check").click()'));
   console.log('Script-free HTML mode passed.');
 
+  await testDirectories({ page, poll, workspace, shelfPath });
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);
   await page.evaluate(() => app.plugins.disablePlugin('docshelf'));
   await poll(async () => { try { await fetch(origin); return false; } catch { return true; } }, 'Loopback listener did not close on unload.');

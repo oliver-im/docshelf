@@ -2,12 +2,13 @@ import { editorInfoField, FileView, MarkdownView, Menu, Modal, Notice, Platform,
 import { EditorState, Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { randomUUID } from 'node:crypto';
+import { assertRegisteredSource } from '../../../local/shelf.mjs';
 import path from 'node:path';
 import type DocShelfPlugin from '../main';
 import { editorText, readEditableFile, saveEditableFile, type FileSnapshot } from '../core/editing';
 import { checkRange, createAgentReference, createPermalink, parseRange } from '../core/protocol';
 import { parseLineFragment } from '@docshelf/core/line-permalinks';
-import { message, type Artifact, type LineRange } from '../core/types';
+import { message, artifactRoots, type Artifact, type LineRange } from '../core/types';
 import { markdownHeadingLine, markdownLink } from '../core/markdown';
 import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference, sourceReferenceAt } from './native-lines';
 
@@ -229,6 +230,7 @@ export class NativeMarkdownView extends MarkdownView {
   private registered(): Artifact {
     const artifact = this.plugin.catalog?.artifacts.find(item => item.route === this.route);
     if (!artifact || artifact.kind !== 'markdown' || !artifact.sourcePath || (this.artifact && artifact.sourcePath !== this.artifact.sourcePath)) throw new Error('This Markdown source is no longer registered. Your edits have been kept.');
+    assertRegisteredSource(this.plugin.shelfPath(), artifact);
     return artifact;
   }
 
@@ -281,7 +283,7 @@ export class NativeMarkdownView extends MarkdownView {
         }
         this.recoveryRoute = null;
       }
-      const current = readEditableFile(artifact.sourcePath!, this.plugin.catalog!.roots);
+      const current = readEditableFile(artifact.sourcePath!, artifactRoots(artifact, this.plugin.catalog!.roots));
       if (this.hasUnsavedEdits) {
         if (!current.bytes.equals(this.externalSnapshot!.bytes) || current.canonicalPath !== this.externalSnapshot!.canonicalPath) this.saveProblem = 'The file changed outside this editor. Your edits have been kept.';
         else {
@@ -346,7 +348,7 @@ export class NativeMarkdownView extends MarkdownView {
       const artifact = this.registered();
       const text = this.getViewData();
       const before = this.externalSnapshot;
-      this.externalSnapshot = saveEditableFile(artifact.sourcePath!, this.plugin.catalog!.roots, before, text);
+      this.externalSnapshot = saveEditableFile(artifact.sourcePath!, artifactRoots(artifact, this.plugin.catalog!.roots), before, text);
       this.externalBaseline = editorText(this.externalSnapshot.bytes);
       // Keep the pre-save version and edited text for recovery after a successful
       // write too; the next edit replaces this pane's bounded recovery record.
@@ -384,7 +386,7 @@ export class NativeMarkdownView extends MarkdownView {
   private reviewChanges(): void {
     try {
       const artifact = this.registered();
-      const disk = readEditableFile(artifact.sourcePath!, this.plugin.catalog!.roots);
+      const disk = readEditableFile(artifact.sourcePath!, artifactRoots(artifact, this.plugin.catalog!.roots));
       new ReviewChangesModal(this.plugin, editorText(disk.bytes), this.getViewData(), (text, useDisk) => {
         if (!this.preserveDraft()) { this.updateSaveStatus(); return; }
         // Keep the previous draft independently when the user chooses the disk

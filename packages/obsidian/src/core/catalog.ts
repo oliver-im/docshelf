@@ -5,6 +5,7 @@ import { canonicalFile, readBoundedFile } from './files';
 import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import { MAX_REMOTE_BYTES, type Artifact, type Catalog } from './types';
+import { expandShelf } from '../../../local/shelf.mjs';
 
 export const ASSET_TYPES: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -55,12 +56,11 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
   const bytes = await readBoundedFile(shelfPath, roots, MAX_REMOTE_BYTES);
   let parsed: { version?: unknown; artifacts?: unknown };
   try { parsed = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('Shelf is not valid JSON.'); }
-  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.artifacts)) throw new Error('Shelf must contain version 1 and an artifacts array.');
-  if (parsed.artifacts.length > 2000) throw new Error('A shelf supports at most 2,000 registered documents.');
+  const expanded = await expandShelf(parsed, shelfDirectory, roots, { allowUnavailable: options.allowUnavailableFiles });
   const routes = new Set<string>();
   const sources = new Set<string>();
   const artifacts: Artifact[] = [];
-  for (const [index, input] of parsed.artifacts.entries()) {
+  for (const [index, input] of expanded.artifacts.entries()) {
     if (!input || typeof input !== 'object') throw new Error(`Artifact ${index + 1} must be an object.`);
     const entry = {
       project: required(input.project, 'project', index), source: required(input.source, 'source', index),
@@ -88,8 +88,8 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
       const extension = path.extname(entry.source).toLowerCase();
       if (!['.md', '.markdown', '.html', '.htm'].includes(extension)) throw new Error(`Artifact ${index + 1}: source must be Markdown or HTML.`);
       const sourcePath = path.resolve(shelfDirectory, entry.source);
-      const canonicalPath = await registeredFile(sourcePath, roots, options);
-      artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html' };
+      const canonicalPath = await registeredFile(sourcePath, input.discoveryRoot ? [input.discoveryRoot] : roots, options);
+      artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html', ...(input.discoveryRoot ? { discoveryRoot: input.discoveryRoot, directoryId: input.directoryId } : {}) };
       identity = canonicalPath || sourcePath;
     }
     if (sources.has(identity)) throw new Error(`Duplicate source: ${entry.source}`);
@@ -106,7 +106,7 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
     }
     artifacts.push(artifact);
   }
-  return { shelfPath: path.resolve(shelfPath), roots, artifacts };
+  return { shelfPath: path.resolve(shelfPath), roots, artifacts, directories: expanded.directories, warnings: expanded.warnings };
 }
 
 export function findSource(catalog: Catalog, source: string): Artifact | undefined {
