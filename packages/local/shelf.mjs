@@ -57,7 +57,8 @@ async function titleFor(file, roots) {
   } finally { await handle.close(); }
 }
 
-/** Expand only explicitly selected folders. Missing folders remain watchable. */
+/** Expand only explicitly selected folders. Missing folders remain watchable.
+ * @returns {Promise<{ artifacts: unknown[], directories: (import('../core/src/directories.js').DirectoryEntry & { sourcePath: string, canonicalPath: string | undefined })[], warnings: string[] }>} */
 export async function expandShelf(value, base, roots, { allowUnavailable = false, relativeOnly = false } = {}) {
   const config = shelfConfig(value);
   const artifacts = config.artifacts.map(entry => {

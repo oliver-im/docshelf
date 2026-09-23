@@ -298,6 +298,7 @@ function markdownDocument(page) {
     : '';
   const mermaidScripts = page.hasMermaid
     ? `
+    <script src="${sitePath('/dompurify.min.js', page.basePath)}" defer></script>
     <script src="${sitePath('/mermaid.min.js', page.basePath)}" defer></script>
     <script src="${sitePath('/markdown-mermaid.js', page.basePath)}" defer></script>`
     : '';

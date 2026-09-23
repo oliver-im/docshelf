@@ -21,6 +21,7 @@ import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
 import { RemoveModal } from './ui/remove';
+import { shell } from 'electron';
 
 export default class DocShelfPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -34,7 +35,7 @@ export default class DocShelfPlugin extends Plugin {
   private watcher: FSWatcher | null = null;
   private watchSignature = '';
   private listeners = new Set<() => void>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timer: number | null = null;
   private disposed = false;
   private pickingSources = false;
   private projectPicker: ProjectPicker | null = null;
@@ -50,7 +51,8 @@ export default class DocShelfPlugin extends Plugin {
   async onload(): Promise<void> {
     addIcon(DOCSHELF_ICON, DOCSHELF_ICON_SVG);
     this.register(() => removeIcon(DOCSHELF_ICON));
-    const data = await this.loadData();
+    const saved: unknown = await this.loadData();
+    const data = saved && typeof saved === 'object' ? saved as Record<string, unknown> : {};
     this.recovery = new RecoveryStore(path.join(this.basePath(), this.manifest.dir!, 'recovery'));
     this.settings = {
       shelfPath: typeof data?.shelfPath === 'string' ? data.shelfPath : DEFAULT_SETTINGS.shelfPath,
@@ -109,7 +111,7 @@ export default class DocShelfPlugin extends Plugin {
     this.projectPicker?.close();
     this.removeModal?.close();
     this.abort.abort();
-    if (this.timer) clearTimeout(this.timer);
+    if (this.timer !== null) window.clearTimeout(this.timer);
     this.timer = null;
     void this.watcher?.close();
     this.watcher = null;
@@ -153,8 +155,8 @@ export default class DocShelfPlugin extends Plugin {
 
   scheduleRefresh(): void {
     if (this.disposed) return;
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
+    if (this.timer !== null) window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { this.timer = null; void this.refresh(); }, 200);
   }
 
   private async refreshNow(): Promise<void> {
@@ -301,7 +303,6 @@ export default class DocShelfPlugin extends Plugin {
   nativeViews(): NativeMarkdownView[] { return this.app.workspace.getLeavesOfType(NATIVE_MARKDOWN_VIEW).map(leaf => leaf.view).filter((view): view is NativeMarkdownView => view instanceof NativeMarkdownView); }
 
   revealRecovery(): void {
-    const { shell } = require('electron') as { shell: { showItemInFolder(path: string): void } };
     shell.showItemInFolder(this.recovery.directory);
   }
 
@@ -374,7 +375,6 @@ export default class DocShelfPlugin extends Plugin {
       await writeFile(this.shelfPath(), `${JSON.stringify({ version: 1, artifacts: [] }, null, 2)}\n`, { flag: 'wx' });
       await this.refresh();
       new Notice('Empty shelf created. Add registrations to the JSON file, then reload.');
-      const { shell } = require('electron') as { shell: { showItemInFolder(path: string): void } };
       shell.showItemInFolder(this.shelfPath());
     } catch (error) { new Notice(message(error)); }
   }
@@ -383,7 +383,6 @@ export default class DocShelfPlugin extends Plugin {
     if (!artifact.sourcePath || !this.catalog) return;
     try {
       const file = await canonicalFile(artifact.sourcePath, artifactRoots(artifact, this.catalog.roots));
-      const { shell } = require('electron') as { shell: { showItemInFolder(path: string): void } };
       shell.showItemInFolder(file);
     } catch (error) { new Notice(message(error)); }
   }
@@ -392,7 +391,6 @@ export default class DocShelfPlugin extends Plugin {
     try {
       const url = new URL(value);
       if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported external link.');
-      const { shell } = require('electron') as { shell: { openExternal(url: string): Promise<void> } };
       void shell.openExternal(url.href).catch(() => new Notice('Could not open the external link.'));
     } catch { new Notice('Unsupported external link.'); }
   }

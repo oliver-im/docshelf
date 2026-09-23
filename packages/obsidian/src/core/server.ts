@@ -1,7 +1,7 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHmac, randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { parse, serialize } from 'parse5';
+import { parse, serialize, type DefaultTreeAdapterTypes } from 'parse5';
 import { ASSET_TYPES } from './catalog';
 import { readBoundedFile } from './files';
 import { MAX_ASSET_BYTES, MAX_DOCUMENT_BYTES, artifactRoots, type Artifact, type Catalog } from './types';
@@ -109,15 +109,15 @@ export class DocumentServer {
 
   private rewriteHtml(source: string, artifact: Artifact, catalog: Catalog): string {
     const document = parse(source);
-    const visit = (node: any) => {
-      if (Array.isArray(node.childNodes)) {
-        node.childNodes = node.childNodes.filter((child: any) => child.tagName !== 'base' && !(child.tagName === 'meta' && child.attrs?.some((attr: any) => attr.name === 'http-equiv' && attr.value.toLowerCase() === 'refresh')));
+    const visit = (node: DefaultTreeAdapterTypes.Node) => {
+      if ('childNodes' in node) {
+        node.childNodes = node.childNodes.filter(child => !('tagName' in child) || child.tagName !== 'base' && !(child.tagName === 'meta' && child.attrs.some(attr => attr.name === 'http-equiv' && attr.value.toLowerCase() === 'refresh')));
       }
-      if (node.tagName === 'a') {
+      if ('tagName' in node && node.tagName === 'a') {
         // Keep authored new-tab links on the same guarded navigation path.
         // Script-created popups remain disabled by the webview and CSP.
-        node.attrs = node.attrs.filter((attr: any) => attr.name !== 'target');
-        const href = node.attrs?.find((attr: any) => attr.name === 'href');
+        node.attrs = node.attrs.filter(attr => attr.name !== 'target');
+        const href = node.attrs.find(attr => attr.name === 'href');
         if (href && !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href.value)) {
           try {
             const reference = new URL(href.value, `https://docshelf.invalid/${encodeURIComponent(path.basename(artifact.sourcePath!))}`);
@@ -128,7 +128,7 @@ export class DocumentServer {
           } catch { /* An invalid authored link stays unavailable. */ }
         }
       }
-      for (const child of node.childNodes || []) visit(child);
+      if ('childNodes' in node) for (const child of node.childNodes) visit(child);
     };
     visit(document);
     return serialize(document);

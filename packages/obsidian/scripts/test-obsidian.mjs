@@ -102,6 +102,7 @@ try {
   });
   const firstProject = page.locator('.docshelf-project-toggle').filter({ hasText: 'Getting started' });
   const secondProject = page.locator('.docshelf-project-toggle').filter({ hasText: 'Reports' });
+  await poll(async () => (await page.locator('.docshelf-item:visible').count()) === 2, 'The initial shelf rows did not render.');
   assert.equal(await page.locator('.docshelf-shelf h2').count(), 0);
   assert.equal(await page.locator('.docshelf-item:visible').count(), 2);
   assert.equal(await page.locator('.docshelf-item-description, .docshelf-kind').count(), 0);
@@ -359,6 +360,33 @@ try {
   await widthToggle.click();
   await page.waitForFunction(value => app.vault.getConfig('readableLineLength') === value, readableBefore);
   await configurationPage.keyboard.press('Escape');
+  const searchableSettings = await page.evaluate(() => {
+    const tab = app.setting.pluginTabs.find(tab => tab.id === 'docshelf');
+    if (!tab) throw new Error('DocShelf settings tab is missing.');
+    return tab.getSettingDefinitions().map(item => item.name);
+  });
+  assert.deepEqual(searchableSettings, ['Shelf file', 'Workspace root', 'Vault ID for links', 'Run HTML scripts', 'Apply shelf settings', 'Readable line length']);
+  const originalVaultId = await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId);
+  await page.evaluate(() => { app.setting.open(); app.setting.openTabById('docshelf'); });
+  const settingsPage = await poll(async () => {
+    for (const candidate of browser.contexts()[0].pages()) {
+      if (await candidate.getByText('Apply shelf settings', { exact: true }).isVisible()) return candidate;
+    }
+  }, 'The declarative settings tab did not render.');
+  const vaultIdInput = settingsPage.locator('.setting-item').filter({ has: settingsPage.getByText('Vault ID for links', { exact: true }) }).locator('input');
+  await vaultIdInput.fill('review-test-vault');
+  assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId), originalVaultId, 'Editing searchable settings must preserve the draft until Save and reload.');
+  await page.evaluate(() => app.setting.pluginTabs.find(tab => tab.id === 'docshelf').update());
+  assert.equal(await vaultIdInput.inputValue(), 'review-test-vault', 'Rebuilding settings definitions must retain unsaved edits.');
+  assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId), originalVaultId, 'A settings tab update must not persist the draft.');
+  await settingsPage.getByRole('button', { name: 'Save and reload', exact: true }).click();
+  await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId === 'review-test-vault' && !app.plugins.getPlugin('docshelf').loading), 'The declarative settings tab did not save.');
+  await vaultIdInput.fill(originalVaultId);
+  assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId), 'review-test-vault', 'A saved draft must not alias the active plugin settings.');
+  await settingsPage.getByRole('button', { name: 'Save and reload', exact: true }).click();
+  await poll(() => page.evaluate(value => app.plugins.getPlugin('docshelf').settings.vaultId === value && !app.plugins.getPlugin('docshelf').loading, originalVaultId), 'The test settings did not restore.');
+  await page.evaluate(() => app.setting.close());
+  console.log('Searchable settings render, retain drafts until Save and reload, and persist through the normal configure path.');
   console.log('Collapsible projects, search across collapsed groups, workspace restoration, keyboard controls, and shelf commands passed.');
   await testNativeEditing({ page, poll, workspace, shelfPath, shelf, pluginPath });
   await testNativeModes({ page, poll });

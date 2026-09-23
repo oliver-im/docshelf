@@ -4,7 +4,7 @@ DocShelf Web uses Git tags and GitHub Releases for clone-and-run distribution.
 The Obsidian plugin is built separately as an installable folder. The root and
 workspace packages are private to prevent accidental npm publication.
 
-DocShelf Web's first release is `v0.1.0`, and DocShelf for Obsidian's current release is `0.2.0`, with a minimum Obsidian version of `1.13.7`. The two apps share a repository but are versioned and released independently.
+DocShelf Web's first release is `v0.1.0`, and DocShelf for Obsidian's prepared release is `0.2.1`, with a minimum Obsidian version of `1.13.7`. The two apps share a repository but are versioned and released independently.
 
 ## Versioning and cadence
 
@@ -78,6 +78,8 @@ history and needs a merge commit to retain that ancestry.
 
 ## Package the Obsidian plugin
 
+The root `npm run build` builds both applications and copies the plugin’s three install files to ignored `build/` so the community build verifier can find `build/main.js`. Use `npm run build:web` for an Astro-only build; `npm run watch` still builds only the web app.
+
 Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and creates `packages/obsidian/dist/docshelf/`, containing `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`. The `packages/obsidian/dist/release/` directory contains those standalone release assets, an installable `docshelf-X.Y.Z.zip`, and `SHA256SUMS`. The ZIP includes the `docshelf/` folder and `INSTALL.txt`; it has no settings, recovery records, local shelf, source map, or source documents. These are generated outputs; do not commit them. Packaging does not install into a vault or publish a release.
 
 Each build collects the full licenses and notices of bundled dependencies, including transitive dependencies, from esbuild's module list. It embeds those texts and the plugin's MIT license as comments in `main.js`, so Obsidian's three-file installation carries them. The ZIP also includes the separate license files. Host-provided externals are excluded; missing or empty dependency licenses fail the build.
@@ -101,8 +103,10 @@ The manually dispatched **Prepare Obsidian release** workflow (`release-obsidian
 Finish the code, metadata, notes, and runtime verification before dispatching. Creating the tag and draft changes the public repository, so dispatch only when that action is intended:
 
 ```sh
-gh workflow run release-obsidian.yml --ref main -f version=0.1.0
+gh workflow run release-obsidian.yml --ref main -f version=0.2.1
 ```
+
+The workflow generates [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) for `main.js`, `manifest.json`, and `styles.css`. Verify a downloaded file with `gh attestation verify main.js --repo oliver-im/docshelf`. Optional ZIP, license, notice, and checksum attachments remain available for manual installs; Obsidian downloads only its three standard files. See [community review findings](obsidian-review.md) for the reviewed capabilities and retained advisory findings.
 
 The workflow refuses a requested version that differs from the checked-out manifest. It never moves an existing tag or replaces an uploaded asset. Rerunning the original workflow run verifies matching assets and uploads missing draft assets; differences fail for investigation. A published release is only verified, never repaired or edited. If `main` has advanced since the tag was created, rerun the original run instead of dispatching against a new commit with the same version.
 

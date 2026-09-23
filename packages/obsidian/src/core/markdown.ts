@@ -30,7 +30,10 @@ markdown.core.ruler.after('inline', 'docshelf-breaks', state => {
 });
 const hardbreak = markdown.renderer.rules.hardbreak!;
 markdown.renderer.rules.hardbreak = (tokens, index, options, env, self) => {
-  return hardbreak(tokens, index, options, env, self).replace('<br', `<br data-docshelf-line-break-after="${tokens[index].meta?.line}"`);
+  const meta: unknown = tokens[index].meta;
+  const line = meta && typeof meta === 'object' && 'line' in meta && typeof meta.line === 'number' ? meta.line : undefined;
+  const html = hardbreak(tokens, index, options, env, self);
+  return line === undefined ? html : html.replace('<br', `<br data-docshelf-line-break-after="${line}"`);
 };
 
 /** Hide frontmatter while preserving every source-line offset. */
@@ -81,7 +84,7 @@ function addHeadingIds(tokens: Token[]): void {
 export function markdownLink(source: string, line: number, column: number, label?: string): string | null {
   const text = source.split('\n')[line] || '';
   for (const match of text.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    if (column >= match.index! && column <= match.index! + match[0].length) return match[1].split('|')[0];
+    if (column >= match.index && column <= match.index + match[0].length) return match[1].split('|')[0];
   }
   const tokens = markdown.parse(withoutFrontmatter(source), {});
   for (const token of tokens) {

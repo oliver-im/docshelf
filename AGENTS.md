@@ -11,7 +11,7 @@ Keep each prose paragraph on one source line, including prose within list items,
 - `shelf.json` is the tracked empty fallback and shelf template.
 - `shelf.local.json` contains the machine-specific shelf and must not be committed.
 - Put local reports, notes, and other private working documents in the ignored `.local/` directory. Maintained project documentation belongs in `docs/`. Adding a document to the shelf does not imply committing its source.
-- `public/artifacts/`, `src/generated/`, `dist/`, `.astro/`, and `.docshelf-runtime/` are generated. Do not edit or commit them.
+- `public/artifacts/`, `src/generated/`, `build/`, `dist/`, `.astro/`, and `.docshelf-runtime/` are generated. Do not edit or commit them.
 - Local source files belong to their owning projects. DocShelf may create symlinks, render Markdown beneath its runtime directory, and alter copied build output, but the web app must not modify source artifacts. The Obsidian plugin may edit registered Markdown originals under `packages/obsidian/AGENTS.md`.
 - Claude sources must be exact published Artifact links. Preserve strict URL validation and the web app's cross-origin `/embed` boundary; do not generalize it into arbitrary remote HTML loading.
 - Browser-imported Markdown must remain limited to public GitHub Markdown file URLs. Preserve strict host and extension checks, the size limit, raw-HTML omission, sanitization, and generated-document content security policy; do not generalize it into arbitrary remote content loading.

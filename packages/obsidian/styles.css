@@ -73,6 +73,7 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 @media (max-width: 600px) { .docshelf-document-header { padding: 14px; } .docshelf-reading { padding: 18px 12px 40px 0; } .docshelf-reading-block { --docshelf-gutter-width: 38px; gap: 8px; } }
 .view-content.docshelf-native { display: flex; flex-direction: column; padding: 0; }
 .docshelf-native .inline-title { display: none; }
+/* Override the host's inline display state while source access is unavailable. */
 .docshelf-native-unavailable > .markdown-source-view, .docshelf-native-unavailable > .markdown-preview-view { display: none !important; }
 .docshelf-native > .markdown-source-view, .docshelf-native > .markdown-preview-view { flex: 1; min-height: 0; }
 .docshelf-editor-status { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 16px; color: var(--text-muted); font-size: var(--font-ui-smaller); border-top: 1px solid var(--background-modifier-border); }

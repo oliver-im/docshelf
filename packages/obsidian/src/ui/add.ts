@@ -2,9 +2,9 @@ import { Modal, SuggestModal } from 'obsidian';
 import path from 'node:path';
 import type DocShelfPlugin from '../main';
 import { message } from '../core/types';
+import { dialog } from '@electron/remote';
 
 export async function pickSources(shelfPath: string, project: string): Promise<string[]> {
-  const { dialog } = require('@electron/remote') as { dialog: { showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }> } };
   const result = await dialog.showOpenDialog({ title: `Add to DocShelf: ${project}`, buttonLabel: 'Add', properties: ['openFile', 'openDirectory', 'multiSelections', 'showHiddenFiles'], defaultPath: path.dirname(shelfPath) });
   return result.canceled ? [] : result.filePaths;
 }

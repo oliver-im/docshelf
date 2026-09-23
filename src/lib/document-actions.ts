@@ -11,6 +11,12 @@ interface DocumentArtifact {
   imported?: boolean;
 }
 
+async function responseRecord(response: Response): Promise<Record<string, unknown>> {
+  const value: unknown = await response.json();
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The local server returned an invalid response.');
+  return value as Record<string, unknown>;
+}
+
 /** One shared menu, attached beside its trigger so mobile navigation retains focus ownership. */
 export function createDocumentActions(options: { basePath: string; localActions: boolean; removeImported: (route: string) => void }) {
   const menu = document.createElement('div');
@@ -78,7 +84,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
         signal: AbortSignal.timeout(3000),
       });
       if (!response.ok) return;
-      const capability = await response.json();
+      const capability = await responseRecord(response);
       if (active !== selection || typeof capability.token !== 'string') return;
       selection.token = capability.token;
       revealButton.hidden = capability.revealInFinder !== true || !!selection.artifact.embedUrl;
@@ -91,14 +97,14 @@ export function createDocumentActions(options: { basePath: string; localActions:
   }
 
   function showNotice(message: string, error = false) {
-    clearTimeout(noticeTimer);
+    window.clearTimeout(noticeTimer);
     notice.textContent = message;
     notice.dataset.error = String(error);
     noticeTimer = window.setTimeout(() => { notice.textContent = ''; }, error ? 8000 : 3500);
   }
 
   menu.addEventListener('beforetoggle', (event) => {
-    if ((event as ToggleEvent).newState === 'closed') {
+    if (event.newState === 'closed') {
       active?.trigger.setAttribute('aria-expanded', 'false');
       active = undefined;
     }
@@ -146,7 +152,8 @@ export function createDocumentActions(options: { basePath: string; localActions:
   document.addEventListener('scroll', () => close(), true);
   window.addEventListener('blur', () => close());
   for (const link of [openLink, sourceLink]) link.addEventListener('click', () => close(true));
-  copyButton.addEventListener('click', async () => {
+  copyButton.addEventListener('click', () => { void copyLink(); });
+  async function copyLink() {
     const selection = active;
     if (!selection) return;
     const url = new URL(selection.viewerUrl(), window.location.href).href;
@@ -157,7 +164,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
     } catch {
       showNotice('Could not copy the link. Check your browser’s clipboard permission.', true);
     }
-  });
+  }
   addButton.addEventListener('click', () => {
     const project = active?.artifact.project || '';
     close();
@@ -205,14 +212,16 @@ export function createDocumentActions(options: { basePath: string; localActions:
         headers: { 'Content-Type': 'application/json', 'X-DocShelf-Request': 'document-actions', 'X-DocShelf-Token': selection.token! },
         body: JSON.stringify({ action, route: selection.artifact.route, revision }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not remove the document.');
+      const result = await responseRecord(response);
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Could not remove the document.');
       return result;
     };
     try {
       const prepared = selection.artifact.imported ? undefined : await request('remove-preview');
       if (!dialog.open) return;
+      const revision = prepared?.revision;
       if (prepared) {
+        if (typeof prepared.title !== 'string' || typeof revision !== 'string' || typeof prepared.foldersExcluded !== 'number') throw new Error('The local server returned an invalid removal preview.');
         description.textContent = `Remove “${prepared.title}” from DocShelf? The original file or remote document will stay untouched.`;
         detail.textContent = prepared.foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.';
       }
@@ -222,7 +231,8 @@ export function createDocumentActions(options: { basePath: string; localActions:
         confirm.textContent = 'Removing…';
         try {
           if (selection.artifact.imported) options.removeImported(selection.artifact.route);
-          else await request('remove', prepared.revision);
+          else if (typeof revision === 'string') await request('remove', revision);
+          else throw new Error('Preview the removal again before confirming.');
           dialog.close();
           showNotice('Document removed from shelf. The catalog will update shortly.');
         } catch (caught) {
@@ -235,7 +245,8 @@ export function createDocumentActions(options: { basePath: string; localActions:
       error.textContent = caught instanceof Error ? caught.message : 'Could not read the shelf.';
     }
   }
-  revealButton.addEventListener('click', async () => {
+  revealButton.addEventListener('click', () => { void revealSource(); });
+  async function revealSource() {
     const selection = active;
     if (!selection?.token) return;
     close(true);
@@ -250,13 +261,13 @@ export function createDocumentActions(options: { basePath: string; localActions:
         body: JSON.stringify({ route: selection.artifact.route }),
         signal: AbortSignal.timeout(10000),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not reveal the source file.');
+      const result = await responseRecord(response);
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Could not reveal the source file.');
       showNotice('Source file revealed in Finder.');
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Could not reveal the source file.', true);
     }
-  });
+  }
 
   return {
     add(link: HTMLAnchorElement, getArtifact: () => DocumentArtifact | undefined, viewerUrl: () => string) {
@@ -273,7 +284,15 @@ export function createDocumentActions(options: { basePath: string; localActions:
       trigger.popoverTargetElement = menu;
       trigger.setAttribute('aria-label', `Actions for ${link.textContent?.trim() || 'document'}`);
       trigger.title = 'Document actions';
-      trigger.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      icon.setAttribute('viewBox', '0 0 24 24');
+      icon.setAttribute('aria-hidden', 'true');
+      for (const x of [5, 12, 19]) {
+        const dot = document.createElementNS(icon.namespaceURI!, 'circle');
+        dot.setAttribute('cx', String(x)); dot.setAttribute('cy', '12'); dot.setAttribute('r', '1.6');
+        icon.append(dot);
+      }
+      trigger.append(icon);
       row.append(trigger);
 
       function open(last = false) {
