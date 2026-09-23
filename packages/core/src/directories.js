@@ -36,9 +36,10 @@ export function filenameTitle(filename) {
 }
 
 /** Return a title only when it says more than its filename, so a label can show both without repeating itself.
+ * Only filename separators are ignored; other punctuation, as in C++ or Q&A, can distinguish a title.
  * @param {string} title @param {string} filename */
 export function distinctTitle(title, filename) {
-  const key = (/** @type {string} */ value) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const key = (/** @type {string} */ value) => value.toLowerCase().replace(/[\s._-]+/gu, '');
   return key(title) && key(title) !== key(filenameTitle(filename)) && key(title) !== key(filename) ? title : '';
 }
 

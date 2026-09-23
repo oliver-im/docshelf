@@ -17,6 +17,9 @@ test('titles that only restate their filename are omitted', () => {
   assert.equal(distinctTitle('Project Review', 'project_review.HTML'), '');
   assert.equal(distinctTitle('DocShelf', 'README.md'), 'DocShelf');
   assert.equal(distinctTitle('Q3 plan', 'notes.md'), 'Q3 plan');
+  assert.equal(distinctTitle('Release notes', 'release.notes.md'), '');
+  assert.equal(distinctTitle('C++', 'C.md'), 'C++');
+  assert.equal(distinctTitle('Q&A', 'qa.md'), 'Q&A');
 });
 
 test('common generated trees are skipped as descendants, never as selected roots', () => {
