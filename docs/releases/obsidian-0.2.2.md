@@ -1,6 +1,6 @@
 # DocShelf for Obsidian 0.2.2 — desktop beta
 
-This patch resolves the remaining source-code error found by Obsidian's hosted review of `0.2.1`. The HTML viewer now creates its Electron webview through Obsidian's typed element helper, without a forbidden lint exception. It keeps the guest detached until its sandbox, private session, and navigation guard are configured.
+This patch resolves the remaining source-code error found by Obsidian's hosted review of `0.2.1`. The HTML viewer now creates its Electron webview through Obsidian's typed element helper, without a forbidden lint exception. Each guest stays detached until its sandbox and private session are configured. Local HTML guests also receive a navigation guard before attachment; remote Claude Artifact guests do not use that local-document guard.
 
 Shelf files, settings, recovery records, and document behavior remain compatible. The [review notes](https://github.com/oliver-im/docshelf/blob/main/docs/obsidian-review.md) explain the retained capability and CSS advisories.
 
