@@ -1,8 +1,10 @@
 ---
 import shelf from '../generated/shelf.json';
+import { htmlSandbox } from '../lib/html-sandbox.js';
 
 interface Artifact {
   route: string;
+  format?: 'html' | 'markdown' | 'claude';
   title: string;
   revision: string;
   embedUrl?: string;
@@ -67,6 +69,7 @@ const blankFrameUrl = 'about:blank';
           data-artifact-query=""
           data-artifact-location=""
           data-artifact-url={initialFrameUrl}
+          sandbox={initialArtifact?.format === 'html' ? htmlSandbox : undefined}
           src={initialFrameUrl || blankFrameUrl}
           title={initialArtifact?.title || 'Document viewer'}
           allow="clipboard-write"
@@ -164,10 +167,12 @@ const blankFrameUrl = 'about:blank';
   import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
+  import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions } from '../lib/document-actions';
 
   interface Artifact {
     route: string;
+    format?: 'html' | 'markdown' | 'claude';
     project?: string;
     title: string;
     revision: string;
@@ -325,6 +330,7 @@ const blankFrameUrl = 'about:blank';
     for (const frame of frames) {
       frame.addEventListener('load', () => {
         bridgeFrameLinks(frame);
+        sendFrameTheme(frame);
         if (
           currentArtifact &&
           supportsLineSelection(currentArtifact) &&
@@ -399,6 +405,12 @@ const blankFrameUrl = 'about:blank';
       if (fallback) selectArtifact(requestedSelection() || emptySelection(fallback.route), 'none');
     });
     window.addEventListener('message', handleFrameMessage);
+    const sendFrameTheme = (frame: HTMLIFrameElement) => {
+      if (artifacts.find(artifact => artifact.route === frame.dataset.artifactRoute)?.format !== 'html') return;
+      frame.contentWindow?.postMessage({ type: 'docshelf-theme', theme: document.documentElement.dataset.theme }, '*');
+    };
+    new MutationObserver(() => frames.forEach(sendFrameTheme)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    frames.forEach(sendFrameTheme);
     if (root.dataset.docshelfLiveUpdates === 'true') {
       window.addEventListener('focus', () => void checkForArtifactUpdates());
       document.addEventListener('visibilitychange', () => {
@@ -539,10 +551,13 @@ const blankFrameUrl = 'about:blank';
               localRevision = result.revision;
               preview.replaceChildren();
               const summary = document.createElement('p');
-              summary.textContent = `${result.documents.length} new document(s), ${result.foldersAdded} new watched folder(s).`;
+              summary.textContent = `${result.documents.length} new document(s), ${result.foldersAdded} new watched folder(s), ${result.moved.length} existing document(s) moved.`;
               const list = document.createElement('ul');
               for (const item of result.documents.slice(0, 100)) {
                 const row = document.createElement('li'); row.textContent = `${item.title} — ${item.source}`; list.append(row);
+              }
+              for (const item of result.moved.slice(0, 100)) {
+                const row = document.createElement('li'); row.textContent = `${item.title} — moved from ${item.previousProject} to ${item.project} (link changes)`; list.append(row);
               }
               preview.append(summary, list);
               for (const warning of result.warnings || []) { const row = document.createElement('p'); row.textContent = warning; preview.append(row); }
@@ -827,7 +842,7 @@ const blankFrameUrl = 'about:blank';
       stagingFrame.setAttribute('aria-hidden', 'true');
       stagingFrame.tabIndex = -1;
 
-      const loaded = await loadFrame(stagingFrame, rawUrl);
+      const loaded = await loadFrame(stagingFrame, rawUrl, artifact.format === 'html');
       if (!loaded || requestId !== navigationId) {
         if (requestId === navigationId) {
           stagingFrame.dataset.frameState = 'standby';
@@ -882,6 +897,17 @@ const blankFrameUrl = 'about:blank';
     }
 
     function handleFrameMessage(event: MessageEvent) {
+      const sender = frames.find(frame => frame.contentWindow === event.source);
+      const senderArtifact = sender && artifacts.find(artifact => artifact.route === sender.dataset.artifactRoute);
+      if (sender && senderArtifact?.format === 'html' && event.origin === 'null') {
+        if (event.data?.type === 'docshelf-theme-request') sendFrameTheme(sender);
+        if (event.data?.type === 'docshelf-navigate' && sender === activeFrame &&
+          typeof event.data.route === 'string' && artifacts.some(artifact => artifact.route === event.data.route) &&
+          typeof event.data.query === 'string' && typeof event.data.hash === 'string') {
+          void selectArtifact(normalizeSelection({ route: event.data.route, query: event.data.query, hash: event.data.hash }), 'push');
+        }
+        return;
+      }
       if (
         event.origin !== window.location.origin ||
         event.source !== activeFrame.contentWindow ||
@@ -1216,7 +1242,9 @@ const blankFrameUrl = 'about:blank';
     return (hash >>> 0).toString(16).padStart(8, '0');
   }
 
-  function loadFrame(frame: HTMLIFrameElement, rawUrl: string) {
+  function loadFrame(frame: HTMLIFrameElement, rawUrl: string, isolatedHtml: boolean) {
+    if (isolatedHtml) frame.setAttribute('sandbox', htmlSandbox);
+    else frame.removeAttribute('sandbox');
     const expectedUrl = new URL(rawUrl, window.location.href).href;
     const isCrossOrigin = new URL(expectedUrl).origin !== window.location.origin;
 
@@ -1234,7 +1262,7 @@ const blankFrameUrl = 'about:blank';
       };
 
       frame.addEventListener('load', handleLoad);
-      if (isCrossOrigin) {
+      if (isCrossOrigin || isolatedHtml) {
         frame.src = expectedUrl;
         return;
       }
@@ -1249,7 +1277,7 @@ const blankFrameUrl = 'about:blank';
         frame.src = rawUrl;
       }
 
-      if (frameHasLoadedUrl(frame, expectedUrl)) finish(true);
+      if (frame.contentDocument && frameHasLoadedUrl(frame, expectedUrl)) finish(true);
     });
   }
 

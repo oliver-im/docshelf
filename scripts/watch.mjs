@@ -24,6 +24,8 @@ import { createRegistrationHandler } from './registration.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import { siteInputsSignature } from './site-inputs.mjs';
 import { SourceWatcher } from './source-watcher.mjs';
+import { artifactContentSecurityPolicy } from './html-isolation.mjs';
+import { artifactRevisionFile } from './artifact-html.mjs';
 import { cacheControl, entityTag, isFresh } from './static-headers.mjs';
 import {
   acquireSyncLock,
@@ -72,6 +74,7 @@ installShutdownSignals(shutdown, {
 
 let activeBuildRoot = null;
 let activeArtifactRevisions = new Map();
+let activeMarkdownRoutes = new Set();
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -102,6 +105,12 @@ watcher.on('error', (error) => {
 });
 
 activeBuildRoot = await findLatestBuild();
+if (activeBuildRoot) {
+  const previousState = await readFile(path.join(activeBuildRoot, 'artifacts', artifactRevisionFile), 'utf8')
+    .then(JSON.parse).catch(() => null);
+  // Use the served build's metadata, not the current shelf. Unknown/older output stays isolated.
+  if (Array.isArray(previousState?.artifacts)) setActiveRevisions(previousState);
+}
 await reportBuildStatus(buildStatus.starting(Boolean(activeBuildRoot)));
 
 const server = createServer((request, response) => {
@@ -213,9 +222,7 @@ async function rebuild(reasons) {
 
     const previousBuildRoot = activeBuildRoot;
     activeBuildRoot = buildRoot;
-    activeArtifactRevisions = new Map(
-      revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
-    );
+    setActiveRevisions(revisionState);
     await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     console.log(`[build] Published ${shelf.artifacts.length} artifacts in ${seconds}s.`);
@@ -287,7 +294,7 @@ function runAstroBuild(buildRoot) {
 async function refreshSourceWatches(existingShelf) {
   const shelf = existingShelf || (await loadShelf());
   await sourceWatcher.update(shelf.artifacts.flatMap(artifact =>
-    artifact.sourcePath ? [path.resolve(docShelfRoot, artifact.source), artifact.sourcePath] : [],
+    !artifact.directoryId && artifact.sourcePath ? [path.resolve(docShelfRoot, artifact.source), artifact.sourcePath] : [],
   ), shelf.directories || []);
 }
 
@@ -316,6 +323,11 @@ async function findLatestBuild() {
 async function isSuccessfulBuild(buildRoot) {
   const indexStats = await stat(path.join(buildRoot, 'index.html')).catch(() => null);
   return Boolean(indexStats?.isFile());
+}
+
+function setActiveRevisions(state) {
+  activeArtifactRevisions = new Map(state.artifacts.map(artifact => [artifact.route, artifact.revision]));
+  activeMarkdownRoutes = new Set(state.artifacts.filter(artifact => artifact.format === 'markdown').map(artifact => artifact.route));
 }
 
 async function serveRequest(request, response) {
@@ -352,6 +364,7 @@ async function serveRequest(request, response) {
 
   const buildRoot = activeBuildRoot;
   const artifactRevisions = activeArtifactRevisions;
+  const markdownRoutes = activeMarkdownRoutes;
   if (!buildRoot) {
     response.writeHead(503, {
       'cache-control': 'no-store',
@@ -400,6 +413,7 @@ async function serveRequest(request, response) {
   await sendFile(request, response, filePath, fileStats, {
     statusCode: 200,
     cacheControl: cacheControl(servedPath),
+    contentSecurityPolicy: artifactContentSecurityPolicy(servedPath, markdownRoutes),
     contentRevision: servedPath.startsWith('artifacts/')
       ? artifactRevisions.get(servedPath.slice('artifacts/'.length))
       : undefined,
@@ -436,13 +450,14 @@ async function serveBuildStatus(request, response) {
  * @param {import('node:http').ServerResponse} response
  * @param {string} filePath
  * @param {import('node:fs').Stats} fileStats
- * @param {{ statusCode: number, cacheControl: string, contentRevision?: string }} options
+ * @param {{ statusCode: number, cacheControl: string, contentRevision?: string, contentSecurityPolicy?: string }} options
  */
 async function sendFile(request, response, filePath, fileStats, options) {
   const etag = entityTag(fileStats, options.contentRevision);
   const headers = {
     'cache-control': options.cacheControl,
     etag,
+    ...(options.contentSecurityPolicy ? { 'content-security-policy': options.contentSecurityPolicy } : {}),
     'x-content-type-options': 'nosniff',
   };
 

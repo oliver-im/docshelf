@@ -1,6 +1,6 @@
 /** @typedef {{ id: string, source: string, project: string, recursive: boolean, exclude: string[] }} DirectoryEntry */
 export const documentExtensions = ['md', 'markdown', 'html', 'htm'];
-export const ignoredDirectoryNames = ['node_modules', 'dist', 'build', 'coverage', 'vendor'];
+export const ignoredDirectoryNames = ['node_modules', 'dist', 'build', 'coverage', 'vendor', 'target', '_build', 'site', 'htmlcov'];
 
 /** @param {unknown} value @returns {DirectoryEntry[]} */
 export function parseDirectories(value) {
@@ -39,6 +39,38 @@ export function filenameTitle(filename) {
 export function documentTitle(source, filename) {
   const title = /\.html?$/i.test(filename)
     ? source.match(/<title\b[^>]*>([^<]{1,300})<\/title>/i)?.[1]
-    : source.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1];
+    : markdownTitle(source);
   return title?.replace(/[*`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 300) || filenameTitle(filename);
+}
+
+/** Infer titles without mistaking fenced code or front matter for prose.
+ * @param {string} source */
+function markdownTitle(source) {
+  const lines = source.replace(/^\uFEFF/, '').split(/\r?\n/);
+  if (lines[0] === '---') {
+    const end = lines.findIndex((line, index) => index > 0 && /^(?:---|\.\.\.)\s*$/.test(line));
+    if (end > 0) {
+      for (const line of lines.slice(1, end)) {
+        const value = /^title:\s*(.+?)\s*$/.exec(line)?.[1];
+        if (!value) continue;
+        // Only scalar titles; do not interpret arbitrary YAML or block values.
+        if (/^".*"$/.test(value)) { try { return String(JSON.parse(value)); } catch { continue; } }
+        if (/^'.*'$/.test(value)) return value.slice(1, -1).replace(/''/g, "'");
+        if (!/^[|>!&*[{]/.test(value)) return value.replace(/\s+#.*$/, '');
+      }
+      lines.splice(0, end + 1);
+    }
+  }
+  let fence = '';
+  for (const line of lines) {
+    if (fence) {
+      const closing = /^ {0,3}(`+|~+)\s*$/.exec(line)?.[1];
+      if (closing && closing[0] === fence[0] && closing.length >= fence.length) fence = '';
+      continue;
+    }
+    const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (opening && (opening[1][0] !== '`' || !opening[2].includes('`'))) { fence = opening[1]; continue; }
+    const heading = /^ {0,3}#\s+(.+?)(?:\s+#+)?\s*$/.exec(line)?.[1];
+    if (heading) return heading;
+  }
 }

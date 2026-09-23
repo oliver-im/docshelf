@@ -1,6 +1,6 @@
 // Shared Node filesystem code. Keep host APIs out of this module and all filesystem code out of core.
 import path from 'node:path';
-import { constants, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { constants, closeSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { acquireRegistrationLock } from './locks.mjs';
 import { open, readFile, realpath, stat, lstat, readdir, rename, unlink } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
@@ -14,13 +14,15 @@ export const digest = value => createHash('sha256').update(value).digest('hex');
 export const within = (root, file) => { const relative = path.relative(root, file); return relative === '' || relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative); };
 const portable = value => value.split(path.sep).join('/');
 const unavailable = error => ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error?.code);
+const scanLimit = message => Object.assign(new Error(message), { code: 'SCAN_LIMIT' });
 const regularDocument = file => documentExtensions.includes(path.extname(file).slice(1).toLowerCase());
 const slug = value => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 55) || 'document';
 const normalizedSource = source => parseClaudeArtifactUrl(source)?.publicUrl || parseGitHubMarkdownUrl(source)?.sourceUrl || source;
 
 async function readRegistration(shelfPath, roots) {
   const canonicalShelf = await checkedPath(path.dirname(shelfPath), roots);
-  const shelfFile = path.join(canonicalShelf, path.basename(shelfPath));
+  const requestedFile = path.join(canonicalShelf, path.basename(shelfPath));
+  const shelfFile = await checkedPath(requestedFile, roots).catch(error => { if (error.code === 'ENOENT') return requestedFile; throw error; });
   const info = await lstat(shelfFile).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
   if (info && (!info.isFile() || info.isSymbolicLink() || info.size > 2 * 1024 * 1024)) throw new Error('Shelf must be a regular JSON file no larger than 2 MB.');
   const baseline = info ? await readFile(shelfFile, 'utf8') : null;
@@ -71,19 +73,21 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
   const directories = [];
   const warnings = [];
   const routes = new Set(artifacts.map(entry => entry?.route));
-  let scanned = 0;
-  // Stable precedence for overlapping folders, independent of serialized ordering.
-  for (const directory of [...config.directories].sort((a, b) => a.id.localeCompare(b.id))) {
+  for (const directory of config.directories) {
     if (/^[a-z][a-z\d+.-]*:/i.test(directory.source) && !path.isAbsolute(directory.source) || directory.source.startsWith('//') || directory.source.startsWith('\\\\') || relativeOnly && path.isAbsolute(directory.source)) throw new Error('Folder sources must be local paths; shared shelves require relative paths.');
     const sourcePath = path.resolve(base, directory.source);
-    // Also check the nearest existing parent of missing folders before watching them.
-    let ancestor = sourcePath;
-    while (!(await lstat(ancestor).catch(() => null))) { const parent = path.dirname(ancestor); if (parent === ancestor) break; ancestor = parent; }
-    await checkedPath(ancestor, roots);
     const watch = { ...directory, sourcePath, canonicalPath: undefined };
     directories.push(watch);
     let canonicalRoot;
     try {
+      // A broken symlink is unavailable too, but existing ancestors must stay contained.
+      let ancestor = sourcePath;
+      while (!(await lstat(ancestor).catch(error => { if (unavailable(error)) return null; throw error; }))) {
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) break;
+        ancestor = parent;
+      }
+      await checkedPath(ancestor, roots);
       canonicalRoot = await checkedPath(sourcePath, roots);
       if (!(await stat(canonicalRoot)).isDirectory()) throw new Error('Registered folder is not a directory.');
       watch.canonicalPath = canonicalRoot;
@@ -92,13 +96,30 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
       warnings.push(`${directory.project}: folder unavailable: ${directory.source}`);
       continue;
     }
+  }
+  // Canonical depth makes the most specific folder win, including symlink aliases.
+  const depthOf = directory => (directory.canonicalPath || directory.sourcePath).split(path.sep).length;
+  directories.sort((a, b) => depthOf(b) - depthOf(a) || a.id.localeCompare(b.id));
+  for (const directory of directories) {
+    const { sourcePath, canonicalPath: canonicalRoot } = directory;
+    if (!canonicalRoot) continue;
+    const start = artifacts.length;
+    const addedIdentities = [];
+    let scanned = 0;
     const walk = async (folder, depth = 0) => {
-      if (depth > 32) throw new Error('Folder nesting exceeds the 32-level limit.');
-      const canonical = await checkedPath(folder, [canonicalRoot]);
-      const entries = await readdir(canonical, { withFileTypes: true });
+      if (depth > 32) throw scanLimit('Folder nesting exceeds the 32-level limit.');
+      let entries;
+      try {
+        const canonical = await checkedPath(folder, [canonicalRoot]);
+        entries = await readdir(canonical, { withFileTypes: true });
+      } catch (error) {
+        if (!allowUnavailable || !unavailable(error)) throw error;
+        warnings.push(`${directory.project}: folder unavailable: ${portable(path.relative(base, folder))}`);
+        return;
+      }
       entries.sort((a, b) => a.name.localeCompare(b.name));
       for (const entry of entries) {
-        if (++scanned > MAX_ENTRIES) throw new Error('Folder scan exceeds 20,000 entries. Select a smaller folder or add exclusions.');
+        if (++scanned > MAX_ENTRIES) throw scanLimit('Folder scan exceeds 20,000 entries. Select a smaller folder or add exclusions.');
         const file = path.join(folder, entry.name);
         const relative = portable(path.relative(sourcePath, file));
         if (excludedPath(relative, directory.exclude) || entry.isSymbolicLink()) continue;
@@ -107,11 +128,11 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
         try {
           const target = await checkedPath(file, [canonicalRoot]);
           if (identities.has(target)) continue;
-          if (artifacts.length >= MAX_DOCUMENTS) throw new Error('A shelf supports at most 2,000 documents. Select a smaller folder or add exclusions.');
+          if (artifacts.length >= MAX_DOCUMENTS) throw scanLimit('A shelf supports at most 2,000 documents. Select a smaller folder or add exclusions.');
           const title = await titleFor(file, [canonicalRoot]);
           const route = `folders/${directory.id}/${slug(relative)}-${digest(relative).slice(0, 16)}.html`;
           if (routes.has(route)) throw new Error(`Duplicate generated route: ${route}`);
-          routes.add(route); identities.add(target);
+          routes.add(route); identities.add(target); addedIdentities.push(target);
           artifacts.push({ project: directory.project, source: portable(path.relative(base, file)), route, title, description: '', discoveryRoot: canonicalRoot, directoryId: directory.id });
         } catch (error) {
           if (allowUnavailable && error.code === 'DOC_TOO_LARGE') { warnings.push(`${directory.project}: document exceeds 8 MB: ${relative}`); continue; }
@@ -121,7 +142,12 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
       }
     };
     try { await walk(sourcePath); }
-    catch (error) { if (!allowUnavailable || !unavailable(error)) throw error; warnings.push(`${directory.project}: folder unavailable: ${directory.source}`); }
+    catch (error) {
+      if (!allowUnavailable || error.code !== 'SCAN_LIMIT') throw error;
+      for (const entry of artifacts.splice(start)) routes.delete(entry.route);
+      for (const identity of addedIdentities) identities.delete(identity);
+      warnings.push(`${directory.project}: folder skipped: ${directory.source}. ${error.message}`);
+    }
   }
   return { artifacts, directories, warnings };
 }
@@ -161,10 +187,21 @@ export async function prepareAddition({ shelfPath, base = path.dirname(shelfPath
   }
   if (config.version === 1) delete config.directories;
   const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
-  const old = new Set(existing.artifacts.map(entry => entry.route));
-  const documents = expanded.artifacts.filter(entry => !old.has(entry.route)).map(({ title, source, project }) => ({ title, source, project }));
-  const revision = digest(JSON.stringify([baseline, selected, config, expanded.artifacts.map(entry => [entry.source, entry.route, entry.discoveryRoot])]));
-  return { config, baseline, shelfFile, revision, documents, foldersAdded: expanded.directories.length - existing.directories.length, warnings: expanded.warnings };
+  const identity = async entry => /^https?:/i.test(entry.source) ? normalizedSource(entry.source) : realpath(path.resolve(base, entry.source)).catch(() => path.resolve(base, entry.source));
+  const old = new Map(await Promise.all(existing.artifacts.map(async entry => [await identity(entry), entry])));
+  const documents = [];
+  const moved = [];
+  const changedEntries = [];
+  for (const entry of expanded.artifacts) {
+    const previous = old.get(await identity(entry));
+    const { title, source, project } = entry;
+    if (!previous) documents.push({ title, source, project });
+    else if (previous.route !== entry.route || previous.project !== project) moved.push({ title, source, project, previousProject: previous.project });
+    else continue;
+    changedEntries.push(entry);
+  }
+  const revision = digest(JSON.stringify([baseline, selected, config, changedEntries]));
+  return { config, baseline, shelfFile, revision, documents, moved, foldersAdded: expanded.directories.length - existing.directories.length, warnings: expanded.warnings };
 }
 
 export async function addToShelf(options, expectedRevision) {
@@ -176,7 +213,7 @@ export async function addToShelf(options, expectedRevision) {
 /** Commit a freshly prepared addition immediately; delayed previews use addToShelf to revalidate. */
 export async function commitAddition(prepared) {
   await commitRegistration(prepared, 'The shelf changed. Preview again before adding.');
-  return { documentsAdded: prepared.documents.length, foldersAdded: prepared.foldersAdded };
+  return { documentsAdded: prepared.documents.length, documentsMoved: prepared.moved.length, foldersAdded: prepared.foldersAdded };
 }
 
 /** Remove registrations only; exclude the exact source from every overlapping watched folder. */
@@ -222,7 +259,7 @@ async function commitRegistration(prepared, changedMessage) {
   if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error('Shelf exceeds the 2 MB limit.');
   // A cooperative lock serializes both apps; compare the original again before replacing the shelf.
   const lock = await acquireRegistrationLock(prepared.shelfFile);
-  const temporary = `${prepared.shelfFile}.${randomBytes(8).toString('hex')}.tmp`;
+  const temporary = path.join(path.dirname(prepared.shelfFile), `.${path.basename(prepared.shelfFile)}.${randomBytes(8).toString('hex')}.tmp`);
   try {
     const current = await readFile(prepared.shelfFile, 'utf8').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (current !== prepared.baseline) throw new Error(changedMessage);
@@ -238,10 +275,16 @@ async function commitRegistration(prepared, changedMessage) {
 }
 
 /** Revalidate membership synchronously immediately before native editor reads/writes. */
-export function assertRegisteredSource(shelfPath, artifact) {
-  const info = lstatSync(shelfPath);
-  if (!info.isFile() || info.size > 2 * 1024 * 1024) throw new Error('Shelf is unavailable or exceeds 2 MB.');
-  const config = shelfConfig(JSON.parse(readFileSync(shelfPath, 'utf8')));
+export function assertRegisteredSource(shelfPath, artifact, roots) {
+  const canonical = realpathSync(shelfPath);
+  if (!roots.some(root => within(root, canonical))) throw new Error('Shelf is outside the configured workspace.');
+  const handle = openSync(canonical, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  let config;
+  try {
+    const info = fstatSync(handle);
+    if (!info.isFile() || info.size > 2 * 1024 * 1024) throw new Error('Shelf is unavailable or exceeds 2 MB.');
+    config = shelfConfig(JSON.parse(readFileSync(handle, 'utf8')));
+  } finally { closeSync(handle); }
   const base = path.dirname(shelfPath);
   const explicit = config.artifacts.find(entry => entry?.route === artifact.route);
   if (explicit && path.resolve(base, explicit.source) === artifact.sourcePath) return;

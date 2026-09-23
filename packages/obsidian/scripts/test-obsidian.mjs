@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, copyFile, cp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, cp, writeFile, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
@@ -48,7 +48,10 @@ for (const artifact of shelf.artifacts) artifact.source = path.join(workspace, a
 shelf.artifacts[1].project = 'Reports';
 delete shelf.artifacts[0].description;
 const shelfPath = path.join(vault, 'shelf.local.json');
-await writeFile(shelfPath, JSON.stringify(shelf));
+// Exercise native editing and shelf mutations through a symlink throughout the runtime suite.
+const shelfTarget = path.join(vault, '.shelf-source.json');
+await writeFile(shelfTarget, JSON.stringify(shelf));
+await symlink(shelfTarget, shelfPath);
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
 
 const log = createWriteStream('.local/runtime/obsidian.log');

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse, serialize } from 'parse5';
+import { parse, parseFragment, serialize } from 'parse5';
 import { sitePath } from './site-path.mjs';
 import { createViewerLocation } from '@docshelf/core/links';
 
@@ -102,6 +102,15 @@ export async function rewriteArtifactLinks(html, artifact, shelf, options = {}) 
     }
   }
 
+  if (artifact.format === 'html') {
+    const htmlFrameBridge = await readFile(new URL('../src/lib/html-frame-bridge.js', import.meta.url), 'utf8');
+    const head = document.childNodes.find(node => node.tagName === 'html')?.childNodes.find(node => node.tagName === 'head');
+    if (head) {
+      const bridge = parseFragment(`<script>${htmlFrameBridge}</script>`).childNodes[0];
+      bridge.parentNode = head;
+      head.childNodes.unshift(bridge);
+    }
+  }
   return serialize(document);
 }
 

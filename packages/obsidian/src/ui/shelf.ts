@@ -213,10 +213,10 @@ export class ShelfView extends ItemView {
     this.showMenu(menu, toggle);
   }
 
-  private showDocumentMenu(artifact: Artifact, button: HTMLButtonElement): void {
+  private showDocumentMenu(artifact: Artifact, button: HTMLButtonElement, searching: boolean): void {
     const { project, route } = artifact;
     const menu = this.createMenu(project);
-    this.addMoveActions(menu, route, () => this.orderedDocuments(project).map(item => item.route), order => this.saveDocumentOrder(project, order, route));
+    if (!searching) this.addMoveActions(menu, route, () => this.orderedDocuments(project).map(item => item.route), order => this.saveDocumentOrder(project, order, route));
     menu.addSeparator();
     menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove(artifact)));
     this.showMenu(menu, button);
@@ -317,8 +317,8 @@ export class ShelfView extends ItemView {
     });
   }
 
-  private makeDocumentMenu(button: HTMLButtonElement, artifact: Artifact): void {
-    const showMenu = () => this.showDocumentMenu(artifact, button);
+  private makeDocumentMenu(button: HTMLButtonElement, artifact: Artifact, searching: boolean): void {
+    const showMenu = () => this.showDocumentMenu(artifact, button, searching);
     button.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();
@@ -360,7 +360,7 @@ export class ShelfView extends ItemView {
       if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
       button.createSpan({ text: artifact.project, cls: 'docshelf-item-project' });
     } else this.makeDocumentSortable(button, artifact);
-    this.makeDocumentMenu(button, artifact);
+    this.makeDocumentMenu(button, artifact, searching);
     button.onclick = () => { void this.plugin.openArtifact(artifact); };
   }
 }

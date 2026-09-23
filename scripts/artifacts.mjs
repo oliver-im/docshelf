@@ -379,6 +379,7 @@ async function replaceGeneratedArtifacts(shelf) {
         route: artifact.route,
         revision: contentRevision(html),
         sourceRevision: snapshot.revision,
+        format: artifact.format,
       });
 
       const target = path.relative(path.dirname(destination), outputPath);
@@ -421,11 +422,12 @@ async function writeGeneratedShelf(shelf, revisionState) {
   const generatedShelf = {
     version: shelf.version,
     shelfRevision: revisionState.shelfRevision,
-    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
+    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
       project,
       route,
       title,
       description,
+      format,
       revision: revisions.get(route),
       ...(embedUrl ? { embedUrl } : {}),
     })),
@@ -608,6 +610,7 @@ function generatedRootPid(name) {
  * @property {string} route
  * @property {string} revision
  * @property {string} sourceRevision
+ * @property {string} [format]
  */
 
 /**
@@ -689,11 +692,12 @@ function createRevisionState(shelf, artifacts) {
     ),
     shelfRevision: contentRevision(
       JSON.stringify(
-        shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
+        shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
           project,
           route,
           title,
           description,
+          format,
           ...(embedUrl ? { embedUrl } : {}),
         })),
       ),

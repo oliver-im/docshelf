@@ -13,3 +13,9 @@ artifacts.local.json
 public/artifacts/
 src/generated/
 worktrees/
+
+# Atomic shelf saves and registration locks may contain private local paths.
+.*.json.*.tmp
+.*.json.add.lock*/
+shelf.local.json.*.tmp
+shelf.local.json.add.lock/

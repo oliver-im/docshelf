@@ -29,7 +29,7 @@ export class ProjectPicker extends SuggestModal<ProjectChoice> {
       ...(this.plugin.catalog?.directories || []).map(directory => directory.project),
     ])].sort((a, b) => a.localeCompare(b));
     const matches = projects.filter(project => project.toLocaleLowerCase().includes(name.toLocaleLowerCase())).map(project => ({ name: project, create: false }));
-    if (name && name.length <= 300 && !projects.includes(name)) matches.push({ name, create: true });
+    if (name && name.length <= 300 && !projects.includes(name)) matches.unshift({ name, create: true });
     return matches;
   }
 

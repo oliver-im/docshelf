@@ -232,7 +232,7 @@ export class NativeMarkdownView extends MarkdownView {
     const source = this.artifact?.sourcePath || (draft?.pending ? draft.source : undefined);
     const artifact = this.plugin.catalog?.artifacts.find(item => source ? item.sourcePath === source : item.route === this.route);
     if (!artifact || artifact.kind !== 'markdown' || !artifact.sourcePath) throw new Error('This Markdown source is no longer registered. Your edits have been kept.');
-    assertRegisteredSource(this.plugin.shelfPath(), artifact);
+    assertRegisteredSource(this.plugin.shelfPath(), artifact, this.plugin.catalog!.roots);
     if (this.route !== artifact.route) {
       this.route = artifact.route;
       if (this.recoveryRoute) this.recoveryRoute = this.route;

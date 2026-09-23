@@ -219,10 +219,11 @@ export default class DocShelfPlugin extends Plugin {
 
   private async updateWatcher(catalog: Catalog | null): Promise<void> {
     if (this.disposed) return;
-    const sources = new Set([this.shelfPath()]);
+    const shelfPath = this.shelfPath();
+    const sources = new Set([shelfPath, await realpath(shelfPath).catch(() => shelfPath)]);
     for (const artifact of catalog?.artifacts || []) {
-      if (artifact.sourcePath) sources.add(artifact.sourcePath);
-      if (artifact.canonicalPath) sources.add(artifact.canonicalPath);
+      if (!artifact.directoryId && artifact.sourcePath) sources.add(artifact.sourcePath);
+      if (!artifact.directoryId && artifact.canonicalPath) sources.add(artifact.canonicalPath);
       for (const asset of artifact.assets || []) sources.add(path.resolve(path.dirname(artifact.sourcePath!), asset));
     }
     const scope = await watchScope([...sources], catalog?.directories || []);
@@ -338,7 +339,7 @@ export default class DocShelfPlugin extends Plugin {
       const result = await commitAddition(prepared);
       await this.refresh();
       if (!this.disposed) new Notice(result.documentsAdded || result.foldersAdded
-        ? `Added ${result.documentsAdded} document(s) and ${result.foldersAdded} watched folder(s) to ${project}.`
+        ? `Added ${result.documentsAdded} document(s) and ${result.foldersAdded} watched folder(s) to ${project}.${result.documentsMoved ? ` Moved ${result.documentsMoved} existing document(s) to the more specific folder.` : ''}`
         : 'Already on the shelf.');
     } catch (error) {
       throw new Error(message(error).replace('Preview again before adding.', 'Try adding again.'));

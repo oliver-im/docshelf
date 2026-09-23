@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, realpath, readFile, writeFile, rename, rm, symlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, realpath, readFile, writeFile, rename, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
 import { expandShelf, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
 import { createRegistrationHandler } from '../scripts/registration.mjs';
+import { watchScope } from '../packages/local/watch-scope.mjs';
 import { SourceWatcher } from '../scripts/source-watcher.mjs';
 import { loadShelfFrom, docShelfRoot } from '../scripts/artifacts.mjs';
 
@@ -110,8 +111,8 @@ test('web expands relative directory registrations and retains missing folders',
 test('immediate addition commits its preparation while protecting concurrent shelf edits', async t => {
   const f = await fixture(t);
   const options = { ...f, sources: ['docs'], project: 'Chosen' };
-  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 2, foldersAdded: 1 });
-  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 0, foldersAdded: 0 });
+  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 2, documentsMoved: 0, foldersAdded: 1 });
+  assert.deepEqual(await commitAddition(await prepareAddition(options)), { documentsAdded: 0, documentsMoved: 0, foldersAdded: 0 });
   const prepared = await prepareAddition(options);
   const edited = JSON.stringify({ ...JSON.parse(await readFile(f.shelfPath, 'utf8')), custom: 'External edit' });
   await writeFile(f.shelfPath, edited);
@@ -183,7 +184,7 @@ test('removing discovered files blocks stale native saves and accepts literal fi
   const artifact = (await expandShelf(f.config, f.base, f.roots)).artifacts.find(entry => entry.source.endsWith('question?.md'));
   const options = { ...f, route: artifact.route, source: artifact.source };
   await removeFromShelf(options, (await prepareRemoval(options)).revision);
-  assert.throws(() => assertRegisteredSource(f.shelfPath, { ...artifact, sourcePath: path.join(f.base, artifact.source) }), /no longer included/);
+  assert.throws(() => assertRegisteredSource(f.shelfPath, { ...artifact, sourcePath: path.join(f.base, artifact.source) }, f.roots), /no longer included/);
   assert.equal(await readFile(path.join(f.base, artifact.source), 'utf8'), '# Literal filename');
   const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
   assert.equal((await expandShelf(saved, f.base, f.roots)).artifacts.length, 2);
@@ -217,4 +218,115 @@ test('web removal accepts registered routes only and leaves version 1 compatible
   await assert.rejects(handler({ action: 'remove', route: 'remote.html' }), /changed/);
   assert.deepEqual(await handler({ action: 'remove', route: 'remote.html', revision: preview.revision }), { removed: true });
   assert.deepEqual(JSON.parse(await readFile(f.shelfPath, 'utf8')), { version: 1, custom: 'preserved', artifacts: [] });
+});
+
+
+test('an overflowing folder rolls back its documents without blocking other folders or shelf actions', async t => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.base, 'huge'));
+  await Promise.all(Array.from({ length: 2001 }, (_, i) => writeFile(path.join(f.base, 'huge', `${i}.html`), '<title>Generated</title>')));
+  f.config.directories.unshift({ id: 'a-huge', source: 'huge', project: 'Huge' });
+  f.config.artifacts.push({ source: 'docs/one.md', route: 'pinned.html', title: 'Pinned', project: 'Pinned' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const expanded = await expandShelf(f.config, f.base, f.roots, { allowUnavailable: true });
+  assert.equal(expanded.artifacts.length, 2);
+  assert.equal(expanded.directories.length, 2);
+  assert.match(expanded.warnings[0], /Huge: folder skipped: huge.*2,000/);
+  await assert.rejects(expandShelf(f.config, f.base, f.roots), /2,000/);
+  await writeFile(path.join(f.base, 'added.md'), '# Added');
+  const addition = { ...f, sources: ['added.md'] };
+  await addToShelf(addition, (await prepareAddition(addition)).revision);
+  const removal = { ...f, route: 'pinned.html' };
+  await removeFromShelf(removal, (await prepareRemoval(removal)).revision);
+  assert.equal(JSON.parse(await readFile(f.shelfPath, 'utf8')).directories.length, 2);
+});
+
+test('nesting overruns also roll back just the affected folder', async t => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.base, 'deep', ...Array(33).fill('sub')), { recursive: true });
+  await writeFile(path.join(f.base, 'deep/first.md'), '# Partial');
+  f.config.directories.unshift({ id: 'a-deep', source: 'deep', project: 'Deep' });
+  const result = await expandShelf(f.config, f.base, f.roots, { allowUnavailable: true });
+  assert.equal(result.artifacts.length, 2);
+  assert.match(result.warnings[0], /32-level/);
+});
+
+test('unreadable subfolders and broken registered symlinks preserve healthy siblings', async t => {
+  const f = await fixture(t);
+  const denied = path.join(f.base, 'docs/m-volume');
+  await mkdir(denied);
+  await writeFile(path.join(f.base, 'docs/z.md'), '# Last');
+  await symlink(path.join(f.base, 'gone'), path.join(f.base, 'broken'));
+  f.config.directories.push({ id: 'broken', source: 'broken', project: 'Broken' });
+  await chmod(denied, 0);
+  const expanded = await expandShelf(f.config, f.base, f.roots, { allowUnavailable: true }).finally(() => chmod(denied, 0o700));
+  assert.equal(expanded.artifacts.length, 3);
+  assert.equal(expanded.directories.length, 2);
+  assert.ok(expanded.warnings.some(warning => /Broken: folder unavailable: broken/.test(warning)));
+  if (process.getuid?.() !== 0) assert.ok(expanded.warnings.some(warning => /folder unavailable: docs\/m-volume/.test(warning)));
+});
+
+test('a parent addition preserves existing routes, while a child addition reports moves', async t => {
+  const f = await fixture(t);
+  f.config.directories = [{ id: 'z-notes', source: 'docs/nested', project: 'Notes' }];
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const before = (await expandShelf(f.config, f.base, f.roots)).artifacts[0];
+  const parent = await prepareAddition({ ...f, sources: ['docs'], project: 'Everything' });
+  assert.equal(parent.documents.length, 1);
+  assert.deepEqual(parent.moved, []);
+  await commitAddition(parent);
+  const after = (await expandShelf(JSON.parse(await readFile(f.shelfPath, 'utf8')), f.base, f.roots)).artifacts.find(entry => entry.source === before.source);
+  assert.equal(after.route, before.route);
+  assert.equal(after.project, 'Notes');
+  f.config.directories = [{ id: 'a-all', source: 'docs', project: 'Everything' }];
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const child = await prepareAddition({ ...f, sources: ['docs/nested'], project: 'Notes' });
+  assert.deepEqual(child.documents, []);
+  assert.equal(child.moved.length, 1);
+  assert.equal(child.moved[0].previousProject, 'Everything');
+  assert.equal((await commitAddition(child)).documentsMoved, 1);
+});
+
+test('unrelated folder changes leave a preview valid; selected additions still revalidate', async t => {
+  const f = await fixture(t);
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  await mkdir(path.join(f.base, 'selected'));
+  await writeFile(path.join(f.base, 'selected/one.md'), '# Selected');
+  const options = { ...f, sources: ['selected'] };
+  const preview = await prepareAddition(options);
+  await writeFile(path.join(f.base, 'docs/unrelated.md'), '# Unrelated');
+  assert.equal((await prepareAddition(options)).revision, preview.revision);
+  await writeFile(path.join(f.base, 'selected/another.md'), '# Another');
+  await assert.rejects(addToShelf(options, preview.revision), /changed/);
+});
+
+test('symlinked shelves support membership checks and additions within configured roots', async t => {
+  const f = await fixture(t);
+  const target = path.join(f.base, 'real-shelf.json');
+  await writeFile(target, JSON.stringify(f.config));
+  await symlink(target, f.shelfPath);
+  const entry = (await expandShelf(f.config, f.base, f.roots)).artifacts.find(entry => entry.source.endsWith('one.md'));
+  const artifact = { ...entry, sourcePath: path.join(f.base, entry.source) };
+  assert.doesNotThrow(() => assertRegisteredSource(f.shelfPath, artifact, f.roots));
+  await writeFile(path.join(f.base, 'new.md'), '# New');
+  await commitAddition(await prepareAddition({ ...f, sources: ['new.md'] }));
+  assert.equal((await lstat(f.shelfPath)).isSymbolicLink(), true);
+  assert.equal(JSON.parse(await readFile(target, 'utf8')).artifacts.length, 1);
+  await rm(f.shelfPath);
+  const outside = await fixture(t);
+  await writeFile(outside.shelfPath, JSON.stringify(f.config));
+  await symlink(outside.shelfPath, f.shelfPath);
+  assert.throws(() => assertRegisteredSource(f.shelfPath, artifact, f.roots), /outside/);
+});
+
+test('directory-only watch scopes remain stable when discovered membership changes', async t => {
+  const f = await fixture(t);
+  const before = await expandShelf(f.config, f.base, f.roots);
+  const first = await watchScope([f.shelfPath], before.directories);
+  await writeFile(path.join(f.base, 'docs/new.md'), '# New');
+  const after = await expandShelf(f.config, f.base, f.roots);
+  const next = await watchScope([f.shelfPath], after.directories);
+  assert.equal(next.signature, first.signature);
+  assert.equal(next.paths.size, 3, 'The missing shelf adds its existing parent to the bounded watch set.');
+  assert.equal(next.ignored(path.join(f.base, 'docs/new.md')), false);
 });

@@ -56,6 +56,14 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').pickingSources), 'Repeated selection did not finish.');
   assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')), saved, 'Repeated selections must not duplicate registrations.');
 
+  await page.evaluate(() => { window.docshelfPickerTest.paths = []; });
+  await page.getByLabel('Add…', { exact: true }).first().click();
+  await page.getByRole('textbox', { name: 'Project', exact: true }).fill('Watched');
+  await page.getByRole('textbox', { name: 'Project', exact: true }).press('Enter');
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').pickingSources), 'Typed project selection did not finish.');
+  assert.equal(await page.evaluate(() => window.docshelfPickerTest.calls.at(-1).options.title), 'Add to DocShelf: Watched');
+  assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')), saved, 'An empty picker must leave the shelf unchanged.');
+
   const contextual = path.join(workspace, 'context-document.md');
   await writeFile(contextual, '# Context document\n');
   await page.evaluate(file => { window.docshelfPickerTest.paths = [file]; }, contextual);
@@ -87,6 +95,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await writeFile(fromSearch, '# Search context\n');
   await page.evaluate(file => { window.docshelfPickerTest.paths = [file]; }, fromSearch);
   await page.locator('.docshelf-search-result').filter({ hasText: 'Live discovery' }).click({ button: 'right' });
+  assert.equal(await page.locator('.menu-item').filter({ hasText: /^Move (up|down)$/ }).count(), 0, 'Search rows must not reorder the hidden project list.');
   await page.locator('.menu-item').filter({ hasText: 'Add…' }).click();
   await poll(() => page.evaluate(file => app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.sourcePath === file), fromSearch), 'Search-row selection was not added.');
   assert.equal(await page.evaluate(file => app.plugins.getPlugin('docshelf').catalog.artifacts.find(entry => entry.sourcePath === file).project, fromSearch), 'Watched project');

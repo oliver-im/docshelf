@@ -18,6 +18,6 @@ export function createRegistrationHandler({ root = docShelfRoot, getShelfPath = 
     }
     if (body.action === 'add') return addToShelf(options, body.revision);
     const result = await prepareAddition(options);
-    return { revision: result.revision, documents: result.documents, foldersAdded: result.foldersAdded, warnings: result.warnings };
+    return { revision: result.revision, documents: result.documents, moved: result.moved, foldersAdded: result.foldersAdded, warnings: result.warnings };
   };
 }

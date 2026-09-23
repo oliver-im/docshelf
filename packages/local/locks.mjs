@@ -773,5 +773,5 @@ function lockError(code, message, extra = {}) {
 
 /** @param {string} shelfPath */
 export function acquireRegistrationLock(shelfPath) {
-  return acquireLock('registration', `${shelfPath}.add.lock`, { timeoutMs: 10000 });
+  return acquireLock('registration', path.join(path.dirname(shelfPath), `.${path.basename(shelfPath)}.add.lock`), { timeoutMs: 10000 });
 }
