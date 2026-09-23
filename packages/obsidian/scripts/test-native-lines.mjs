@@ -165,8 +165,15 @@ export async function testNativeLines({ page, poll, workspace }) {
   await page.evaluate(value => { app.vault.setConfig('readableLineLength', value); app.workspace.updateOptions(); }, readable);
   await line(11).click({ modifiers: ['Shift'] });
   await poll(async () => Math.abs((await headingPadding()).above - 4) < 1, 'The heading highlight did not settle after resizing.');
-  const headingBand = await highlight.boundingBox();
-  await page.mouse.click(headingBand.x + headingBand.width - 3, headingBand.y + headingBand.height - 1, { button: 'right' });
+  // Clipboard notices can cover this right edge after the preceding copy checks.
+  // Wait for a real hit on the editor instead of sending the click to a toast.
+  const headingPoint = await poll(() => highlight.evaluate(el => {
+    const band = el.getBoundingClientRect();
+    const point = { x: band.right - 3, y: band.bottom - 1 };
+    const target = el.ownerDocument.elementFromPoint(point.x, point.y);
+    return target?.closest('.docshelf-native .cm-scroller') ? point : null;
+  }), 'A notification still covers the heading reference menu target.');
+  await page.mouse.click(headingPoint.x, headingPoint.y, { button: 'right' });
   await expectReferenceMenu('11-11');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: '.local/runtime/native-heading-reference.png' });

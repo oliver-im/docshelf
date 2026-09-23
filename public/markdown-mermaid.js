@@ -20,7 +20,7 @@
     },
   ).filter(Boolean);
 
-  const mermaid = globalThis.mermaid;
+  const mermaid = window.mermaid;
   if (blocks.length === 0 || typeof mermaid?.initialize !== 'function') return;
 
   let renderPending = false;
@@ -78,7 +78,15 @@
       );
       if (renderPending) return;
 
-      block.diagram.innerHTML = svg;
+      // Treat renderer output as untrusted markup, including HTML labels inside SVG.
+      const fragment = window.DOMPurify.sanitize(svg, {
+        RETURN_DOM_FRAGMENT: true,
+        // Mermaid uses foreignObject for HTML labels; its children still pass through sanitization.
+        ADD_TAGS: ['foreignObject'],
+        HTML_INTEGRATION_POINTS: { foreignobject: true },
+        FORBID_TAGS: ['form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
+      });
+      block.diagram.replaceChildren(fragment);
       bindFunctions?.(block.diagram);
       block.diagram.hidden = false;
       block.fallback.hidden = true;

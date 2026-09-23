@@ -9,13 +9,11 @@ import { checkRange, createAgentReference, createPermalink, parseRange } from '.
 import { sourceLines } from '../core/markdown';
 import { LineSelection } from './lines';
 import { renderReading } from './render';
+import { session } from '@electron/remote';
 
 export const DOCUMENT_VIEW = 'docshelf-document';
 interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
 interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown> }
-interface ReportWebRequest {
-  onBeforeRequest(filter: { urls: string[] }, listener: ((details: { url: string; resourceType: string }, callback: (response: { cancel?: boolean }) => void) => void) | null): void;
-}
 
 export class DocumentView extends ItemView {
   artifact: Artifact | null = null;
@@ -92,7 +90,7 @@ export class DocumentView extends ItemView {
       const artifact = this.artifact;
       // Finish the host's current setViewState before replacing this view.
       // Re-entering it here lets the outer transition overwrite the new view.
-      setTimeout(() => {
+      this.contentEl.win.setTimeout(() => {
         if (!this.closed && generation === this.generation && this.leaf.view === this) void this.plugin.openArtifact(artifact, this.range, this.hash, this.leaf);
       }, 0);
       return;
@@ -149,7 +147,7 @@ export class DocumentView extends ItemView {
       if (this.mode === 'source' || lines.length > 20_000) this.renderSource(lines, selection);
       else renderReading(this.body, this.source, artifact, this.plugin.server, selection, href => { void this.navigate(href); });
       this.updateRangeStatus();
-      requestAnimationFrame(() => {
+      this.contentEl.win.requestAnimationFrame(() => {
         if (this.closed) return;
         selection.scrollToSelection();
         if (this.hash && !this.range) this.scrollToHash(this.hash);
@@ -181,6 +179,8 @@ export class DocumentView extends ItemView {
   }
 
   private renderWebview(url: string, remote: boolean): void {
+    // Obsidian's createEl typings do not include Electron's custom webview element.
+    // eslint-disable-next-line obsidianmd/prefer-create-el -- Create the isolated guest in this view's own document.
     const webview = this.body.ownerDocument.createElement('webview') as Webview;
     webview.addClass('docshelf-webview');
     webview.setAttribute('partition', remote ? this.remotePartition : this.localPartition);
@@ -191,7 +191,6 @@ export class DocumentView extends ItemView {
       // DOM webview will-navigate events cannot cancel navigation. Guard this
       // view's private session before attaching the guest, using the async
       // request callback (also safe across Electron's remote bridge).
-      const { session } = require('@electron/remote') as { session: { fromPartition(partition: string): { webRequest: ReportWebRequest } } };
       const requests = session.fromPartition(this.localPartition).webRequest;
       const document = new URL(url);
       const filter = { urls: ['<all_urls>'] };

@@ -116,7 +116,7 @@ function headingHighlightBounds(view: EditorView, number: number): { top: number
 class SourceGutterSpacer extends GutterMarker {
   constructor(readonly digits: number) { super(); }
   toDOM(view: EditorView): HTMLElement {
-    const spacer = view.dom.ownerDocument.createElement('span');
+    const spacer = view.dom.ownerDocument.adoptNode(createSpan());
     spacer.className = 'docshelf-source-label';
     spacer.setAttribute('aria-hidden', 'true');
     const number = '9'.repeat(this.digits);
@@ -129,7 +129,7 @@ class SourceMarker extends GutterMarker {
   constructor(readonly start: number, readonly end: number, readonly selected: boolean) { super(); }
   eq(other: SourceMarker): boolean { return this.start === other.start && this.end === other.end && this.selected === other.selected; }
   toDOM(view: EditorView): HTMLElement {
-    const button = view.dom.ownerDocument.createElement('button');
+    const button = view.dom.ownerDocument.adoptNode(createEl('button'));
     const label = this.start === this.end ? String(this.start) : `${this.start}–${this.end}`;
     button.type = 'button';
     button.className = 'docshelf-source-control docshelf-source-label';

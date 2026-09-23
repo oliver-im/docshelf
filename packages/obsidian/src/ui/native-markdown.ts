@@ -60,7 +60,7 @@ export class NativeMarkdownView extends MarkdownView {
   private shelfRevision = '';
   private loadGeneration = 0;
   private recoveryRoute: string | null = null;
-  private recoveryTimer?: ReturnType<typeof setTimeout>;
+  private recoveryTimer?: number;
   private draftChanged = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) {
@@ -97,12 +97,16 @@ export class NativeMarkdownView extends MarkdownView {
     // Native source-mode commands request a vault Markdown view even when
     // acting on this subclass. Keep fileless transitions for this route here;
     // opening a real vault file must still use the host's normal view.
-    const leaf = this.leaf, original = leaf.setViewState;
+    const leaf = this.leaf;
+    // Restore the exact host method on unload; calls use its explicitly bound receiver.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Deliberately retained for identity comparison and restoration.
+    const original = leaf.setViewState;
+    const callOriginal = original.bind(leaf);
     const setViewState: typeof leaf.setViewState = (state, ephemeral) => {
       if (leaf.view === this && state.type === 'markdown' && !state.state?.file && state.state?.route === this.route) {
         state = { ...state, type: NATIVE_MARKDOWN_VIEW };
       }
-      return original.call(leaf, state, ephemeral);
+      return callOriginal(state, ephemeral);
     };
     leaf.setViewState = setViewState;
     this.register(() => { if (leaf.setViewState === setViewState) leaf.setViewState = original; });
@@ -328,7 +332,7 @@ export class NativeMarkdownView extends MarkdownView {
   }
 
   private cancelDraftTimer(): void {
-    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    if (this.recoveryTimer !== undefined) window.clearTimeout(this.recoveryTimer);
     this.recoveryTimer = undefined;
   }
 
@@ -336,8 +340,8 @@ export class NativeMarkdownView extends MarkdownView {
     this.draftChanged = true;
     // A short checkpoint interval bounds crash exposure even while typing
     // continuously; never serialize/fsync a full document on each keystroke.
-    if (this.recoveryTimer) return;
-    this.recoveryTimer = setTimeout(() => {
+    if (this.recoveryTimer !== undefined) return;
+    this.recoveryTimer = window.setTimeout(() => {
       this.recoveryTimer = undefined;
       this.preserveDraft();
       this.updateSaveStatus();

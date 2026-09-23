@@ -1,4 +1,4 @@
-import { ItemView, FuzzySuggestModal, Menu, setIcon, setTooltip, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, FuzzySuggestModal, Menu, setIcon, setTooltip, type FuzzyMatch, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
 import type { Artifact } from '../core/types';
@@ -372,9 +372,9 @@ export class SearchModal extends FuzzySuggestModal<SearchHit> {
   constructor(private plugin: DocShelfPlugin) { super(plugin.app); this.setPlaceholder('Search DocShelf…'); }
   getItems(): SearchHit[] { return this.plugin.search.search(''); }
   getItemText(hit: SearchHit): string { return `${hit.artifact.title} — ${hit.artifact.project}`; }
-  getSuggestions(query: string): any[] { return this.plugin.search.search(query).map(item => ({ item, match: { score: 0, matches: [] } })); }
-  renderSuggestion(value: any, el: HTMLElement): void {
-    const hit = value.item as SearchHit;
+  getSuggestions(query: string): FuzzyMatch<SearchHit>[] { return this.plugin.search.search(query).map(item => ({ item, match: { score: 0, matches: [] } })); }
+  renderSuggestion(value: FuzzyMatch<SearchHit>, el: HTMLElement): void {
+    const hit = value.item;
     el.createDiv({ text: hit.artifact.title });
     el.createDiv({ text: [hit.artifact.project, hit.excerpt].filter(Boolean).join(' · '), cls: 'docshelf-muted' });
   }

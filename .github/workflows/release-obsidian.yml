@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
@@ -45,6 +47,13 @@ jobs:
       - run: npm run build:all
       - run: npm run package:obsidian
       - run: npm run test:package --workspace obsidian-docshelf
+      - name: Attest the verified plugin assets
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            packages/obsidian/dist/release/main.js
+            packages/obsidian/dist/release/manifest.json
+            packages/obsidian/dist/release/styles.css
       - name: Tag the verified commit
         run: |
           git config user.name "github-actions[bot]"

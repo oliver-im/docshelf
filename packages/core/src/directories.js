@@ -7,19 +7,34 @@ export function parseDirectories(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 100) throw new Error('Use an array of at most 100 folders.');
   const ids = new Set();
-  return value.map(entry => {
-    if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(entry.id) || ids.has(entry.id)) throw new Error('Folder IDs must be unique lowercase names.');
+  const entries = /** @type {unknown[]} */ (value);
+  return entries.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Folder IDs must be unique lowercase names.');
+    const entry = /** @type {Record<string, unknown>} */ (value);
+    if (typeof entry.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(entry.id) || ids.has(entry.id)) throw new Error('Folder IDs must be unique lowercase names.');
     ids.add(entry.id);
-    for (const field of ['source', 'project']) if (typeof entry[field] !== 'string' || !entry[field].trim() || entry[field].length > 8192 || entry[field].includes('\0')) throw new Error(`Folder ${field} must be a nonempty string.`);
+    const source = directoryString(entry.source, 'source');
+    const project = directoryString(entry.project, 'project');
     if (entry.recursive !== undefined && typeof entry.recursive !== 'boolean') throw new Error('Folder recursive must be true or false.');
-    const exclude = entry.exclude ?? [];
-    if (!Array.isArray(exclude) || exclude.length > 2000 || exclude.some(item => {
-      if (typeof item !== 'string' || !item || item.length > 8192 || /[\\\0]/.test(item)) return true;
+    const rawExclude = entry.exclude ?? [];
+    const error = 'Exclusions must be relative paths without traversal; use ./ for an exact file path.';
+    if (!Array.isArray(rawExclude) || rawExclude.length > 2000) throw new Error(error);
+    /** @type {string[]} */
+    const exclude = [];
+    for (const item of /** @type {unknown[]} */ (rawExclude)) {
+      if (typeof item !== 'string' || !item || item.length > 8192 || /[\\\0]/.test(item)) throw new Error(error);
       const exact = item.startsWith('./');
-      return !exact && /[*?:]/.test(item) || (exact ? item.slice(2) : item).split('/').some(part => !part || part === '.' || part === '..');
-    })) throw new Error('Exclusions must be relative paths without traversal; use ./ for an exact file path.');
-    return { id: entry.id, source: entry.source.trim(), project: entry.project.trim(), recursive: entry.recursive !== false, exclude };
+      if (!exact && /[*?:]/.test(item) || (exact ? item.slice(2) : item).split('/').some(part => !part || part === '.' || part === '..')) throw new Error(error);
+      exclude.push(item);
+    }
+    return { id: entry.id, source, project, recursive: entry.recursive !== false, exclude };
   });
+}
+
+/** @param {unknown} value @param {string} field */
+function directoryString(value, field) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 8192 || value.includes('\0')) throw new Error(`Folder ${field} must be a nonempty string.`);
+  return value.trim();
 }
 
 /** Relative paths use forward slashes. The explicitly selected root is never excluded.

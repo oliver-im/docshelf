@@ -1,40 +1,53 @@
-import { Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { Modal, Notice, PluginSettingTab, Setting, type SettingDefinitionRender } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import type { Settings } from '../core/types';
 
-function fields(container: HTMLElement, plugin: DocShelfPlugin, close?: () => void): void {
-  const draft: Settings = { ...plugin.settings };
-  container.createEl('p', { text: 'Choose a shelf JSON file. Source paths are resolved relative to that file.', cls: 'docshelf-muted' });
-  new Setting(container).setName('Shelf file').setDesc('Absolute path, or a path relative to this vault.').addText(text => text.setValue(draft.shelfPath).setPlaceholder('shelf.local.json').onChange(value => { draft.shelfPath = value.trim(); }));
-  new Setting(container).setName('Workspace root').setDesc('Sources and assets must stay inside this folder or the shelf’s folder. Defaults to the parent of the shelf’s folder.').addText(text => text.setValue(draft.workspaceRoot).setPlaceholder('Default workspace').onChange(value => { draft.workspaceRoot = value.trim(); }));
-  new Setting(container).setName('Vault ID for links').setDesc('Optional. Use the ID from the vault switcher when multiple vaults have the same name. Otherwise links use this vault’s name.').addText(text => text.setValue(draft.vaultId).setPlaceholder('Use vault name').onChange(value => { draft.vaultId = value.trim(); }));
-  new Setting(container).setName('Run HTML scripts').setDesc('Enable interactive reports in the isolated viewer. Reports may load HTTPS resources and contact remote services.').addToggle(toggle => toggle.setValue(draft.runHtmlScripts).onChange(value => { draft.runHtmlScripts = value; }));
-  new Setting(container).addButton(button => button.setButtonText('Save and reload').setCta().onClick(async () => {
-    button.setDisabled(true);
-    try {
-      if (!draft.shelfPath) throw new Error('Enter a shelf file path.');
-      await plugin.configure(draft);
-      if (plugin.error) new Notice(plugin.error);
-      else { new Notice('DocShelf settings saved.'); close?.(); }
-    } catch (error) { new Notice(String(error)); }
-    finally { button.setDisabled(false); }
-  }));
+type SettingRow = Omit<SettingDefinitionRender, 'render'> & { render: (setting: Setting) => void };
 
-  // Use Obsidian's existing preference so its editor settings and DocShelf
-  // always agree. These native methods are not declared in the public types.
+function settingsRows(plugin: DocShelfPlugin, close?: () => void): SettingRow[] {
+  // Keep edits as a draft until Save and reload, including in search results.
+  const draft: Settings = { ...plugin.settings };
   const preferences = plugin.app.vault as typeof plugin.app.vault & {
     getConfig(key: 'readableLineLength'): boolean;
     setConfig(key: 'readableLineLength', value: boolean): void;
   };
-  new Setting(container).setName('Display').setHeading();
-  new Setting(container).setName('Readable line length')
-    .setDesc('Limit the text column to a comfortable reading width. Applies immediately and also affects ordinary Markdown notes in this vault.')
-    .addToggle(toggle => toggle.setValue(preferences.getConfig('readableLineLength')).onChange(value => preferences.setConfig('readableLineLength', value)));
+  return [
+    { name: 'Shelf file', desc: 'Absolute path, or a path relative to this vault. Source paths are resolved relative to this file.',
+      render: setting => { setting.addText(text => text.setValue(draft.shelfPath).setPlaceholder('shelf.local.json').onChange(value => { draft.shelfPath = value.trim(); })); } },
+    { name: 'Workspace root', desc: 'Sources and assets must stay inside this folder or the shelf’s folder. Defaults to the parent of the shelf’s folder.',
+      render: setting => { setting.addText(text => text.setValue(draft.workspaceRoot).setPlaceholder('Default workspace').onChange(value => { draft.workspaceRoot = value.trim(); })); } },
+    { name: 'Vault ID for links', desc: 'Optional. Use the ID from the vault switcher when multiple vaults have the same name. Otherwise links use this vault’s name.',
+      render: setting => { setting.addText(text => text.setValue(draft.vaultId).setPlaceholder('Use vault name').onChange(value => { draft.vaultId = value.trim(); })); } },
+    { name: 'Run HTML scripts', desc: 'Enable interactive reports in the isolated viewer. Reports may load HTTPS resources and contact remote services.',
+      render: setting => { setting.addToggle(toggle => toggle.setValue(draft.runHtmlScripts).onChange(value => { draft.runHtmlScripts = value; })); } },
+    { name: 'Apply shelf settings', desc: 'Save changes to the shelf file, workspace root, link identity, and HTML scripts together.',
+      // Keep this action next to every search result that edits a draft setting.
+      aliases: ['shelf file', 'workspace root', 'vault ID for links', 'run HTML scripts'],
+      render: setting => { setting.addButton(button => button.setButtonText('Save and reload').setCta().onClick(async () => {
+        button.setDisabled(true);
+        try {
+          if (!draft.shelfPath) throw new Error('Enter a shelf file path.');
+          await plugin.configure({ ...draft });
+          if (plugin.error) new Notice(plugin.error);
+          else { new Notice('DocShelf settings saved.'); close?.(); }
+        } catch (error) { new Notice(String(error)); }
+        finally { button.setDisabled(false); }
+      })); } },
+    { name: 'Readable line length', desc: 'Limit the text column to a comfortable reading width. Applies immediately and also affects ordinary Markdown notes in this vault.',
+      render: setting => { setting.addToggle(toggle => toggle.setValue(preferences.getConfig('readableLineLength')).onChange(value => preferences.setConfig('readableLineLength', value))); } },
+  ];
+}
+
+function fields(container: HTMLElement, plugin: DocShelfPlugin, close?: () => void): void {
+  for (const row of settingsRows(plugin, close)) {
+    const setting = new Setting(container).setName(row.name).setDesc(row.desc || '');
+    row.render(setting);
+  }
 }
 
 export class ShelfSettingsTab extends PluginSettingTab {
   constructor(private shelf: DocShelfPlugin) { super(shelf.app, shelf); }
-  display(): void { this.containerEl.empty(); fields(this.containerEl, this.shelf); }
+  getSettingDefinitions(): SettingDefinitionRender[] { return settingsRows(this.shelf); }
 }
 
 export class ConfigureModal extends Modal {

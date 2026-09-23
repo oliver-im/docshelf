@@ -1,15 +1,16 @@
 import MiniSearch from 'minisearch';
-import { parse } from 'parse5';
+import { parse, type DefaultTreeAdapterTypes } from 'parse5';
 import { markdownText } from './markdown';
 import { documentLabel } from './catalog';
 import type { Artifact } from './types';
+import { setTimeout as yieldToEventLoop } from 'node:timers/promises';
 
 export function extractText(html: string): string {
   const parts: string[] = [];
-  const visit = (node: any) => {
-    if (['script', 'style', 'noscript', 'template', 'svg', 'head'].includes(node.tagName)) return;
-    if (node.nodeName === '#text') parts.push(node.value);
-    for (const child of node.childNodes || []) visit(child);
+  const visit = (node: DefaultTreeAdapterTypes.Node) => {
+    if ('tagName' in node && ['script', 'style', 'noscript', 'template', 'svg', 'head'].includes(node.tagName)) return;
+    if ('value' in node) parts.push(node.value);
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
   };
   visit(parse(html));
   return parts.join(' ').replace(/\s+/g, ' ').trim();
@@ -40,16 +41,16 @@ export class ShelfSearch {
       this.entries.set(artifact.id, { source, kind: artifact.kind, metadata, body });
       // Initial indexing and large batches should let the renderer paint and
       // process input between documents. Ordinary refreshes touch only changes.
-      if (performance.now() - started >= 8) { await new Promise(resolve => setTimeout(resolve, 0)); started = performance.now(); }
+      if (performance.now() - started >= 8) { await yieldToEventLoop(0); started = performance.now(); }
     }
   }
 
   search(query: string): SearchHit[] {
     if (!query.trim()) return Array.from(this.artifacts.values(), artifact => ({ artifact, excerpt: '' }));
     return this.index.search(query.trim()).slice(0, 100).flatMap(result => {
-      const artifact = this.artifacts.get(result.id);
+      const artifact = typeof result.id === 'string' ? this.artifacts.get(result.id) : undefined;
       if (!artifact) return [];
-      const body = String(result.body || artifact.description);
+      const body = typeof result.body === 'string' && result.body ? result.body : artifact.description;
       const term = result.terms[0] || query;
       const position = Math.max(0, body.toLowerCase().indexOf(term.toLowerCase()) - 45);
       return [{ artifact, excerpt: `${position ? '…' : ''}${body.slice(position, position + 170)}${body.length > position + 170 ? '…' : ''}` }];

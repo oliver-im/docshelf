@@ -62,14 +62,15 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
   const roots = [...new Set(await Promise.all([realpath(shelfDirectory), realpath(workspace)]))];
   for (const root of roots) if (!(await stat(root)).isDirectory()) throw new Error('Workspace must be a directory.');
   const bytes = await readBoundedFile(shelfPath, roots, MAX_REMOTE_BYTES);
-  let parsed: { version?: unknown; artifacts?: unknown };
+  let parsed: unknown;
   try { parsed = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('Shelf is not valid JSON.'); }
   const expanded = await expandShelf(parsed, shelfDirectory, roots, { allowUnavailable: options.allowUnavailableFiles });
   const routes = new Set<string>();
   const sources = new Set<string>();
   const artifacts: Artifact[] = [];
-  for (const [index, input] of expanded.artifacts.entries()) {
-    if (!input || typeof input !== 'object') throw new Error(`Artifact ${index + 1} must be an object.`);
+  for (const [index, value] of expanded.artifacts.entries()) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Artifact ${index + 1} must be an object.`);
+    const input = value as Record<string, unknown>;
     const entry = {
       project: required(input.project, 'project', index), source: required(input.source, 'source', index),
       route: required(input.route, 'route', index), title: required(input.title, 'title', index),
@@ -96,8 +97,10 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
       const extension = path.extname(entry.source).toLowerCase();
       if (!['.md', '.markdown', '.html', '.htm'].includes(extension)) throw new Error(`Artifact ${index + 1}: source must be Markdown or HTML.`);
       const sourcePath = path.resolve(shelfDirectory, entry.source);
-      const canonicalPath = await registeredFile(sourcePath, input.discoveryRoot ? [input.discoveryRoot] : roots, options);
-      artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html', ...(input.discoveryRoot ? { discoveryRoot: input.discoveryRoot, directoryId: input.directoryId } : {}) };
+      const discoveryRoot = typeof input.discoveryRoot === 'string' ? input.discoveryRoot : undefined;
+      const directoryId = typeof input.directoryId === 'string' ? input.directoryId : undefined;
+      const canonicalPath = await registeredFile(sourcePath, discoveryRoot ? [discoveryRoot] : roots, options);
+      artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html', ...(discoveryRoot ? { discoveryRoot, directoryId } : {}) };
       identity = canonicalPath || sourcePath;
     }
     if (sources.has(identity)) throw new Error(`Duplicate source: ${entry.source}`);
@@ -105,7 +108,8 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
     if (input.assets !== undefined) {
       if (!artifact.sourcePath || !Array.isArray(input.assets) || input.assets.length > 500) throw new Error(`Artifact ${index + 1}: assets require a local source and an array of at most 500 paths.`);
       const assets = new Set<string>();
-      for (const value of input.assets) {
+      const values: unknown[] = input.assets;
+      for (const value of values) {
         if (typeof value !== 'string' || !safeRelative(value) || !ASSET_TYPES[path.extname(value).toLowerCase()]) throw new Error(`Artifact ${index + 1}: invalid asset path.`);
         await registeredFile(path.resolve(path.dirname(artifact.sourcePath), value), roots, options);
         assets.add(value);

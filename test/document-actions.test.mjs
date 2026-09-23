@@ -9,6 +9,16 @@ const { outputText: script } = ts.transpileModule(source.replace(/^import .*;$/g
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 });
 
+test('local action responses must be JSON records before capabilities or preview fields are read', async () => {
+  const context = vm.createContext({});
+  const readRecord = vm.runInContext(`${script}\nresponseRecord`, context);
+  for (const value of [null, [], 'unexpected', 42, true]) {
+    await assert.rejects(readRecord({ json: async () => value }), /invalid response/);
+  }
+  const result = { token: 'test-token', revealInFinder: true };
+  assert.equal(await readRecord({ json: async () => result }), result);
+});
+
 test('browsers without Popover support can scroll, resize, and blur without selector errors', () => {
   const listeners = new Map();
   const on = (type, callback) => {
