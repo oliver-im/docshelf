@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           if ! gh release view "$VERSION" --json isDraft > /dev/null 2>&1; then
-            gh release create "$VERSION" --verify-tag --draft --latest=false \
+            gh release create "$VERSION" --verify-tag --draft --latest \
               --title "DocShelf for Obsidian $VERSION (desktop beta)" \
               --notes-file "docs/releases/obsidian-$VERSION.md"
           fi
