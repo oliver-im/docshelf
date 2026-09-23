@@ -1,7 +1,7 @@
 {
   "name": "docshelf",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A searchable shelf for local artifacts and browser-imported public documents.",
   "license": "MIT",
   "private": true,
