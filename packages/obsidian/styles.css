@@ -99,3 +99,10 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 .docshelf-native .docshelf-source-layer { pointer-events: none; }
 .docshelf-native .docshelf-source-highlight { background: color-mix(in srgb, var(--interactive-accent) 16%, transparent); pointer-events: none; }
 .docshelf-reference-label { color: var(--text-accent); }
+
+.docshelf-add textarea { width: 100%; resize: vertical; margin: 0.5rem 0; }
+.docshelf-add-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
+.docshelf-shelf-tools { display: flex; align-items: center; gap: 6px; }
+.docshelf-shelf-tools .docshelf-search { flex: 1; min-width: 0; }
+.docshelf-shelf-tools > button { flex: 0 0 32px; height: 36px; }

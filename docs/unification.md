@@ -10,6 +10,7 @@ docshelf/
 ├── shelf.local.json              Ignored, shared local registrations
 ├── packages/
 │   ├── core/                     Pure URL and source-reference helpers
+│   ├── local/                    Folder discovery, registration, and watch scopes
 │   └── obsidian/                 Native editor and isolated report viewer
 └── .agents/skills/docshelf/       One registration skill
 ```
@@ -34,6 +35,8 @@ The original plugin commit IDs are preserved; its older paths are relative to
 the original repository root.
 
 ## Use one shelf
+
+Both apps support [explicit folder registrations](folders.md) in version 2 shelves, with recursive discovery and automatic updates. Existing version 1 file registrations remain supported. Update both apps before adding folders to a shared shelf.
 
 Keep `shelf.local.json` at the web checkout root. Point Obsidian's **Shelf file**
 at its absolute path, and align **Workspace root** with `DOCSHELF_WORKSPACE` if
@@ -61,7 +64,7 @@ neutral scheme needs an installed dispatcher and an explicit host preference.
 | Capability | DocShelf Web | DocShelf for Obsidian |
 | --- | --- | --- |
 | Local Markdown | Rendered snapshot, read-only | Native editor; saves the original with conflict checks |
-| Local HTML | Generated snapshot on the web origin | Isolated read-only webview, document-scoped access |
+| Local HTML | Generated snapshot in an opaque sandboxed frame; origin-dependent APIs such as local storage are unavailable | Isolated read-only webview, document-scoped access |
 | Public GitHub Markdown | Browser import stored in that origin's browser storage | Explicit shelf registration, fetched read-only |
 | Published Claude Artifact | Cross-origin embed; requires allowed-domain setup | Top-level isolated webview |
 | Neighboring assets | Only assets already published under the web app's `public/` directory | Explicit per-document `assets` registration |

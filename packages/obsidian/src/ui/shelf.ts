@@ -46,7 +46,16 @@ export class ShelfView extends ItemView {
     this.contentEl.empty();
     this.renderedResults = '';
     this.contentEl.addClass('docshelf-shelf');
-    const input = this.contentEl.createEl('input', { cls: 'docshelf-search', type: 'search', attr: { placeholder: 'Search documents…', 'aria-label': 'Search DocShelf' } });
+    this.registerDomEvent(this.contentEl, 'contextmenu', event => {
+      if (event.defaultPrevented || (event.target as HTMLElement).closest('input, textarea')) return;
+      event.preventDefault();
+      new Menu().addItem(item => item.setTitle('Add…').setIcon('plus').onClick(() => this.plugin.showAdd())).showAtMouseEvent(event);
+    });
+    const tools = this.contentEl.createDiv({ cls: 'docshelf-shelf-tools' });
+    const input = tools.createEl('input', { cls: 'docshelf-search', type: 'search', attr: { placeholder: 'Search documents…', 'aria-label': 'Search DocShelf' } });
+    const add = tools.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': 'Add…', title: 'Add…', type: 'button' } });
+    setIcon(add, 'plus');
+    add.onclick = () => this.plugin.showAdd();
     input.value = this.query;
     input.addEventListener('input', () => { this.query = input.value; this.renderResults(); });
     input.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); this.results.querySelector<HTMLButtonElement>('button')?.focus(); } });
@@ -83,8 +92,9 @@ export class ShelfView extends ItemView {
     if (!artifacts.length) {
       const empty = this.results.createDiv({ cls: 'docshelf-empty' });
       empty.createEl('h3', { text: 'Your documents, in one place' });
-      empty.createEl('p', { text: 'Register Markdown and HTML files in a shelf JSON file. Their originals stay in their projects.' });
-      empty.createEl('button', { text: 'Configure shelf', cls: 'mod-cta' }).onclick = () => this.plugin.showSettings();
+      empty.createEl('p', { text: 'Add files or folders. Documents stay in their projects and folders update automatically.' });
+      empty.createEl('button', { text: 'Add…', cls: 'mod-cta' }).onclick = () => this.plugin.showAdd();
+      empty.createEl('button', { text: 'Configure shelf' }).onclick = () => this.plugin.showSettings();
       empty.createEl('button', { text: 'Create empty shelf file' }).onclick = () => { void this.plugin.createShelf(); };
       return;
     }
@@ -190,14 +200,39 @@ export class ShelfView extends ItemView {
   }
 
   private showProjectMenu(project: string, toggle: HTMLButtonElement): void {
-    this.showOrderMenu(project, toggle, () => this.orderedProjects(), order => this.saveProjectOrder(order, project), !!this.projectOrder.length);
+    const menu = this.createMenu(project);
+    this.addMoveActions(menu, project, () => this.orderedProjects(), order => this.saveProjectOrder(order, project));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!this.documentOrder.get(project)?.length).onClick(() => {
+      this.documentOrder.delete(project);
+      this.app.workspace.requestSaveLayout();
+      this.renderResults();
+      Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-project-toggle')).find(button => button.dataset.project === project)?.focus();
+    }));
+    menu.addItem(item => item.setTitle('Reset project order').setIcon('list-restart').setDisabled(!this.projectOrder.length).onClick(() => this.saveProjectOrder([], project)));
+    this.showMenu(menu, toggle);
   }
 
-  private showOrderMenu(key: string, anchor: HTMLButtonElement, getOrder: () => string[], saveOrder: (order: string[]) => void, hasCustomOrder: boolean): void {
+  private showDocumentMenu(artifact: Artifact, button: HTMLButtonElement, searching: boolean): void {
+    const { project, route } = artifact;
+    const menu = this.createMenu(project);
+    if (!searching) this.addMoveActions(menu, route, () => this.orderedDocuments(project).map(item => item.route), order => this.saveDocumentOrder(project, order, route));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove(artifact)));
+    this.showMenu(menu, button);
+  }
+
+  private createMenu(project: string): Menu {
     this.orderMenu?.hide();
+    const menu = this.orderMenu = new Menu().setUseNativeMenu(false);
+    menu.addItem(item => item.setTitle('Add…').setIcon('plus').onClick(() => this.plugin.showAdd(project)));
+    menu.addSeparator();
+    return menu;
+  }
+
+  private addMoveActions(menu: Menu, key: string, getOrder: () => string[], saveOrder: (order: string[]) => void): void {
     const order = getOrder();
     const index = order.indexOf(key);
-    const menu = this.orderMenu = new Menu().setUseNativeMenu(false);
     for (const [title, icon, offset] of [['Move up', 'arrow-up', -1], ['Move down', 'arrow-down', 1]] as const) {
       menu.addItem(item => item.setTitle(title).setIcon(icon).setDisabled(index < 0 || index + offset < 0 || index + offset >= order.length).onClick(() => {
         // Read the current catalog in case it changed while the menu was open.
@@ -210,8 +245,9 @@ export class ShelfView extends ItemView {
         saveOrder(current);
       }));
     }
-    menu.addSeparator();
-    menu.addItem(item => item.setTitle('Reset to alphabetical').setIcon('list-restart').setDisabled(!hasCustomOrder).onClick(() => saveOrder([])));
+  }
+
+  private showMenu(menu: Menu, anchor: HTMLButtonElement): void {
     menu.onHide(() => { this.orderMenu = undefined; if (anchor.isConnected) anchor.focus(); });
     const bounds = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, anchor.ownerDocument);
@@ -235,7 +271,7 @@ export class ShelfView extends ItemView {
 
   private makeDocumentSortable(button: HTMLButtonElement, { project, route }: Artifact): void {
     button.draggable = true;
-    button.setAttribute('aria-description', 'Drag to reorder within this project. Press Shift+F10 for document order options.');
+    button.setAttribute('aria-description', 'Drag to reorder within this project. Press Shift+F10 for document actions.');
     button.addEventListener('dragstart', event => {
       if (!event.dataTransfer) { event.preventDefault(); return; }
       event.stopPropagation();
@@ -279,7 +315,10 @@ export class ShelfView extends ItemView {
       order.splice(order.indexOf(route) + (after ? 1 : 0), 0, source.route);
       this.saveDocumentOrder(project, order, source.route);
     });
-    const showMenu = () => this.showOrderMenu(route, button, () => this.orderedDocuments(project).map(artifact => artifact.route), order => this.saveDocumentOrder(project, order, route), !!this.documentOrder.get(project)?.length);
+  }
+
+  private makeDocumentMenu(button: HTMLButtonElement, artifact: Artifact, searching: boolean): void {
+    const showMenu = () => this.showDocumentMenu(artifact, button, searching);
     button.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();
@@ -321,6 +360,7 @@ export class ShelfView extends ItemView {
       if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
       button.createSpan({ text: artifact.project, cls: 'docshelf-item-project' });
     } else this.makeDocumentSortable(button, artifact);
+    this.makeDocumentMenu(button, artifact, searching);
     button.onclick = () => { void this.plugin.openArtifact(artifact); };
   }
 }

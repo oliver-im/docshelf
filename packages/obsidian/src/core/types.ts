@@ -8,7 +8,7 @@ export interface ShelfEntry {
   assets?: string[];
 }
 
-export interface Shelf { version: 1; artifacts: ShelfEntry[] }
+export interface Shelf { version: 1 | 2; artifacts: ShelfEntry[]; directories?: import('@docshelf/core/directories').DirectoryEntry[] }
 
 export interface Artifact extends ShelfEntry {
   /** Omitted descriptions are normalized to an empty string. */
@@ -19,13 +19,19 @@ export interface Artifact extends ShelfEntry {
   canonicalPath?: string;
   rawUrl?: string;
   linkBaseUrl?: string;
+  discoveryRoot?: string;
+  directoryId?: string;
 }
 
 export interface Catalog {
   artifacts: Artifact[];
   shelfPath: string;
   roots: string[];
+  directories?: Array<import('@docshelf/core/directories').DirectoryEntry & { sourcePath: string; canonicalPath?: string }>;
+  warnings?: string[];
 }
+
+export function artifactRoots(artifact: Artifact, roots: string[]): string[] { return artifact.discoveryRoot ? [artifact.discoveryRoot] : roots; }
 
 export interface LineRange { start: number; end: number }
 

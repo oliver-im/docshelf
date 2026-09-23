@@ -1,8 +1,10 @@
 ---
 import shelf from '../generated/shelf.json';
+import { htmlSandbox } from '../lib/html-sandbox.js';
 
 interface Artifact {
   route: string;
+  format?: 'html' | 'markdown' | 'claude';
   title: string;
   revision: string;
   embedUrl?: string;
@@ -67,6 +69,7 @@ const blankFrameUrl = 'about:blank';
           data-artifact-query=""
           data-artifact-location=""
           data-artifact-url={initialFrameUrl}
+          sandbox={initialArtifact?.format === 'html' ? htmlSandbox : undefined}
           src={initialFrameUrl || blankFrameUrl}
           title={initialArtifact?.title || 'Document viewer'}
           allow="clipboard-write"
@@ -89,8 +92,8 @@ const blankFrameUrl = 'about:blank';
         />
       </section>
       <div class="empty-state" hidden={Boolean(initialArtifact)} data-docshelf-empty-state>
-        <h2>No artifacts are registered</h2>
-        <p>Add an entry to <code>shelf.local.json</code> or add public GitHub Markdown.</p>
+        <h2>Your documents, in one place</h2>
+        <p>Use Add to register files, folders, or public documents.</p>
       </div>
     </>
   }
@@ -100,7 +103,7 @@ const blankFrameUrl = 'about:blank';
       <div class="import-dialog-heading">
         <div>
           <h2 id="import-dialog-title">Add to shelf</h2>
-          <p>Paste a public GitHub Markdown or Claude Artifact URL.</p>
+          <p>Enter files, folders, or a public GitHub Markdown or Claude Artifact URL.</p>
         </div>
         <button class="dialog-close" type="button" data-docshelf-import-close aria-label="Close">
           <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -109,19 +112,20 @@ const blankFrameUrl = 'about:blank';
         </button>
       </div>
 
-      <label for="import-document-url">Document URL</label>
-      <input
+      <label for="import-document-url">Files, folders, or URL</label>
+      <textarea
         id="import-document-url"
         name="source"
-        type="url"
-        inputmode="url"
-        autocomplete="url"
+        rows="4"
         autocapitalize="off"
         spellcheck="false"
-        placeholder="https://github.com/owner/repository/blob/main/README.md"
+        placeholder="One local path per line, or a public document URL"
         aria-describedby="import-document-note import-document-error"
         required
-      />
+      ></textarea>
+
+      <label for="import-document-project" data-docshelf-local-project>Project <span>(optional)</span></label>
+      <input id="import-document-project" name="project" type="text" maxlength="300" placeholder="Inferred from the selected folder" />
 
       <label for="import-document-title">Name <span>(optional)</span></label>
       <input
@@ -133,10 +137,12 @@ const blankFrameUrl = 'about:blank';
       />
 
       <p class="import-note" id="import-document-note">
-        Public GitHub Markdown works immediately. For Claude, the owner must add
+        <span data-docshelf-local-add-note>Folders include subfolders and update automatically. Paths are relative to the shelf file. You can review discovered documents before adding them.</span>
+        <span data-docshelf-remote-add-note hidden>Public GitHub Markdown works immediately. For Claude, the owner must add
         <strong data-docshelf-import-origin></strong> to the Artifact’s allowed domains. Imports
-        are remembered only in this browser.
+        are remembered only in this browser.</span>
       </p>
+      <div data-docshelf-add-preview class="add-preview" role="status" aria-live="polite"></div>
       <p
         class="import-error"
         id="import-document-error"
@@ -151,7 +157,7 @@ const blankFrameUrl = 'about:blank';
         </button>
         <span></span>
         <button class="cancel-button" type="button" data-docshelf-import-close>Cancel</button>
-        <button class="submit-button" type="submit">Add document</button>
+        <button class="submit-button" type="submit">Add</button>
       </div>
     </form>
   </dialog>
@@ -161,10 +167,13 @@ const blankFrameUrl = 'about:blank';
   import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
+  import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions } from '../lib/document-actions';
 
   interface Artifact {
     route: string;
+    format?: 'html' | 'markdown' | 'claude';
+    project?: string;
     title: string;
     revision: string;
     embedUrl?: string;
@@ -310,6 +319,10 @@ const blankFrameUrl = 'about:blank';
     const documentActions = createDocumentActions({
       basePath,
       localActions: root.dataset.docshelfLiveUpdates === 'true',
+      removeImported: route => {
+        writeImportedArtifacts(readImportedArtifacts().filter(artifact => artifact.route !== route));
+        window.location.reload();
+      },
     });
 
     initializeImportDialog();
@@ -317,6 +330,7 @@ const blankFrameUrl = 'about:blank';
     for (const frame of frames) {
       frame.addEventListener('load', () => {
         bridgeFrameLinks(frame);
+        sendFrameTheme(frame);
         if (
           currentArtifact &&
           supportsLineSelection(currentArtifact) &&
@@ -391,6 +405,12 @@ const blankFrameUrl = 'about:blank';
       if (fallback) selectArtifact(requestedSelection() || emptySelection(fallback.route), 'none');
     });
     window.addEventListener('message', handleFrameMessage);
+    const sendFrameTheme = (frame: HTMLIFrameElement) => {
+      if (artifacts.find(artifact => artifact.route === frame.dataset.artifactRoute)?.format !== 'html') return;
+      frame.contentWindow?.postMessage({ type: 'docshelf-theme', theme: document.documentElement.dataset.theme }, '*');
+    };
+    new MutationObserver(() => frames.forEach(sendFrameTheme)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    frames.forEach(sendFrameTheme);
     if (root.dataset.docshelfLiveUpdates === 'true') {
       window.addEventListener('focus', () => void checkForArtifactUpdates());
       document.addEventListener('visibilitychange', () => {
@@ -413,6 +433,8 @@ const blankFrameUrl = 'about:blank';
       const form = root.querySelector<HTMLFormElement>('[data-docshelf-import-form]');
       const sourceInput = form?.elements.namedItem('source');
       const titleInput = form?.elements.namedItem('title');
+      const projectInput = form?.elements.namedItem('project');
+      const preview = root.querySelector<HTMLElement>('[data-docshelf-add-preview]');
       const error = root.querySelector<HTMLElement>('[data-docshelf-import-error]');
       const origin = root.querySelector<HTMLElement>('[data-docshelf-import-origin]');
       const forgetButton = root.querySelector<HTMLButtonElement>('[data-docshelf-import-forget]');
@@ -423,8 +445,9 @@ const blankFrameUrl = 'about:blank';
       if (
         !dialog ||
         !form ||
-        !(sourceInput instanceof HTMLInputElement) ||
+        !(sourceInput instanceof HTMLTextAreaElement) ||
         !(titleInput instanceof HTMLInputElement) ||
+        !(projectInput instanceof HTMLInputElement) || !preview ||
         !error ||
         !origin ||
         !forgetButton ||
@@ -435,8 +458,29 @@ const blankFrameUrl = 'about:blank';
       }
 
       const importForm: HTMLFormElement = form;
+      const sourceField: HTMLTextAreaElement = sourceInput;
       const importSubmitButton: HTMLButtonElement = submitButton;
       let importAttempt = 0;
+      let localRevision = '';
+      let localToken = '';
+      const resetPreview = () => {
+        const remote = /^https?:/i.test(sourceInput.value.trim());
+        root.querySelector<HTMLElement>('[data-docshelf-local-add-note]')!.hidden = remote;
+        root.querySelector<HTMLElement>('[data-docshelf-remote-add-note]')!.hidden = !remote;
+        root.querySelector<HTMLElement>('[data-docshelf-local-project]')!.hidden = remote;
+        projectInput.hidden = remote;
+        localRevision = '';
+        preview.replaceChildren();
+        if (!importSubmitButton.disabled) importSubmitButton.textContent = remote ? 'Add' : 'Preview';
+      };
+      for (const input of [sourceInput, titleInput, projectInput]) input.addEventListener('input', resetPreview);
+      const loadLocalCapability = async () => {
+        const response = await fetch(`${basePath}__docshelf/local-actions`, { cache: 'no-store', headers: { 'X-DocShelf-Request': 'document-actions' } });
+        if (!response.ok) throw new Error('Local files and folders can be added from the running local DocShelf app.');
+        const capability = await response.json();
+        if (!capability.add || typeof capability.token !== 'string') throw new Error('Restart the local DocShelf watcher to enable adding files and folders.');
+        localToken = capability.token;
+      };
       origin.textContent = window.location.origin;
       forgetButton.hidden = importedArtifacts.length === 0;
       const closeDialog = () => {
@@ -446,12 +490,18 @@ const blankFrameUrl = 'about:blank';
           dialog.dispatchEvent(new Event('close'));
         }
       };
-      openButton.addEventListener('click', () => {
+      const openAdd = (project = '') => {
+        projectInput.value = project;
+        resetPreview();
         error.hidden = true;
+        void loadLocalCapability().catch(() => {});
         if (typeof dialog.showModal === 'function') dialog.showModal();
         else dialog.setAttribute('open', '');
         sourceInput.focus();
-      });
+      };
+      openButton.addEventListener('click', () => openAdd());
+      window.addEventListener('docshelf:add', event => openAdd((event as CustomEvent<{ project?: string }>).detail?.project || ''));
+      installShelfAddMenu();
       for (const button of closeButtons) button.addEventListener('click', closeDialog);
       dialog.addEventListener('click', (event) => {
         if (event.target === dialog) closeDialog();
@@ -460,6 +510,7 @@ const blankFrameUrl = 'about:blank';
         importAttempt += 1;
         setImportPending(false);
         form.reset();
+        resetPreview();
         error.hidden = true;
       });
       forgetButton.addEventListener('click', () => {
@@ -474,10 +525,48 @@ const blankFrameUrl = 'about:blank';
         const claudeSource = parseClaudeArtifactUrl(source);
         const markdownSource = parseGitHubMarkdownUrl(source);
         if (!claudeSource && !markdownSource) {
-          error.textContent =
-            'Enter a public GitHub Markdown file or a public Claude Artifact URL.';
-          error.hidden = false;
-          sourceInput.focus();
+          if (!source || /^https?:/i.test(source)) {
+            error.textContent = 'Enter local paths, a public GitHub Markdown file, or a published Claude Artifact URL.';
+            error.hidden = false;
+            sourceInput.focus();
+            return;
+          }
+          error.hidden = true;
+          setImportPending(true);
+          try {
+            await loadLocalCapability();
+            const committing = !!localRevision;
+            const values = { sources: source.split('\n').map(value => value.trim()).filter(Boolean), project: projectInput.value.trim(), title: titleInput.value.trim() };
+            const response = await fetch(`${basePath}__docshelf/register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-DocShelf-Request': 'document-actions', 'X-DocShelf-Token': localToken },
+              body: JSON.stringify({ ...values, action: committing ? 'add' : 'preview', ...(committing ? { revision: localRevision } : {}) }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Could not add the selected paths.');
+            if (attempt !== importAttempt || !dialog.open) return;
+            if (committing) {
+              closeDialog();
+            } else {
+              localRevision = result.revision;
+              preview.replaceChildren();
+              const summary = document.createElement('p');
+              summary.textContent = `${result.documents.length} new document(s), ${result.foldersAdded} new watched folder(s), ${result.moved.length} existing document(s) moved.`;
+              const list = document.createElement('ul');
+              for (const item of result.documents.slice(0, 100)) {
+                const row = document.createElement('li'); row.textContent = `${item.title} — ${item.source}`; list.append(row);
+              }
+              for (const item of result.moved.slice(0, 100)) {
+                const row = document.createElement('li'); row.textContent = `${item.title} — moved from ${item.previousProject} to ${item.project} (link changes)`; list.append(row);
+              }
+              preview.append(summary, list);
+              for (const warning of result.warnings || []) { const row = document.createElement('p'); row.textContent = warning; preview.append(row); }
+            }
+          } catch (caught) {
+            if (attempt !== importAttempt) return;
+            localRevision = '';
+            error.textContent = importErrorMessage(caught); error.hidden = false;
+          } finally { if (attempt === importAttempt) setImportPending(false); }
           return;
         }
 
@@ -553,8 +642,42 @@ const blankFrameUrl = 'about:blank';
       function setImportPending(pending: boolean) {
         importForm.setAttribute('aria-busy', String(pending));
         importSubmitButton.disabled = pending;
-        importSubmitButton.textContent = pending ? 'Adding…' : 'Add document';
+        importSubmitButton.textContent = pending ? (localRevision ? 'Adding…' : 'Loading…') : localRevision || /^https?:/i.test(sourceField.value.trim()) ? 'Add' : 'Preview';
       }
+    }
+
+    function installShelfAddMenu() {
+      const sidebar = document.querySelector<HTMLElement>('#starlight__sidebar');
+      if (!sidebar) return;
+      const menu = document.createElement('div');
+      if (!('showPopover' in menu)) return;
+      menu.className = 'docshelf-document-menu'; menu.setAttribute('popover', 'manual'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Shelf actions');
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Add…'; button.setAttribute('role', 'menuitem');
+      menu.append(button); sidebar.append(menu);
+      let project = '';
+      let anchor: HTMLElement | null = null;
+      const close = () => { if (menu.matches(':popover-open')) menu.hidePopover(); };
+      button.onclick = () => { close(); window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } })); };
+      menu.onkeydown = event => { if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); } };
+      document.addEventListener('pointerdown', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
+      document.addEventListener('focusin', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
+      document.addEventListener('scroll', close, true);
+      window.addEventListener('resize', close);
+      window.addEventListener('blur', close);
+      const show = (target: HTMLElement, x: number, y: number) => {
+        anchor = target.closest<HTMLElement>('summary, button, a') || target;
+        const summary = target.closest('details')?.querySelector('summary');
+        project = summary?.querySelector('.large')?.textContent?.trim() || '';
+        menu.showPopover();
+        menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+        button.focus();
+      };
+      sidebar.addEventListener('contextmenu', event => { if (event.defaultPrevented || !(event.target instanceof HTMLElement) || event.target.closest('input, textarea')) return; event.preventDefault(); show(event.target, event.clientX, event.clientY); });
+      sidebar.addEventListener('keydown', event => {
+        if (event.defaultPrevented || !(event.target instanceof HTMLElement) || !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return;
+        event.preventDefault(); const rect = event.target.getBoundingClientRect(); show(event.target, rect.left, rect.bottom);
+      });
     }
 
     function addImportedSidebarLink(artifact: Artifact) {
@@ -719,7 +842,7 @@ const blankFrameUrl = 'about:blank';
       stagingFrame.setAttribute('aria-hidden', 'true');
       stagingFrame.tabIndex = -1;
 
-      const loaded = await loadFrame(stagingFrame, rawUrl);
+      const loaded = await loadFrame(stagingFrame, rawUrl, artifact.format === 'html');
       if (!loaded || requestId !== navigationId) {
         if (requestId === navigationId) {
           stagingFrame.dataset.frameState = 'standby';
@@ -774,6 +897,17 @@ const blankFrameUrl = 'about:blank';
     }
 
     function handleFrameMessage(event: MessageEvent) {
+      const sender = frames.find(frame => frame.contentWindow === event.source);
+      const senderArtifact = sender && artifacts.find(artifact => artifact.route === sender.dataset.artifactRoute);
+      if (sender && senderArtifact?.format === 'html' && event.origin === 'null') {
+        if (event.data?.type === 'docshelf-theme-request') sendFrameTheme(sender);
+        if (event.data?.type === 'docshelf-navigate' && sender === activeFrame &&
+          typeof event.data.route === 'string' && artifacts.some(artifact => artifact.route === event.data.route) &&
+          typeof event.data.query === 'string' && typeof event.data.hash === 'string') {
+          void selectArtifact(normalizeSelection({ route: event.data.route, query: event.data.query, hash: event.data.hash }), 'push');
+        }
+        return;
+      }
       if (
         event.origin !== window.location.origin ||
         event.source !== activeFrame.contentWindow ||
@@ -1108,7 +1242,9 @@ const blankFrameUrl = 'about:blank';
     return (hash >>> 0).toString(16).padStart(8, '0');
   }
 
-  function loadFrame(frame: HTMLIFrameElement, rawUrl: string) {
+  function loadFrame(frame: HTMLIFrameElement, rawUrl: string, isolatedHtml: boolean) {
+    if (isolatedHtml) frame.setAttribute('sandbox', htmlSandbox);
+    else frame.removeAttribute('sandbox');
     const expectedUrl = new URL(rawUrl, window.location.href).href;
     const isCrossOrigin = new URL(expectedUrl).origin !== window.location.origin;
 
@@ -1126,7 +1262,7 @@ const blankFrameUrl = 'about:blank';
       };
 
       frame.addEventListener('load', handleLoad);
-      if (isCrossOrigin) {
+      if (isCrossOrigin || isolatedHtml) {
         frame.src = expectedUrl;
         return;
       }
@@ -1141,7 +1277,7 @@ const blankFrameUrl = 'about:blank';
         frame.src = rawUrl;
       }
 
-      if (frameHasLoadedUrl(frame, expectedUrl)) finish(true);
+      if (frame.contentDocument && frameHasLoadedUrl(frame, expectedUrl)) finish(true);
     });
   }
 
@@ -1659,6 +1795,7 @@ const blankFrameUrl = 'about:blank';
     font-weight: 400;
   }
 
+  .import-dialog textarea,
   .import-dialog input {
     min-height: 2.75rem;
     width: 100%;
@@ -1670,6 +1807,7 @@ const blankFrameUrl = 'about:blank';
     font: inherit;
   }
 
+  .import-dialog textarea:focus-visible,
   .import-dialog input:focus-visible {
     border-color: var(--sl-color-accent);
     outline: 2px solid var(--sl-color-accent);
@@ -1694,6 +1832,8 @@ const blankFrameUrl = 'about:blank';
   .import-error[hidden] {
     display: none;
   }
+
+  .add-preview { max-height: 15rem; overflow: auto; overflow-wrap: anywhere; }
 
   .import-dialog-actions {
     display: flex;

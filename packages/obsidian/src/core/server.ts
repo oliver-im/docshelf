@@ -4,7 +4,7 @@ import path from 'node:path';
 import { parse, serialize } from 'parse5';
 import { ASSET_TYPES } from './catalog';
 import { readBoundedFile } from './files';
-import { MAX_ASSET_BYTES, MAX_DOCUMENT_BYTES, type Artifact, type Catalog } from './types';
+import { MAX_ASSET_BYTES, MAX_DOCUMENT_BYTES, artifactRoots, type Artifact, type Catalog } from './types';
 
 export class DocumentServer {
   private server: Server | null = null;
@@ -91,7 +91,7 @@ export class DocumentServer {
       if (!document && !artifact.assets?.includes(relative)) { finish(404, 'Asset is not registered'); return; }
       if (document && artifact.kind !== 'html') { finish(404, 'Not an HTML document'); return; }
       const sourcePath = document ? artifact.sourcePath : path.resolve(path.dirname(artifact.sourcePath), relative);
-      const content = await readBoundedFile(sourcePath, catalog.roots, document ? MAX_DOCUMENT_BYTES : MAX_ASSET_BYTES);
+      const content = await readBoundedFile(sourcePath, artifactRoots(artifact, catalog.roots), document ? MAX_DOCUMENT_BYTES : MAX_ASSET_BYTES);
       const body = document ? Buffer.from(this.rewriteHtml(content.toString('utf8'), artifact, catalog)) : content;
       const type = document ? 'text/html; charset=utf-8' : ASSET_TYPES[path.extname(relative).toLowerCase()];
       response.writeHead(200, {

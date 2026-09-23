@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, copyFile, cp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, cp, writeFile, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,7 @@ import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
 import { testNativeModes } from './test-native-modes.mjs';
 import { testReportRegressions } from './test-report-regressions.mjs';
+import { testDirectories } from './test-directories.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
@@ -47,7 +48,10 @@ for (const artifact of shelf.artifacts) artifact.source = path.join(workspace, a
 shelf.artifacts[1].project = 'Reports';
 delete shelf.artifacts[0].description;
 const shelfPath = path.join(vault, 'shelf.local.json');
-await writeFile(shelfPath, JSON.stringify(shelf));
+// Exercise native editing and shelf mutations through a symlink throughout the runtime suite.
+const shelfTarget = path.join(vault, '.shelf-source.json');
+await writeFile(shelfTarget, JSON.stringify(shelf));
+await symlink(shelfTarget, shelfPath);
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
 
 const log = createWriteStream('.local/runtime/obsidian.log');
@@ -206,7 +210,7 @@ try {
   assert.deepEqual(await projectNames(), ['Reports', 'Getting started']);
   assert.equal(await secondProject.evaluate(el => el === document.activeElement), true);
   await secondProject.click({ button: 'right' });
-  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
+  await page.locator('.menu-item').filter({ hasText: 'Reset project order' }).click();
   assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(shelf));
@@ -317,9 +321,16 @@ try {
   await page.locator('.menu-item').filter({ hasText: 'Move down' }).click();
   assert.deepEqual(await documentRoutes(), movedDocuments);
   await guideRow.click({ button: 'right' });
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).count(), 0, 'Alphabetical reset belongs only in project heading menus.');
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).count(), 1);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await documentRoutes(), movedDocuments);
+  await firstProject.click({ button: 'right' });
+  assert.equal(await page.locator('.menu-item').filter({ hasText: 'Reset project order' }).evaluate(el => el.classList.contains('is-disabled')), true);
   await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
   assert.deepEqual(await documentRoutes(), [zuluGuide.route, newGuide.route, alphaGuide.route, guideRoute]);
-  assert.equal(await page.evaluate(() => Object.keys(app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().documentOrder).length), 0);
+  assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
+  assert.equal(await firstProject.evaluate(el => el === document.activeElement), true);
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(documentShelf), 'Reordering must not edit shelf registrations.');
   await writeFile(shelfPath, JSON.stringify(shelf));
   await poll(async () => (await documentRoutes()).length === 1, 'The document fixtures did not clear.');
@@ -498,6 +509,7 @@ try {
   await assert.rejects(guest('document.querySelector("#run-check").click()'));
   console.log('Script-free HTML mode passed.');
 
+  await testDirectories({ page, poll, workspace, shelfPath });
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);
   await page.evaluate(() => app.plugins.disablePlugin('docshelf'));
   await poll(async () => { try { await fetch(origin); return false; } catch { return true; } }, 'Loopback listener did not close on unload.');

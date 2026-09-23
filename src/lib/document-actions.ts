@@ -5,25 +5,29 @@ import './document-actions.css';
 interface DocumentArtifact {
   route: string;
   title: string;
+  project?: string;
   source?: string;
   embedUrl?: string;
   imported?: boolean;
 }
 
 /** One shared menu, attached beside its trigger so mobile navigation retains focus ownership. */
-export function createDocumentActions(options: { basePath: string; localActions: boolean }) {
+export function createDocumentActions(options: { basePath: string; localActions: boolean; removeImported: (route: string) => void }) {
   const menu = document.createElement('div');
   menu.id = 'docshelf-document-actions';
   menu.className = 'docshelf-document-menu';
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('popover', 'auto');
+  // Right-click opens before pointerup on macOS; automatic light dismissal would immediately close it.
+  menu.setAttribute('popover', 'manual');
   const openLink = menuLink('Open in new tab');
   const copyButton = menuButton('Copy link');
   const separator = document.createElement('hr');
   separator.setAttribute('role', 'separator');
   const sourceLink = menuLink('View source');
   const revealButton = menuButton('Reveal in Finder');
-  menu.append(openLink, copyButton, separator, sourceLink, revealButton);
+  const addButton = menuButton('Add…');
+  const removeButton = menuButton('Remove from shelf…');
+  menu.append(openLink, copyButton, separator, sourceLink, revealButton, addButton, removeButton);
 
   const notice = document.createElement('div');
   notice.className = 'docshelf-action-notice';
@@ -65,8 +69,8 @@ export function createDocumentActions(options: { basePath: string; localActions:
     menu.style.top = `${top}px`;
   }
 
-  async function loadFinderCapability(selection: NonNullable<typeof active>) {
-    if (!options.localActions || !localHost || selection.artifact.imported || selection.artifact.embedUrl) return;
+  async function loadCapabilities(selection: NonNullable<typeof active>) {
+    if (!options.localActions || !localHost || selection.artifact.imported) return;
     try {
       const response = await fetch(`${options.basePath}__docshelf/local-actions`, {
         cache: 'no-store',
@@ -75,10 +79,11 @@ export function createDocumentActions(options: { basePath: string; localActions:
       });
       if (!response.ok) return;
       const capability = await response.json();
-      if (active !== selection || capability.revealInFinder !== true || typeof capability.token !== 'string') return;
+      if (active !== selection || typeof capability.token !== 'string') return;
       selection.token = capability.token;
-      revealButton.hidden = false;
-      separator.hidden = false;
+      revealButton.hidden = capability.revealInFinder !== true || !!selection.artifact.embedUrl;
+      removeButton.hidden = capability.remove !== true;
+      separator.hidden = sourceLink.hidden && revealButton.hidden;
       positionMenu();
     } catch {
       // Static hosting, preview, and unsupported platforms have no Finder action.
@@ -134,6 +139,9 @@ export function createDocumentActions(options: { basePath: string; localActions:
   document.addEventListener('focusin', (event) => {
     if (active && event.target instanceof Node && event.target !== active.trigger && !menu.contains(event.target)) close();
   });
+  document.addEventListener('pointerdown', (event) => {
+    if (active && event.target instanceof Node && !active.trigger.contains(event.target) && !menu.contains(event.target)) close();
+  });
   window.addEventListener('resize', () => close());
   document.addEventListener('scroll', () => close(), true);
   window.addEventListener('blur', () => close());
@@ -150,6 +158,83 @@ export function createDocumentActions(options: { basePath: string; localActions:
       showNotice('Could not copy the link. Check your browser’s clipboard permission.', true);
     }
   });
+  addButton.addEventListener('click', () => {
+    const project = active?.artifact.project || '';
+    close();
+    window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } }));
+  });
+  removeButton.addEventListener('click', () => {
+    const selection = active;
+    if (!selection || !selection.artifact.imported && !selection.token) return;
+    close();
+    void confirmRemoval(selection);
+  });
+
+  async function confirmRemoval(selection: NonNullable<typeof active>) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'docshelf-remove-dialog';
+    dialog.setAttribute('aria-labelledby', 'docshelf-remove-title');
+    dialog.setAttribute('aria-describedby', 'docshelf-remove-description');
+    const title = document.createElement('h2');
+    title.id = 'docshelf-remove-title';
+    title.textContent = 'Remove from shelf?';
+    const description = document.createElement('p');
+    description.id = 'docshelf-remove-description';
+    description.textContent = `Remove “${selection.artifact.title}” from DocShelf? The original file or remote document will stay untouched.`;
+    const detail = document.createElement('p');
+    detail.textContent = selection.artifact.imported ? 'This removes the import from this browser. You can add it again later.' : 'Checking registration…';
+    const error = document.createElement('p');
+    error.setAttribute('role', 'alert');
+    const actions = document.createElement('div');
+    actions.className = 'docshelf-remove-actions';
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.autofocus = true;
+    cancel.onclick = () => dialog.close();
+    const confirm = document.createElement('button');
+    confirm.textContent = 'Remove';
+    confirm.disabled = true;
+    actions.append(cancel, confirm);
+    dialog.append(title, description, detail, error, actions);
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => { dialog.remove(); selection.trigger.focus({ preventScroll: true }); });
+    dialog.showModal();
+    const request = async (action: string, revision?: string) => {
+      const response = await fetch(`${options.basePath}__docshelf/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-DocShelf-Request': 'document-actions', 'X-DocShelf-Token': selection.token! },
+        body: JSON.stringify({ action, route: selection.artifact.route, revision }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not remove the document.');
+      return result;
+    };
+    try {
+      const prepared = selection.artifact.imported ? undefined : await request('remove-preview');
+      if (!dialog.open) return;
+      if (prepared) {
+        description.textContent = `Remove “${prepared.title}” from DocShelf? The original file or remote document will stay untouched.`;
+        detail.textContent = prepared.foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.';
+      }
+      confirm.disabled = false;
+      confirm.onclick = async () => {
+        confirm.disabled = true;
+        confirm.textContent = 'Removing…';
+        try {
+          if (selection.artifact.imported) options.removeImported(selection.artifact.route);
+          else await request('remove', prepared.revision);
+          dialog.close();
+          showNotice('Document removed from shelf. The catalog will update shortly.');
+        } catch (caught) {
+          error.textContent = caught instanceof Error ? caught.message : 'Could not remove the document.';
+          confirm.textContent = 'Remove';
+        }
+      };
+    } catch (caught) {
+      detail.textContent = '';
+      error.textContent = caught instanceof Error ? caught.message : 'Could not read the shelf.';
+    }
+  }
   revealButton.addEventListener('click', async () => {
     const selection = active;
     if (!selection?.token) return;
@@ -203,6 +288,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
         sourceLink.hidden = !remoteSource;
         sourceLink.href = remoteSource || '';
         revealButton.hidden = true;
+        removeButton.hidden = !artifact.imported;
         separator.hidden = !remoteSource;
         menu.setAttribute('aria-label', `Actions for ${artifact.title}`);
         menuParent.append(menu);
@@ -210,8 +296,10 @@ export function createDocumentActions(options: { basePath: string; localActions:
         trigger.setAttribute('aria-expanded', 'true');
         positionMenu();
         (last ? items().at(-1) : items()[0])?.focus({ preventScroll: true });
-        void loadFinderCapability(active);
+        void loadCapabilities(active);
       }
+      link.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); open(); });
+      link.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); event.stopPropagation(); open(); } });
       trigger.addEventListener('click', (event) => {
         event.preventDefault();
         open();

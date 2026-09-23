@@ -11,6 +11,7 @@ import {
   loadShelf,
   runtimeRoot,
 } from './scripts/artifacts.mjs';
+import { htmlIsolationIntegration } from './scripts/html-isolation.mjs';
 import { browserHost } from './scripts/server-security.mjs';
 
 const shelf = await loadShelf();
@@ -58,6 +59,7 @@ export default defineConfig({
   },
   integrations: [
     artifactBuildIntegration(shelf),
+    htmlIsolationIntegration(shelf, docshelfBasePath),
     starlight({
       title: 'DocShelf',
       sidebar,

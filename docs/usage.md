@@ -10,6 +10,8 @@ See the [README](https://github.com/oliver-im/docshelf/blob/main/README.md#get-s
 
 ## Register local documents
 
+Use the header’s **+** button or right-click the shelf, a project heading, or a document and choose **Add…**. Enter file or folder paths, optionally choose a project, preview the discovered documents, then add them. Folders are recursive and update automatically. Local registration requires the running loopback watcher; static sites support public-document imports only. See [adding files and folders](folders.md) for exclusions, version 2 shelves, and update behavior.
+
 The web app reads registrations from the ignored `shelf.local.json` in the
 DocShelf checkout. On macOS, `npm run setup` creates a first shelf containing
 the README. For a new foreground installation, copy `.github/pages-shelf.json`

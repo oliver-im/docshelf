@@ -9,7 +9,7 @@ import { DocumentServer } from './core/server';
 import { ShelfSearch } from './core/search';
 import { fetchGitHubMarkdown } from './core/remote';
 import { parseProtocol } from './core/protocol';
-import { DEFAULT_SETTINGS, MAX_DOCUMENT_BYTES, message, type Artifact, type Catalog, type LineRange, type Settings } from './core/types';
+import { DEFAULT_SETTINGS, MAX_DOCUMENT_BYTES, artifactRoots, message, type Artifact, type Catalog, type LineRange, type Settings } from './core/types';
 import { DocumentView, DOCUMENT_VIEW } from './ui/document';
 import { ShelfView, SHELF_VIEW, SearchModal } from './ui/shelf';
 import { ConfigureModal, ShelfSettingsTab } from './ui/settings';
@@ -17,6 +17,10 @@ import { DOCSHELF_ICON, DOCSHELF_ICON_SVG } from './ui/icon';
 import { NativeMarkdownView, NATIVE_MARKDOWN_VIEW, nativeMarkdownExtension } from './ui/native-markdown';
 import { RecoveryStore } from './core/editing';
 import { IndexSources } from './core/index-sources';
+import { watchScope } from '../../local/watch-scope.mjs';
+import { AddModal, ProjectPicker, pickSources } from './ui/add';
+import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
+import { RemoveModal } from './ui/remove';
 
 export default class DocShelfPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -28,10 +32,13 @@ export default class DocShelfPlugin extends Plugin {
   loading = false;
   recovery!: RecoveryStore;
   private watcher: FSWatcher | null = null;
-  private watchedPaths = new Set<string>();
+  private watchSignature = '';
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private pickingSources = false;
+  private projectPicker: ProjectPicker | null = null;
+  private removeModal: RemoveModal | null = null;
   private refreshPending: Promise<void> | null = null;
   private refreshRequested = false;
   private indexSources = new IndexSources();
@@ -59,6 +66,7 @@ export default class DocShelfPlugin extends Plugin {
     this.addRibbonIcon(DOCSHELF_ICON, 'Open DocShelf', () => { void this.openShelf(); });
     this.addCommand({ id: 'open-shelf', name: 'Open shelf', callback: () => { void this.openShelf(); } });
     this.addCommand({ id: 'search', name: 'Search documents', callback: () => new SearchModal(this).open() });
+    this.addCommand({ id: 'add', name: 'Add…', callback: () => this.showAdd() });
     this.addCommand({ id: 'reload', name: 'Reload shelf and documents', callback: () => { void this.refresh(); } });
     this.addCommand({ id: 'configure', name: 'Configure shelf', callback: () => this.showSettings() });
     this.addCommand({ id: 'recovery', name: 'Reveal Markdown recovery files', callback: () => this.revealRecovery() });
@@ -98,6 +106,8 @@ export default class DocShelfPlugin extends Plugin {
 
   onunload(): void {
     this.disposed = true;
+    this.projectPicker?.close();
+    this.removeModal?.close();
     this.abort.abort();
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -157,14 +167,14 @@ export default class DocShelfPlugin extends Plugin {
       if (this.disposed || settings !== this.settings) return;
       const contents = new Map<string, string>();
       const revisions = new Map<string, string>();
-      const failures: string[] = [];
+      const failures: string[] = [...(catalog.warnings || [])];
       let indexedBytes = 0;
       this.indexSources.retain(new Set(catalog.artifacts.flatMap(artifact => artifact.sourcePath ? [artifact.sourcePath] : [])));
       for (const artifact of catalog.artifacts) {
         if (this.disposed || settings !== this.settings) return;
         try {
           const budget = 16 * 1024 * 1024 - indexedBytes;
-          const local = artifact.sourcePath ? await this.indexSources.read(artifact.sourcePath, catalog.roots, budget) : undefined;
+          const local = artifact.sourcePath ? await this.indexSources.read(artifact.sourcePath, artifactRoots(artifact, catalog.roots), budget) : undefined;
           const source = local ? local.source : this.remoteCache.get(artifact.source);
           const contentRevision = local?.revision || createHash('sha256').update(source || '').digest('hex');
           const assets = await Promise.all((artifact.assets || []).map(async asset => {
@@ -209,39 +219,29 @@ export default class DocShelfPlugin extends Plugin {
 
   private async updateWatcher(catalog: Catalog | null): Promise<void> {
     if (this.disposed) return;
-    const sources = new Set([this.shelfPath()]);
+    const shelfPath = this.shelfPath();
+    const sources = new Set([shelfPath, await realpath(shelfPath).catch(() => shelfPath)]);
     for (const artifact of catalog?.artifacts || []) {
-      if (artifact.sourcePath) sources.add(artifact.sourcePath);
-      if (artifact.canonicalPath) sources.add(artifact.canonicalPath);
+      if (!artifact.directoryId && artifact.sourcePath) sources.add(artifact.sourcePath);
+      if (!artifact.directoryId && artifact.canonicalPath) sources.add(artifact.canonicalPath);
       for (const asset of artifact.assets || []) sources.add(path.resolve(path.dirname(artifact.sourcePath!), asset));
     }
-    // Parent aliases (notably macOS /var and /private/var) must share one watch.
-    // Otherwise removing a missing canonical path can unwatch its surviving
-    // lexical alias too, preventing detection when the source is recreated.
-    // Preserve the final component so registered file symlinks stay watched.
-    const paths = new Set(await Promise.all([...sources].map(async source => path.join(await realpath(path.dirname(source)).catch(() => path.dirname(source)), path.basename(source)))));
-    if (this.disposed) return;
-    if (this.watcher && paths.size === this.watchedPaths.size && [...paths].every(file => this.watchedPaths.has(file))) return;
+    const scope = await watchScope([...sources], catalog?.directories || []);
+    if (this.disposed || this.watcher && scope.signature === this.watchSignature) return;
     await this.watcher?.close();
     if (this.disposed) return;
-    this.watchedPaths = paths;
-    const parents = new Set([...paths].map(file => path.dirname(file)));
-    // Observe each parent once, with an explicit file allowlist. Chokidar's
-    // per-file recovery watches can compete for one directory's read throttle
-    // after several different files have been deleted and restored.
-    const watcher = watch([...parents], {
-      ignoreInitial: true,
-      followSymlinks: false,
-      atomic: true,
+    this.watchSignature = scope.signature;
+    const watcher = watch(scope.parents, {
+      ignoreInitial: true, followSymlinks: false, atomic: true, depth: 34,
       awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
-      ignored: file => !paths.has(file) && ![...parents].some(parent => parent === file || parent.startsWith(`${file}${path.sep}`)),
+      ignored: scope.ignored,
     });
     this.watcher = watcher;
     const schedule = () => {
       if (this.disposed || this.watcher !== watcher) return;
       this.scheduleRefresh();
     };
-    watcher.on('all', schedule);
+    watcher.on('all', (event, file) => { if (scope.relevantChange(event, file)) schedule(); });
     // Re-read after startup too, covering writes during watcher replacement.
     watcher.once('ready', schedule);
     watcher.on('error', error => { this.error = `File watcher: ${message(error)}`; this.emit(); });
@@ -249,7 +249,7 @@ export default class DocShelfPlugin extends Plugin {
 
   async readArtifact(artifact: Artifact): Promise<string> {
     if (this.disposed || !this.catalog?.artifacts.some(item => item.id === artifact.id && item.source === artifact.source)) throw new Error('This document is no longer registered.');
-    if (artifact.sourcePath) return (await readBoundedFile(artifact.sourcePath, this.catalog.roots, MAX_DOCUMENT_BYTES)).toString('utf8');
+    if (artifact.sourcePath) return (await readBoundedFile(artifact.sourcePath, artifactRoots(artifact, this.catalog.roots), MAX_DOCUMENT_BYTES)).toString('utf8');
     if (artifact.kind !== 'github' || !artifact.rawUrl) throw new Error('This remote source cannot be downloaded.');
     const cached = this.remoteCache.get(artifact.source);
     if (cached !== undefined) return cached;
@@ -305,6 +305,68 @@ export default class DocShelfPlugin extends Plugin {
     shell.showItemInFolder(this.recovery.directory);
   }
 
+  async showAdd(project = ''): Promise<void> {
+    if (this.disposed || this.pickingSources) return;
+    if (!project) {
+      if (!this.projectPicker) {
+        this.projectPicker = new ProjectPicker(this, name => { void this.showAdd(name); }, () => { this.projectPicker = null; });
+        this.projectPicker.open();
+      }
+      return;
+    }
+    if (process.platform !== 'darwin') { new AddModal(this, project).open(); return; }
+    this.pickingSources = true;
+    try {
+      const sources = await pickSources(this.shelfPath(), project);
+      if (!this.disposed && sources.length) await this.addSources(sources, project);
+    } catch (error) {
+      if (!this.disposed) new Notice(`Could not add to shelf: ${message(error)}`, 8000);
+    } finally { this.pickingSources = false; }
+  }
+
+  async addSources(sources: string[], project = ''): Promise<void> {
+    if (this.disposed) return;
+    const progress = new Notice('Adding to shelf…', 0);
+    try {
+      const shelfPath = this.shelfPath();
+      const base = path.dirname(shelfPath);
+      const workspaceRoot = this.settings.workspaceRoot;
+      const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
+      const options = { shelfPath, roots, sources, project };
+      const prepared = await prepareAddition(options);
+      if (this.disposed) return;
+      if (this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Try adding again.');
+      const result = await commitAddition(prepared);
+      await this.refresh();
+      if (!this.disposed) new Notice(result.documentsAdded || result.foldersAdded
+        ? `Added ${result.documentsAdded} document(s) and ${result.foldersAdded} watched folder(s) to ${project}.${result.documentsMoved ? ` Moved ${result.documentsMoved} existing document(s) to the more specific folder.` : ''}`
+        : 'Already on the shelf.');
+    } catch (error) {
+      throw new Error(message(error).replace('Preview again before adding.', 'Try adding again.'));
+    } finally { progress.hide(); }
+  }
+
+  showRemove(artifact: Artifact): void {
+    if (this.disposed) return;
+    this.removeModal?.close();
+    this.removeModal = new RemoveModal(this, artifact);
+    this.removeModal.open();
+  }
+
+  async prepareRemove(artifact: Artifact) {
+    const shelfPath = this.shelfPath();
+    const base = path.dirname(shelfPath);
+    const workspaceRoot = this.settings.workspaceRoot;
+    const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
+    const options = { shelfPath, roots, route: artifact.route, source: artifact.source };
+    const prepared = await prepareRemoval(options);
+    return { foldersExcluded: prepared.foldersExcluded, commit: async () => {
+      if (this.disposed || this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Close this dialog and try again.');
+      await removeFromShelf(options, prepared.revision);
+      await this.refresh();
+    } };
+  }
+
   showSettings(): void { new ConfigureModal(this).open(); }
 
   async createShelf(): Promise<void> {
@@ -320,7 +382,7 @@ export default class DocShelfPlugin extends Plugin {
   async revealArtifact(artifact: Artifact): Promise<void> {
     if (!artifact.sourcePath || !this.catalog) return;
     try {
-      const file = await canonicalFile(artifact.sourcePath, this.catalog.roots);
+      const file = await canonicalFile(artifact.sourcePath, artifactRoots(artifact, this.catalog.roots));
       const { shell } = require('electron') as { shell: { showItemInFolder(path: string): void } };
       shell.showItemInFolder(file);
     } catch (error) { new Notice(message(error)); }

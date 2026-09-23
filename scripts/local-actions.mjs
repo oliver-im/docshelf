@@ -8,6 +8,7 @@ import { isAllowedHostHeader, isLoopbackHost } from './server-security.mjs';
 const runFile = promisify(execFile);
 const capabilitiesPath = '/__docshelf/local-actions';
 const revealPath = '/__docshelf/reveal';
+const registerPath = '/__docshelf/register';
 
 /** Local OS actions are available only through the loopback watcher, never static output. */
 export function createLocalActionsHandler({
@@ -16,12 +17,13 @@ export function createLocalActionsHandler({
   workspaceRoot,
   platform = process.platform,
   revealFile = (file) => runFile('/usr/bin/open', ['-R', file], { timeout: 5000 }),
+  registration,
 }) {
   const token = randomBytes(32).toString('hex');
   let revealing = false;
 
   return async function handleLocalAction(request, response, pathname) {
-    if (pathname !== capabilitiesPath && pathname !== revealPath) return false;
+    if (pathname !== capabilitiesPath && pathname !== revealPath && pathname !== registerPath) return false;
 
     const reply = (status, body) => {
       response.writeHead(status, {
@@ -45,13 +47,12 @@ export function createLocalActionsHandler({
 
     if (pathname === capabilitiesPath) {
       if (request.method !== 'GET') return reply(405, { error: 'Use GET for document capabilities.' });
-      return reply(200, platform === 'darwin'
-        ? { revealInFinder: true, token }
-        : { revealInFinder: false });
+      return reply(200, { revealInFinder: platform === 'darwin', ...(platform === 'darwin' || registration ? { token } : {}), ...(registration ? { add: true, remove: true } : {}) });
     }
 
-    if (request.method !== 'POST') return reply(405, { error: 'Use POST to reveal a document.' });
-    if (platform !== 'darwin') return reply(404, { error: 'Reveal in Finder is unavailable on this server.' });
+    if (request.method !== 'POST') return reply(405, { error: 'Use POST for document actions.' });
+    if (pathname === revealPath && platform !== 'darwin') return reply(404, { error: 'Reveal in Finder is unavailable on this server.' });
+    if (pathname === registerPath && !registration) return reply(404, { error: 'Adding local sources is unavailable on this server.' });
     if (
       // A local HTTPS proxy may terminate TLS before forwarding to this HTTP watcher.
       !['http:', 'https:'].some((scheme) => request.headers.origin === `${scheme}//${request.headers.host}`) ||
@@ -65,12 +66,16 @@ export function createLocalActionsHandler({
       const chunks = [];
       for await (const chunk of request) {
         size += chunk.length;
-        if (size > 4096) return reply(413, { error: 'Document action request is too large.' });
+        if (size > (pathname === registerPath ? 65536 : 4096)) return reply(413, { error: 'Document action request is too large.' });
         chunks.push(chunk);
       }
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch {
       return reply(400, { error: 'Send a document route as JSON.' });
+    }
+    if (pathname === registerPath) {
+      try { return reply(200, await registration(body)); }
+      catch (error) { return reply(400, { error: error.message || 'Could not update the shelf.' }); }
     }
     if (!body || typeof body.route !== 'string' || Object.keys(body).length !== 1) {
       return reply(400, { error: 'Send only a registered document route.' });

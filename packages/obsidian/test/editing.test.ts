@@ -75,15 +75,15 @@ test('recovery retains original and edited versions independently per pane acros
     const reopened = new RecoveryStore(directory);
     assert.equal(reopened.read(one)?.text, '# First draft\n');
     assert.equal(Buffer.from(reopened.read(two)!.baseline, 'base64').toString(), '# Original\n');
-    assert.equal(reopened.pending(f.source, 'note.html', new Set([two]))?.id, one);
-    assert.equal(reopened.pending(f.source, 'other.html', new Set()), undefined);
+    assert.equal(reopened.pending(f.source, new Set([two]))?.id, one);
+    assert.equal(reopened.pending(path.join(f.directory, 'other.md'), new Set()), undefined);
     assert.throws(() => reopened.record(one, f.source, 'note.html', snapshot, '# Unrelated edit\n', true), /adopted/);
     assert.equal(reopened.read(one)?.text, '# First draft\n');
     reopened.adopt(reopened.read(two)!);
     reopened.record(two, f.source, 'note.html', snapshot, '# Second recovered draft\n', true);
     assert.equal(reopened.read(two)?.text, '# Second recovered draft\n');
     store.record(one, f.source, 'note.html', snapshot, '# First draft\n', false);
-    assert.equal(reopened.pending(f.source, 'note.html', new Set([two])), undefined);
+    assert.equal(reopened.pending(f.source, new Set([two])), undefined);
     assert.equal(statSync(path.join(directory, `${one}.json`)).mode & 0o777, 0o600);
   } finally { f.cleanup(); }
 });
@@ -122,7 +122,7 @@ test('recovery checkpoints reuse the baseline, retire superseded blobs, and load
 
     const legacy = randomUUID();
     writeFileSync(path.join(directory, `${legacy}.json`), JSON.stringify({ version: 1, id: legacy, source: f.source, route: 'note.html', canonicalPath: snapshot.canonicalPath, baseline: snapshot.bytes.toString('base64'), text: 'Legacy draft', pending: true, updated: Date.now() }));
-    assert.equal(store.pending(f.source, 'note.html', new Set())?.text, 'Legacy draft');
+    assert.equal(store.pending(f.source, new Set())?.text, 'Legacy draft');
     assert.throws(() => store.record(legacy, f.source, 'note.html', snapshot, 'Replacement', true), /adopted/);
     store.adopt(store.read(legacy)!);
     store.record(legacy, f.source, 'note.html', snapshot, 'Recovered legacy draft', true);
@@ -140,5 +140,25 @@ test('recovery checkpoints reuse the baseline, retire superseded blobs, and load
     assert.throws(() => failing.record(pending, f.source, 'note.html', snapshot, 'Uncommitted replacement', true), /Simulated/);
     assert.equal(new RecoveryStore(directory).read(pending)?.text, 'Durable draft');
     assert.equal(readdirSync(directory).filter(name => name.startsWith(pending)).length, 3);
+  } finally { f.cleanup(); }
+});
+
+test('recovery follows re-registered sources across routes without adopting another source or occupied draft', () => {
+  const f = fixture();
+  try {
+    const directory = path.join(f.directory, 'recovery');
+    const store = new RecoveryStore(directory), id = randomUUID();
+    const snapshot = readEditableFile(f.source, f.roots);
+    store.record(id, f.source, 'folders/docs/note.html', snapshot, '# Unsaved', true);
+    const reopened = new RecoveryStore(directory);
+    assert.equal(reopened.pending(f.source, new Set([id])), undefined);
+    const draft = reopened.pending(f.source, new Set())!;
+    assert.equal(draft.id, id);
+    reopened.adopt(draft);
+    reopened.record(id, f.source, 'files/note.html', snapshot, draft.text, true);
+    assert.equal(reopened.read(id)?.route, 'files/note.html');
+    assert.equal(reopened.read(id)?.text, '# Unsaved');
+    assert.throws(() => reopened.record(id, path.join(f.directory, 'other.md'), 'files/note.html', snapshot, 'Other', true), /another document/);
+    assert.equal(readFileSync(f.source, 'utf8'), '# Original\n');
   } finally { f.cleanup(); }
 });

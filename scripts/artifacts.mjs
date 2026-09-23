@@ -25,6 +25,7 @@ import { renderMarkdownArtifact } from './markdown.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { normalizeBasePath } from './site-path.mjs';
 import { acquireSyncLock, describeLockOwner, isProcessAlive } from './watcher-lock.mjs';
+import { expandShelf } from '../packages/local/shelf.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const docShelfRoot = path.resolve(scriptsDirectory, '..');
@@ -45,6 +46,7 @@ const legacyMarkdownOutputMarker = '.docshelf-markdown-output';
 // adding filesystem configuration to the serialized shelf.
 /** @type {WeakMap<Shelf, { workspace: string, checkout: string }>} */
 const shelfSourceRoots = new WeakMap();
+const shelfConfigurations = new WeakMap();
 
 /**
  * The workspace root bounds which local files DocShelf reads and serves, along
@@ -97,12 +99,16 @@ export function isWithinSourceRoots(roots, candidate) {
  * @property {string} [sourcePath]
  * @property {'html' | 'markdown' | 'claude'} format
  * @property {string} [embedUrl]
+ * @property {string} [discoveryRoot]
+ * @property {string} [directoryId]
  */
 
 /**
  * @typedef {object} Shelf
- * @property {1} version
+ * @property {1 | 2} version
  * @property {Artifact[]} artifacts
+ * @property {Array<any>} [directories]
+ * @property {string[]} [warnings]
  */
 
 /**
@@ -165,19 +171,16 @@ export async function loadShelfFrom(shelfPath, options = {}) {
     throw new Error(`Could not parse ${shelfPath}`, { cause: error });
   }
 
-  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.artifacts)) {
-    throw new Error(`${path.basename(shelfPath)} must contain version 1 and an artifacts array.`);
-  }
-
   const configuredRoot = options.workspaceRoot || workspaceRoot;
   const roots = await resolveSourceRoots(configuredRoot);
+  const expanded = await expandShelf(parsed, docShelfRoot, [roots.workspace, roots.checkout], { relativeOnly: true, allowUnavailable: true });
 
   const routes = new Set();
   const sources = new Set();
   /** @type {Artifact[]} */
   const artifacts = [];
 
-  for (const [index, entry] of parsed.artifacts.entries()) {
+  for (const [index, entry] of expanded.artifacts.entries()) {
     if (!isRecord(entry)) {
       throw new Error(`Artifact ${index + 1} must be an object.`);
     }
@@ -240,6 +243,7 @@ export async function loadShelfFrom(shelfPath, options = {}) {
         `Artifact ${index + 1} source is outside the workspace root ${configuredRoot}: ${source}. Set DOCSHELF_WORKSPACE to a directory that contains it.`,
       );
     }
+    if (entry.discoveryRoot && !isWithin(entry.discoveryRoot, resolvedSource)) throw new Error(`Artifact ${index + 1} source is outside its registered folder.`);
 
     if (sources.has(resolvedSource)) {
       throw new Error(`Artifact ${index + 1} duplicates source ${source}.`);
@@ -255,12 +259,14 @@ export async function loadShelfFrom(shelfPath, options = {}) {
       description,
       sourcePath: resolvedSource,
       format: sourceFormat(source),
+      ...(entry.discoveryRoot ? { discoveryRoot: entry.discoveryRoot, directoryId: entry.directoryId } : {}),
     });
   }
 
   /** @type {Shelf} */
-  const shelf = { version: 1, artifacts };
+  const shelf = { version: /** @type {1 | 2} */ (parsed.version), artifacts, directories: expanded.directories, warnings: expanded.warnings };
   shelfSourceRoots.set(shelf, roots);
+  shelfConfigurations.set(shelf, { shelfPath, contents, options, membership: JSON.stringify(artifacts.map(entry => [entry.source, entry.route, entry.sourcePath])) });
   return shelf;
 }
 
@@ -373,6 +379,7 @@ async function replaceGeneratedArtifacts(shelf) {
         route: artifact.route,
         revision: contentRevision(html),
         sourceRevision: snapshot.revision,
+        format: artifact.format,
       });
 
       const target = path.relative(path.dirname(destination), outputPath);
@@ -415,11 +422,12 @@ async function writeGeneratedShelf(shelf, revisionState) {
   const generatedShelf = {
     version: shelf.version,
     shelfRevision: revisionState.shelfRevision,
-    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
+    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
       project,
       route,
       title,
       description,
+      format,
       revision: revisions.get(route),
       ...(embedUrl ? { embedUrl } : {}),
     })),
@@ -478,6 +486,14 @@ export function artifactBuildIntegration(shelf) {
  * @param {ArtifactRevisionState} revisionState
  */
 export async function artifactSourcesMatch(shelf, revisionState) {
+  const configuration = shelfConfigurations.get(shelf);
+  if (configuration && shelf.directories?.length) {
+    try {
+      if (await readFile(configuration.shelfPath, 'utf8') !== configuration.contents) return false;
+      const current = await loadShelfFrom(configuration.shelfPath, configuration.options);
+      if (JSON.stringify(current.artifacts.map(entry => [entry.source, entry.route, entry.sourcePath])) !== configuration.membership) return false;
+    } catch { return false; }
+  }
   const expected = new Map(
     revisionState.artifacts.map((artifact) => [artifact.route, artifact.sourceRevision]),
   );
@@ -594,6 +610,7 @@ function generatedRootPid(name) {
  * @property {string} route
  * @property {string} revision
  * @property {string} sourceRevision
+ * @property {string} [format]
  */
 
 /**
@@ -639,6 +656,7 @@ async function readArtifactSource(artifact, roots) {
     if (!isWithinSourceRoots(roots, current)) {
       throw new Error(`Source is outside the workspace: ${artifact.source}`);
     }
+    if (artifact.discoveryRoot && !isWithin(artifact.discoveryRoot, current)) throw new Error(`Source is outside its registered folder: ${artifact.source}`);
     if (current !== artifact.sourcePath) {
       throw new Error(`Source target changed; reload the shelf: ${artifact.source}`);
     }
@@ -649,6 +667,7 @@ async function readArtifactSource(artifact, roots) {
   try {
     const opened = await handle.stat();
     if (!opened.isFile()) throw new Error(`Source is not a regular file: ${artifact.source}`);
+    if (artifact.discoveryRoot && opened.size > 8 * 1024 * 1024) throw new Error(`Source exceeds 8 MB: ${artifact.source}`);
     const checkIdentity = async () => {
       const current = await stat(await checkedPath());
       if (!current.isFile() || opened.dev !== current.dev || opened.ino !== current.ino) {
@@ -673,11 +692,12 @@ function createRevisionState(shelf, artifacts) {
     ),
     shelfRevision: contentRevision(
       JSON.stringify(
-        shelf.artifacts.map(({ project, route, title, description, embedUrl }) => ({
+        shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
           project,
           route,
           title,
           description,
+          format,
           ...(embedUrl ? { embedUrl } : {}),
         })),
       ),

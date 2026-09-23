@@ -147,7 +147,8 @@ export class RecoveryStore {
       owned = { stored };
     }
     const previous = owned.stored;
-    if (previous?.pending && (previous.source !== source || previous.route !== route)) throw new Error('A pending recovery draft belongs to another document.');
+    // A re-registration can change the shelf route; the draft still belongs to its source.
+    if (previous?.pending && previous.source !== source) throw new Error('A pending recovery draft belongs to another document.');
     if (snapshot.bytes.length > MAX_DOCUMENT_BYTES || Buffer.byteLength(text) + snapshot.bytes.length > MAX_DOCUMENT_BYTES * 8) throw new Error('Recovery record exceeds 64 MB. Reduce the document size before saving.');
     const sameBaseline = !!owned.bytes?.equals(snapshot.bytes) && previous?.canonicalPath === snapshot.canonicalPath;
     const sameText = owned.text === text;
@@ -208,13 +209,13 @@ export class RecoveryStore {
     } catch { return null; }
   }
 
-  pending(source: string, route: string, excluded: Set<string>): Recovery | undefined {
+  pending(source: string, excluded: Set<string>): Recovery | undefined {
     let names: string[];
     try { names = readdirSync(this.directory); } catch { return undefined; }
     // Completed v2 records require only a small metadata read, never loading
     // their document contents just to discover that they aren't pending.
     const candidates = names.filter(name => name.endsWith('.json')).map(name => this.metadata(name.slice(0, -5)))
-      .filter((value): value is StoredRecovery => !!value?.pending && value.source === source && value.route === route && !excluded.has(value.id))
+      .filter((value): value is StoredRecovery => !!value?.pending && value.source === source && !excluded.has(value.id))
       .sort((a, b) => b.updated - a.updated);
     for (const candidate of candidates) { const draft = this.read(candidate.id); if (draft) return draft; }
     return undefined;
