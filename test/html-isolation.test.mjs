@@ -27,7 +27,7 @@ const executablePath = process.env.DOCSHELF_TEST_BROWSER || [
   '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
 ].find(file => existsSync(file));
 
-test('interactive HTML cannot read capabilities or register paths, framed or opened directly', { skip: !executablePath, timeout: 20000 }, async t => {
+test('interactive HTML cannot read capabilities or register paths, framed or opened directly', { skip: !executablePath, timeout: 60000 }, async t => {
   const calls = [];
   const handler = createLocalActionsHandler({ listenHost: '127.0.0.1', registration: async body => { calls.push(body); return { ok: true }; } });
   const artifact = { format: 'html', sourcePath: '/fixture/report.html', route: 'report.html' };
@@ -64,12 +64,21 @@ test('interactive HTML cannot read capabilities or register paths, framed or ope
       </script></body></html>`);
     })().catch(error => { response.statusCode = 500; response.end(error.message); });
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  await new Promise(resolve => server.listen({ port: 0, host: '127.0.0.1', signal: t.signal }, resolve));
+  t.signal.throwIfAborted();
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch({ executablePath, headless: true });
-  t.after(() => browser.close());
+  const launching = chromium.launch({ executablePath, headless: true, timeout: 30000 });
+  // Register cleanup before awaiting startup: a test timeout does not cancel launch.
+  // Await the bounded launch so even a browser that starts after cancellation is closed.
+  t.after(async () => {
+    const browser = await launching.catch(() => null);
+    await browser?.close();
+  });
+  const browser = await launching;
+  t.signal.throwIfAborted();
   const page = await browser.newPage();
+  page.setDefaultTimeout(10000);
   await page.goto(origin);
   const frame = page.frames().find(frame => frame.url().includes('/artifacts/'));
   assert.deepEqual(await frame.evaluate(() => window.probe), { parent: false, storage: false, capabilities: false });
@@ -79,6 +88,7 @@ test('interactive HTML cannot read capabilities or register paths, framed or ope
   await frame.locator('a').click();
   await page.waitForFunction(() => window.docshelfBridgeMessages.some(message => message.type === 'docshelf-navigate' && message.route === 'notes.html' && message.hash === '#example'));
   const direct = await browser.newPage();
+  direct.setDefaultTimeout(10000);
   for (const route of ['artifacts/report.html', 'ARTIFACTS/report.html', 'Artifacts/report.HTML']) {
     const response = await direct.goto(`${origin}/${route}`);
     assert.equal(response.headers()['content-security-policy'], `sandbox ${htmlSandbox}`, route);
