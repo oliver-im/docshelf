@@ -24,7 +24,8 @@ test('HTML isolation is fail-closed and only exempts known rendered Markdown', (
 const executablePath = process.env.DOCSHELF_TEST_BROWSER || [
   '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
+  // Ubuntu's chromium commands are snap wrappers whose cold start can exceed the launch timeout.
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
 ].find(file => existsSync(file));
 
 test('interactive HTML cannot read capabilities or register paths, framed or opened directly', { skip: !executablePath, timeout: 60000 }, async t => {
