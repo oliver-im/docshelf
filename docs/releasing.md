@@ -4,11 +4,7 @@ DocShelf Web uses Git tags and GitHub Releases for clone-and-run distribution.
 The Obsidian plugin is built separately as an installable folder. The root and
 workspace packages are private to prevent accidental npm publication.
 
-The planned first announced version of DocShelf Web is **0.1.0**; the root
-package is still `0.0.1` until release preparation. The plugin's package and
-manifest are already `0.1.0`, and its minimum Obsidian version is `1.13.7`.
-Moving both apps into one
-repository does not synchronize their versions or publish either one.
+DocShelf Web's first release is `v0.1.0`, and DocShelf for Obsidian's current release is `0.2.0`, with a minimum Obsidian version of `1.13.7`. The two apps share a repository but are versioned and released independently.
 
 ## Versioning and cadence
 
@@ -49,12 +45,6 @@ Before dispatching a release:
 4. Smoke-test a fresh install, an existing shelf after a watcher restart, search,
    a heading link, a line-range link, and a supported browser import. Verify the
    import still loads after reloading that same site origin.
-5. For the first release, use **0.1.0** explicitly; `patch` from `0.0.1` would
-   produce `0.0.2`.
-
-The first-release notes are prepared in
-[v0.1.0.md](https://github.com/oliver-im/docshelf/blob/main/docs/releases/v0.1.0.md).
-Their presence does not mean that release has been published.
 
 ## Prepare and publish the release
 
@@ -62,11 +52,11 @@ The workflow below publishes the web app. These commands change the public
 repository; run them when ready to publish.
 
 ```sh
-gh workflow run release.yml -f version=0.1.0
+gh workflow run release.yml -f version=patch
 ```
 
-Later releases can use `version=patch`, `version=minor`, `version=major`, or an
-explicit increasing version. Run the workflow from its `main` definition.
+Use `version=patch`, `version=minor`, `version=major`, or an explicit increasing
+version. Run the workflow from its `main` definition.
 
 The prepare job updates `package.json` and `package-lock.json`, runs verification,
 and pushes `release/vX.Y.Z`. Open the pull-request link from the workflow summary.
@@ -116,9 +106,9 @@ gh workflow run release-obsidian.yml --ref main -f version=0.1.0
 
 The workflow refuses a requested version that differs from the checked-out manifest. It never moves an existing tag or replaces an uploaded asset. Rerunning the original workflow run verifies matching assets and uploads missing draft assets; differences fail for investigation. A published release is only verified, never repaired or edited. If `main` has advanced since the tag was created, rerun the original run instead of dispatching against a new commit with the same version.
 
-Use the packaged build for the README video. Before publishing, review the draft notes and assets, compare the tag commit with the verified workflow commit, and confirm the installation instructions and compatibility claims are accurate. Publish the reviewed draft in GitHub when ready; mark an early desktop beta as a prerelease. The video, directory listing, and public announcement can follow separately.
+Use the packaged build for the README video. Before publishing, review the draft notes and assets, compare the tag commit with the verified workflow commit, and confirm the installation instructions and compatibility claims are accurate. Publish the reviewed draft in GitHub when ready as a full release that is marked Latest, not a prerelease. The community directory rejected the 0.2.0 prerelease while the web app's `v0.1.0` was GitHub's latest release, so plugin releases keep the Latest label and web releases are created with `--latest=false`. Call out beta status in the release title and notes instead. The video, directory listing, and public announcement can follow separately.
 
-Review the minimum Obsidian version and tested platforms in both READMEs for each release. Their Shields.io version badges follow published plugin releases, including betas, and exclude the web app's `v`-prefixed tags. The Download ZIP badges reuse a static graphic; their destinations and the install sections' release-note links are maintained by `npm run sync:obsidian-metadata`. Commit those link updates with release preparation and publish the matching release promptly after merging; the prepared links will not resolve until publication, while Shields.io continues showing the previous published version until its cache refreshes. A generic latest-release download link can point to the independently versioned web app and does not cover prereleases.
+Review the minimum Obsidian version and tested platforms in both READMEs for each release. Their Shields.io version badges follow published plugin releases, including betas, and exclude the web app's `v`-prefixed tags. The Download ZIP badges reuse a static graphic; their destinations and the install sections' release-note links are maintained by `npm run sync:obsidian-metadata`. Commit those link updates with release preparation and publish the matching release promptly after merging; the prepared links will not resolve until publication, while Shields.io continues showing the previous published version until its cache refreshes. GitHub's latest release is reserved for the plugin, so a generic latest-release link points to the newest plugin release, never the web app.
 
 ## Submit the Obsidian plugin
 
