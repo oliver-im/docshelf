@@ -376,6 +376,9 @@ try {
   const vaultIdInput = settingsPage.locator('.setting-item').filter({ has: settingsPage.getByText('Vault ID for links', { exact: true }) }).locator('input');
   await vaultIdInput.fill('review-test-vault');
   assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId), originalVaultId, 'Editing searchable settings must preserve the draft until Save and reload.');
+  await page.evaluate(() => app.setting.pluginTabs.find(tab => tab.id === 'docshelf').update());
+  assert.equal(await vaultIdInput.inputValue(), 'review-test-vault', 'Rebuilding settings definitions must retain unsaved edits.');
+  assert.equal(await page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId), originalVaultId, 'A settings tab update must not persist the draft.');
   await settingsPage.getByRole('button', { name: 'Save and reload', exact: true }).click();
   await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').settings.vaultId === 'review-test-vault' && !app.plugins.getPlugin('docshelf').loading), 'The declarative settings tab did not save.');
   await vaultIdInput.fill(originalVaultId);

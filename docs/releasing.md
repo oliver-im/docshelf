@@ -103,7 +103,7 @@ The manually dispatched **Prepare Obsidian release** workflow (`release-obsidian
 Finish the code, metadata, notes, and runtime verification before dispatching. Creating the tag and draft changes the public repository, so dispatch only when that action is intended:
 
 ```sh
-gh workflow run release-obsidian.yml --ref main -f version=0.1.0
+gh workflow run release-obsidian.yml --ref main -f version=0.2.1
 ```
 
 The workflow generates [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) for `main.js`, `manifest.json`, and `styles.css`. Verify a downloaded file with `gh attestation verify main.js --repo oliver-im/docshelf`. Optional ZIP, license, notice, and checksum attachments remain available for manual installs; Obsidian downloads only its three standard files. See [community review findings](obsidian-review.md) for the reviewed capabilities and retained advisory findings.

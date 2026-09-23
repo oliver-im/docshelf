@@ -4,9 +4,7 @@ import type { Settings } from '../core/types';
 
 type SettingRow = Omit<SettingDefinitionRender, 'render'> & { render: (setting: Setting) => void };
 
-function settingsRows(plugin: DocShelfPlugin, close?: () => void): SettingRow[] {
-  // Keep edits as a draft until Save and reload, including in search results.
-  const draft: Settings = { ...plugin.settings };
+function settingsRows(plugin: DocShelfPlugin, draft: Settings, saved?: (settings: Settings) => void, close?: () => void): SettingRow[] {
   const preferences = plugin.app.vault as typeof plugin.app.vault & {
     getConfig(key: 'readableLineLength'): boolean;
     setConfig(key: 'readableLineLength', value: boolean): void;
@@ -27,9 +25,10 @@ function settingsRows(plugin: DocShelfPlugin, close?: () => void): SettingRow[] 
         button.setDisabled(true);
         try {
           if (!draft.shelfPath) throw new Error('Enter a shelf file path.');
-          await plugin.configure({ ...draft });
+          const snapshot = { ...draft };
+          await plugin.configure(snapshot);
           if (plugin.error) new Notice(plugin.error);
-          else { new Notice('DocShelf settings saved.'); close?.(); }
+          else { saved?.(snapshot); new Notice('DocShelf settings saved.'); close?.(); }
         } catch (error) { new Notice(String(error)); }
         finally { button.setDisabled(false); }
       })); } },
@@ -39,15 +38,29 @@ function settingsRows(plugin: DocShelfPlugin, close?: () => void): SettingRow[] 
 }
 
 function fields(container: HTMLElement, plugin: DocShelfPlugin, close?: () => void): void {
-  for (const row of settingsRows(plugin, close)) {
+  for (const row of settingsRows(plugin, { ...plugin.settings }, undefined, close)) {
     const setting = new Setting(container).setName(row.name).setDesc(row.desc || '');
     row.render(setting);
   }
 }
 
 export class ShelfSettingsTab extends PluginSettingTab {
-  constructor(private shelf: DocShelfPlugin) { super(shelf.app, shelf); }
-  getSettingDefinitions(): SettingDefinitionRender[] { return settingsRows(this.shelf); }
+  private draft: Settings;
+  private baseline: string;
+  constructor(private shelf: DocShelfPlugin) {
+    super(shelf.app, shelf);
+    this.draft = { ...shelf.settings };
+    this.baseline = JSON.stringify(this.draft);
+  }
+  getSettingDefinitions(): SettingDefinitionRender[] {
+    // Search and tab updates rebuild definitions. Preserve dirty values; only
+    // an unchanged draft may follow settings saved elsewhere (e.g. the modal).
+    if (JSON.stringify(this.draft) === this.baseline) {
+      Object.assign(this.draft, this.shelf.settings);
+      this.baseline = JSON.stringify(this.draft);
+    }
+    return settingsRows(this.shelf, this.draft, snapshot => { this.baseline = JSON.stringify(snapshot); });
+  }
 }
 
 export class ConfigureModal extends Modal {
