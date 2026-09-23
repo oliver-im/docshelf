@@ -3,6 +3,7 @@ import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
 import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
+import { documentLabel } from '../core/catalog';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
@@ -254,7 +255,7 @@ export class ShelfView extends ItemView {
   }
 
   private orderedDocuments(project: string, documents = (this.plugin.catalog?.artifacts || []).filter(artifact => artifact.project === project)): Artifact[] {
-    const alphabetical = [...documents].sort((a, b) => a.title.localeCompare(b.title) || a.route.localeCompare(b.route));
+    const alphabetical = [...documents].sort((a, b) => documentLabel(a).name.localeCompare(documentLabel(b).name) || a.route.localeCompare(b.route));
     const available = new Map(alphabetical.map(artifact => [artifact.route, artifact]));
     const order = this.documentOrder.get(project) || [];
     const saved = new Set(order);
@@ -349,13 +350,15 @@ export class ShelfView extends ItemView {
   private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean): void {
     const kind = { markdown: 'Markdown', html: 'HTML', github: 'GitHub Markdown', claude: 'Claude artifact' }[artifact.kind];
     const icon = { markdown: 'file-text', html: 'file-code', github: 'github', claude: 'globe' }[artifact.kind];
-    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': artifact.title, 'aria-description': [kind, searching ? artifact.project : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
+    const label = documentLabel(artifact);
+    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [label.title, kind, searching ? artifact.project : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
     button.toggleClass('docshelf-search-result', searching);
     button.dataset.route = artifact.route;
-    setTooltip(button, `${artifact.title} (${kind})`, { placement: 'right' });
-    const title = button.createDiv({ cls: 'docshelf-item-heading' });
-    setIcon(title.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
-    title.createSpan({ text: artifact.title, cls: 'docshelf-item-title' });
+    setTooltip(button, [label.title, `${label.name} (${kind})`].filter(Boolean).join('\n'), { placement: 'right' });
+    const heading = button.createDiv({ cls: 'docshelf-item-heading' });
+    setIcon(heading.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
+    heading.createSpan({ text: label.name, cls: 'docshelf-item-title' });
+    if (label.title) heading.createSpan({ text: label.title, cls: 'docshelf-item-subtitle' });
     if (searching) {
       if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
       button.createSpan({ text: artifact.project, cls: 'docshelf-item-project' });

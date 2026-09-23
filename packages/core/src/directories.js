@@ -35,6 +35,13 @@ export function filenameTitle(filename) {
   return filename.replace(/\.(?:md|markdown|html|htm)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Document';
 }
 
+/** Return a title only when it says more than its filename, so a label can show both without repeating itself.
+ * @param {string} title @param {string} filename */
+export function distinctTitle(title, filename) {
+  const key = (/** @type {string} */ value) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  return key(title) && key(title) !== key(filenameTitle(filename)) && key(title) !== key(filename) ? title : '';
+}
+
 /** @param {string} source @param {string} filename */
 export function documentTitle(source, filename) {
   const title = /\.html?$/i.test(filename)

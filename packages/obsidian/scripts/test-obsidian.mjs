@@ -113,7 +113,8 @@ try {
   assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
   await page.locator('.docshelf-search').fill('authored');
   assert.equal(await page.locator('.docshelf-item:visible').count(), 1);
-  assert.equal(await page.locator('.docshelf-item-title').textContent(), 'Project field notes');
+  assert.equal(await page.locator('.docshelf-item-title').textContent(), 'guide.md');
+  assert.equal(await page.locator('.docshelf-item-subtitle').textContent(), 'Project field notes');
   assert.match(await page.locator('.docshelf-item-description').textContent(), /authored/);
   assert.equal(await page.locator('.docshelf-item-project').textContent(), 'Getting started');
   await page.screenshot({ path: '.local/runtime/shelf-search.png' });
@@ -166,7 +167,8 @@ try {
   await poll(async () => (await projectNames()).length === 3, 'The new project did not appear.');
   assert.deepEqual(await projectNames(), ['Reports', 'Getting started', 'Alpha']);
   const extraRow = page.locator('.docshelf-item').filter({ hasText: extra.title });
-  assert.equal(await extraRow.locator('.docshelf-item-title').evaluate(el => el.scrollWidth > el.clientWidth), true);
+  assert.equal(await extraRow.locator('.docshelf-item-title').textContent(), 'extra.md');
+  assert.equal(await extraRow.locator('.docshelf-item-subtitle').evaluate(el => el.scrollWidth > el.clientWidth), true);
   assert.ok((await extraRow.boundingBox()).height <= 32, 'Browsing rows should stay compact even with a long title.');
   await extraRow.hover();
   await page.locator('.tooltip').filter({ hasText: extra.title }).waitFor();
@@ -328,7 +330,8 @@ try {
   await firstProject.click({ button: 'right' });
   assert.equal(await page.locator('.menu-item').filter({ hasText: 'Reset project order' }).evaluate(el => el.classList.contains('is-disabled')), true);
   await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
-  assert.deepEqual(await documentRoutes(), [zuluGuide.route, newGuide.route, alphaGuide.route, guideRoute]);
+  // Rows are labeled by filename (extra, guide, new, zulu), so alphabetical order follows filenames, not titles.
+  assert.deepEqual(await documentRoutes(), [alphaGuide.route, guideRoute, newGuide.route, zuluGuide.route]);
   assert.deepEqual(await projectNames(), ['Getting started', 'Reports']);
   assert.equal(await firstProject.evaluate(el => el === document.activeElement), true);
   assert.equal(await readFile(shelfPath, 'utf8'), JSON.stringify(documentShelf), 'Reordering must not edit shelf registrations.');
