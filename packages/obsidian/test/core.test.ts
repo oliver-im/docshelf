@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, unlink, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { loadCatalog } from '../src/core/catalog';
+import { documentLabel, loadCatalog } from '../src/core/catalog';
 import { readBoundedFile } from '../src/core/files';
 import { createPermalink, parseProtocol, parseRange, checkRange } from '../src/core/protocol';
 import { renderMarkdown, sourceLines } from '../src/core/markdown';
@@ -145,4 +145,11 @@ test('search includes document contents and excludes scripts and styles', async 
   await search.replace([artifact], new Map([[artifact.id, '# Notes\n\nDistinctive zebracorn phrase.']]));
   assert.equal(search.search('zebracorn')[0].artifact.id, artifact.id);
   assert.equal(extractText('<body><h1>Visible</h1><script>secretjs</script><style>secretcss</style></body>'), 'Visible');
+});
+
+test('sidebar labels lead with filenames and keep only informative titles', () => {
+  assert.deepEqual(documentLabel({ kind: 'markdown', source: '../project/README.md', title: 'DocShelf' }), { name: 'README.md', title: 'DocShelf' });
+  assert.deepEqual(documentLabel({ kind: 'html', source: 'docs/project-review.html', title: 'Project review' }), { name: 'project-review.html', title: '' });
+  assert.deepEqual(documentLabel({ kind: 'github', source: 'https://github.com/owner/repo/blob/main/docs/My%20Guide.md', title: 'Setup' }), { name: 'My Guide.md', title: 'Setup' });
+  assert.deepEqual(documentLabel({ kind: 'claude', source: 'https://claude.ai/public/artifacts/00000000-0000-4000-8000-000000000000', title: 'Report' }), { name: 'Report', title: '' });
 });

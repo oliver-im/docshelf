@@ -4,8 +4,16 @@ import { createHash } from 'node:crypto';
 import { canonicalFile, readBoundedFile } from './files';
 import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
+import { distinctTitle } from '@docshelf/core/directories';
 import { MAX_REMOTE_BYTES, type Artifact, type Catalog } from './types';
 import { expandShelf } from '../../../local/shelf.mjs';
+
+/** Files are named by their filename, which is always present and matches the disk; a distinct inferred title is secondary. */
+export function documentLabel(artifact: Pick<Artifact, 'kind' | 'source' | 'title'>): { name: string; title: string } {
+  if (artifact.kind === 'claude') return { name: artifact.title, title: '' };
+  const name = artifact.kind === 'github' ? parseGitHubMarkdownUrl(artifact.source)?.fileName || '' : artifact.source.split(/[\\/]/).pop() || '';
+  return name ? { name, title: distinctTitle(artifact.title, name) } : { name: artifact.title, title: '' };
+}
 
 export const ASSET_TYPES: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',

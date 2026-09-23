@@ -74,7 +74,7 @@ every registered file to be available.
 - `source` is absolute or relative to the shelf JSON file. Supported local
   extensions are `.md`, `.markdown`, `.html`, and `.htm`.
 - `route` is a stable, unique relative `.html` path, including for Markdown.
-- `project` and `title` label the sidebar groups and document rows.
+- `project` labels the sidebar group. Document rows show the source filename, followed by a muted `title` when it says more than the filename. Claude Artifacts, which have no filename, show `title` alone.
 - Optional `description` adds searchable metadata. It may be omitted or empty.
   Search results use it as an excerpt when document contents are unavailable.
 - Optional `assets` lists individual files relative to the source document's
@@ -204,7 +204,7 @@ explicit asset list. HTML and remote sources remain read-only.
 
 ## Search and remote sources
 
-The sidebar and **DocShelf: Search documents** search titles, project names,
+The sidebar and **DocShelf: Search documents** search titles, filenames, project names,
 descriptions, and local Markdown/HTML contents. Script and style contents are
 excluded. Search indexing uses at most 16 million source characters per refresh
 and 200,000 extracted characters per document; remaining metadata stays
