@@ -15,6 +15,10 @@ export const DOCUMENT_VIEW = 'docshelf-document';
 interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
 interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown> }
 
+declare global {
+  interface HTMLElementTagNameMap { webview: Webview }
+}
+
 export class DocumentView extends ItemView {
   artifact: Artifact | null = null;
   range: LineRange | null = null;
@@ -179,9 +183,8 @@ export class DocumentView extends ItemView {
   }
 
   private renderWebview(url: string, remote: boolean): void {
-    // Obsidian's createEl typings do not include Electron's custom webview element.
-    // eslint-disable-next-line obsidianmd/prefer-create-el -- Create the isolated guest in this view's own document.
-    const webview = this.body.ownerDocument.createElement('webview') as Webview;
+    // Keep the guest detached in this view's document until its guards are ready.
+    const webview = this.body.ownerDocument.adoptNode(createEl('webview'));
     webview.addClass('docshelf-webview');
     webview.setAttribute('partition', remote ? this.remotePartition : this.localPartition);
     webview.setAttribute('webpreferences', 'contextIsolation=yes,sandbox=yes,nodeIntegration=no,webSecurity=yes');
