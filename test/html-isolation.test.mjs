@@ -24,11 +24,10 @@ test('HTML isolation is fail-closed and only exempts known rendered Markdown', (
 const executablePath = process.env.DOCSHELF_TEST_BROWSER || [
   '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  // Ubuntu's chromium commands are snap wrappers whose cold start can exceed the launch timeout.
   '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
 ].find(file => existsSync(file));
 
-test('interactive HTML cannot read capabilities or register paths, framed or opened directly', { skip: !executablePath, timeout: 60000 }, async t => {
+test('interactive HTML cannot read capabilities or register paths, framed or opened directly', { skip: !executablePath, timeout: 150000 }, async t => {
   const calls = [];
   const handler = createLocalActionsHandler({ listenHost: '127.0.0.1', registration: async body => { calls.push(body); return { ok: true }; } });
   const artifact = { format: 'html', sourcePath: '/fixture/report.html', route: 'report.html' };
@@ -69,7 +68,8 @@ test('interactive HTML cannot read capabilities or register paths, framed or ope
   await new Promise(resolve => server.listen({ port: 0, host: '127.0.0.1', signal: t.signal }, resolve));
   t.signal.throwIfAborted();
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const launching = chromium.launch({ executablePath, headless: true, timeout: 30000 });
+  // Cold starts on busy CI runners, with other test files running in parallel, have exceeded 30 seconds.
+  const launching = chromium.launch({ executablePath, headless: true, timeout: 90000 });
   // Register cleanup before awaiting startup: a test timeout does not cancel launch.
   // Await the bounded launch so even a browser that starts after cancellation is closed.
   t.after(async () => {
