@@ -14,6 +14,9 @@ test('HTML isolation is fail-closed and only exempts known rendered Markdown', (
   assert.equal(artifactContentSecurityPolicy('artifacts/notes.html', markdown), undefined);
   assert.equal(artifactContentSecurityPolicy('index.html', markdown), undefined);
   assert.match(artifactContentSecurityPolicy('artifacts/notes.html'), /^sandbox /);
+  for (const route of ['ARTIFACTS/report.html', 'Artifacts/report.HTML', 'ARTIFACTS/notes.html', 'artifacts/NOTES.html']) {
+    assert.match(artifactContentSecurityPolicy(route, markdown), /^sandbox /, route);
+  }
   assert.ok(!htmlSandbox.includes('allow-same-origin'));
   assert.ok(!htmlSandbox.includes('allow-popups-to-escape-sandbox'));
 });
@@ -49,7 +52,8 @@ test('interactive HTML cannot read capabilities or register paths, framed or ope
       response.setHeader('Content-Type', 'text/html');
       const policy = artifactContentSecurityPolicy(pathname.slice(1));
       if (policy) response.setHeader('Content-Security-Policy', policy);
-      if (pathname.startsWith('/artifacts/')) response.end(html);
+      // Model the same file being served through differently cased URLs on macOS/Windows.
+      if (/^\/artifacts\//i.test(pathname)) response.end(html);
       else response.end(`<html data-theme="light"><body><iframe sandbox="${htmlSandbox}" src="/artifacts/report.html"></iframe><script>
         window.docshelfBridgeMessages = [];
         addEventListener('message', event => {
@@ -75,11 +79,13 @@ test('interactive HTML cannot read capabilities or register paths, framed or ope
   await frame.locator('a').click();
   await page.waitForFunction(() => window.docshelfBridgeMessages.some(message => message.type === 'docshelf-navigate' && message.route === 'notes.html' && message.hash === '#example'));
   const direct = await browser.newPage();
-  const response = await direct.goto(`${origin}/artifacts/report.html`);
-  assert.equal(response.headers()['content-security-policy'], `sandbox ${htmlSandbox}`);
-  const standalone = await direct.evaluate(() => window.probe);
-  assert.equal(standalone.capabilities, false);
-  assert.equal(standalone.storage, false);
+  for (const route of ['artifacts/report.html', 'ARTIFACTS/report.html', 'Artifacts/report.HTML']) {
+    const response = await direct.goto(`${origin}/${route}`);
+    assert.equal(response.headers()['content-security-policy'], `sandbox ${htmlSandbox}`, route);
+    const standalone = await direct.evaluate(() => window.probe);
+    assert.equal(standalone.capabilities, false, route);
+    assert.equal(standalone.storage, false, route);
+  }
   assert.deepEqual(calls, []);
   // The trusted interface still has access to the same endpoint.
   assert.equal(await page.evaluate(async () => (await fetch('/__docshelf/local-actions', { headers: { 'X-DocShelf-Request': 'document-actions' } })).status), 200);

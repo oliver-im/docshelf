@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "playwright-core": "^1.55.0",
     "typescript": "^6.0.3"
   },
   "workspaces": [

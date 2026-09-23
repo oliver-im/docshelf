@@ -19,9 +19,9 @@ export class SourceWatcher {
   }
 
   signature = '';
-  /** @param {string[]} sources @param {Array<any>} [directories] */
-  async update(sources, directories = []) {
-    const scope = await watchScope(sources, directories);
+  /** @param {string[]} sources @param {Array<any>} [directories] @param {{ ignore?: string[] }} [options] */
+  async update(sources, directories = [], options = {}) {
+    const scope = await watchScope(sources, directories, options);
     if (this.closed || this.watcher && this.signature === scope.signature) return;
     await this.watcher?.close();
     if (this.closed) return;

@@ -11,6 +11,8 @@ import {
   artifactSourcesMatch,
   docShelfRoot,
   defaultShelfPath,
+  generatedArtifactsRoot,
+  generatedShelfPath,
   loadShelf,
   localShelfPath,
   legacyLocalShelfPath,
@@ -295,7 +297,7 @@ async function refreshSourceWatches(existingShelf) {
   const shelf = existingShelf || (await loadShelf());
   await sourceWatcher.update(shelf.artifacts.flatMap(artifact =>
     !artifact.directoryId && artifact.sourcePath ? [path.resolve(docShelfRoot, artifact.source), artifact.sourcePath] : [],
-  ), shelf.directories || []);
+  ), shelf.directories || [], { ignore: [generatedArtifactsRoot, path.dirname(generatedShelfPath)] });
 }
 
 async function findLatestBuild() {

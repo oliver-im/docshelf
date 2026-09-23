@@ -2,8 +2,8 @@ import { htmlSandbox } from '../src/lib/html-sandbox.js';
 
 /** Only trusted build metadata may exempt generated Markdown from HTML isolation. */
 export function artifactContentSecurityPolicy(servedPath, markdownRoutes = new Set()) {
-  if (!servedPath.startsWith('artifacts/') || !/\.html?$/i.test(servedPath)) return undefined;
-  if (markdownRoutes.has(servedPath.slice('artifacts/'.length))) return undefined;
+  if (!/^artifacts\//i.test(servedPath) || !/\.html?$/i.test(servedPath)) return undefined;
+  if (servedPath.startsWith('artifacts/') && markdownRoutes.has(servedPath.slice('artifacts/'.length))) return undefined;
   return `sandbox ${htmlSandbox}`;
 }
 

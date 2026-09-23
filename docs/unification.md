@@ -64,7 +64,7 @@ neutral scheme needs an installed dispatcher and an explicit host preference.
 | Capability | DocShelf Web | DocShelf for Obsidian |
 | --- | --- | --- |
 | Local Markdown | Rendered snapshot, read-only | Native editor; saves the original with conflict checks |
-| Local HTML | Generated snapshot on the web origin | Isolated read-only webview, document-scoped access |
+| Local HTML | Generated snapshot in an opaque sandboxed frame; origin-dependent APIs such as local storage are unavailable | Isolated read-only webview, document-scoped access |
 | Public GitHub Markdown | Browser import stored in that origin's browser storage | Explicit shelf registration, fetched read-only |
 | Published Claude Artifact | Cross-origin embed; requires allowed-domain setup | Top-level isolated webview |
 | Neighboring assets | Only assets already published under the web app's `public/` directory | Explicit per-document `assets` registration |
