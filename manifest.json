@@ -1,7 +1,7 @@
 {
   "id": "docshelf",
   "name": "DocShelf",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "minAppVersion": "1.13.7",
   "description": "Edit registered external Markdown, browse HTML reports, and share source-line links.",
   "author": "DocShelf contributors",

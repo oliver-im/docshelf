@@ -288,7 +288,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
       icon.setAttribute('viewBox', '0 0 24 24');
       icon.setAttribute('aria-hidden', 'true');
       for (const x of [5, 12, 19]) {
-        const dot = document.createElementNS(icon.namespaceURI!, 'circle');
+        const dot = document.createElementNS(icon.namespaceURI, 'circle');
         dot.setAttribute('cx', String(x)); dot.setAttribute('cy', '12'); dot.setAttribute('r', '1.6');
         icon.append(dot);
       }
