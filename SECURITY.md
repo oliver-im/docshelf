@@ -23,9 +23,7 @@ but use different rendering and file-access boundaries.
 
 ### DocShelf Web and its local server
 
-- Registered local HTML is trusted content. It may execute scripts with the same
-  origin and permissions as DocShelf. Registering malicious HTML is outside the
-  security model unless it bypasses a documented containment boundary.
+- Registered local HTML may run scripts, but only inside an opaque sandbox (`allow-scripts allow-forms allow-downloads allow-popups`, without `allow-same-origin`). The viewer frames it with that sandbox, and the loopback watcher and development server also send it as a `Content-Security-Policy` header, including for direct artifact URLs. Sandboxed HTML cannot read DocShelf's storage or DOM or use its local actions; navigation and theme changes pass through narrowly scoped messages. Static hosts that cannot send headers rely on the frame sandbox alone.
 - Local sources must remain within the workspace root, the parent directory of
   DocShelf unless `DOCSHELF_WORKSPACE` names another directory, or within the
   DocShelf checkout itself. The web app must never modify those sources.
@@ -48,13 +46,7 @@ but use different rendering and file-access boundaries.
   added to a shelf file.
 - Generated cleanup is limited to marked runtime output and the managed
   symlink tree.
-- The macOS loopback watcher can reveal a registered local source in Finder.
-  This requires a same-origin JSON POST with a watcher-specific token and a
-  custom request header. The server resolves the registered route and rechecks
-  workspace containment; it does not accept paths or shell commands from the
-  browser. Local actions are disabled on non-loopback listeners and never
-  included in static hosting. As with the shelf itself, trusted local HTML has
-  access to same-origin capabilities.
+- The loopback watcher offers local actions: revealing a registered source in Finder on macOS, and adding or removing shelf registrations. Each requires a same-origin JSON POST with a watcher-specific token and a custom request header. Reveal resolves a registered route and never accepts a path. Add accepts paths, then applies the shared registration checks: workspace containment, relative saved sources, locked baseline revisions, and bounded folder discovery that skips descendant symlinks. Removal changes only the shelf file. No action accepts shell commands, and local actions are disabled on non-loopback listeners and never included in static hosting.
 - The watcher binds to loopback by default and restricts loopback Host headers.
   Setting `DOCSHELF_HOST` to a non-loopback interface deliberately exposes the
   shelf to that network and does not add authentication or transport
