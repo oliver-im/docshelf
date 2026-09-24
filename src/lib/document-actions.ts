@@ -2,10 +2,11 @@ import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import './document-actions.css';
 
-/** A project heading, or a folder row inside it named by its folder path. */
+/** A project heading, or a folder row inside it identified independently of its display name. */
 export interface ShelfGroup {
   project: string;
-  folder?: string[];
+  folder?: string;
+  name?: string;
 }
 
 interface DocumentArtifact {
@@ -205,7 +206,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
     title.textContent = 'Remove from shelf?';
     const description = document.createElement('p');
     description.id = 'docshelf-remove-description';
-    description.textContent = describe('artifact' in target ? target.artifact.title : target.folder?.join('/') || target.project);
+    description.textContent = describe('artifact' in target ? target.artifact.title : target.name || target.project);
     const detail = document.createElement('p');
     detail.textContent = imported ? 'This removes the import from this browser. You can add it again later.' : 'Checking registration…';
     const error = document.createElement('p');
@@ -228,7 +229,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
       const response = await fetch(`${options.basePath}__docshelf/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DocShelf-Request': 'document-actions', 'X-DocShelf-Token': token! },
-        body: JSON.stringify({ action, ...('artifact' in target ? { route: target.artifact.route } : target), revision }),
+        body: JSON.stringify({ action, ...('artifact' in target ? { route: target.artifact.route } : { project: target.project, folder: target.folder }), revision }),
       });
       const result = await responseRecord(response);
       if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `Could not remove the ${kind}.`);

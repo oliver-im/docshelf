@@ -26,7 +26,7 @@ import { renderMarkdownArtifact } from './markdown.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { normalizeBasePath } from './site-path.mjs';
 import { acquireSyncLock, describeLockOwner, isProcessAlive } from './watcher-lock.mjs';
-import { documentFolders, expandShelf } from '../packages/local/shelf.mjs';
+import { documentFolders, documentLayout, expandShelf } from '../packages/local/shelf.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const docShelfRoot = path.resolve(scriptsDirectory, '..');
@@ -299,26 +299,34 @@ export function shelfFolders(shelf) {
   );
 }
 
-/**
- * @typedef {{ label: string, link: string } | { label: string, items: SidebarItem[] }} SidebarItem
- */
+/** @param {Shelf} shelf */
+function shelfTrees(shelf) {
+  const layout = documentLayout(shelf.artifacts.map(artifact => ({ project: artifact.project, path: artifact.sourcePath })), shelf.directories || []);
+  const projects = new Set([...shelf.artifacts.map(artifact => artifact.project), ...layout.directories.map(directory => directory.project)]);
+  return [...projects].map(project => ({
+    project,
+    nodes: documentTree(shelf.artifacts.flatMap((item, index) => item.project === project ? [{ item, folders: layout.documents[index] }] : []), layout.directories.filter(directory => directory.project === project).map(directory => directory.folders)),
+  }));
+}
 
-/**
- * Group documents by project, then nest each project's folder documents as they sit on disk.
- *
- * @param {Shelf} shelf
- * @returns {Array<{ label: string, items: SidebarItem[] }>}
- */
+/** Stable folder identities in the same preorder as the rendered sidebar, including empty registrations.
+ * @param {Shelf} shelf */
+export function shelfFolderGroups(shelf) {
+  /** @param {import('@docshelf/core/directories').DocumentTreeNode<Artifact>[]} nodes @returns {Array<{ key: string, name: string, title: string }>} */
+  const folders = nodes => nodes.flatMap(node => node.type === 'folder' ? [{ key: node.key, name: node.name, title: node.path.join('/') }, ...folders(node.children)] : []);
+  return shelfTrees(shelf).map(({ project, nodes }) => ({ project, folders: folders(nodes) }));
+}
+
+/** @typedef {{ label: string, link: string } | { label: string, items: SidebarItem[], badge?: { text: string, variant: 'note', class: string } }} SidebarItem */
+
+/** Group documents and registered folders by project, retaining empty registrations.
+ * @param {Shelf} shelf @returns {Array<{ label: string, items: SidebarItem[] }>} */
 export function shelfSidebar(shelf) {
-  const folders = shelfFolders(shelf);
   /** @param {import('@docshelf/core/directories').DocumentTreeNode<Artifact>[]} nodes @returns {SidebarItem[]} */
-  const items = (nodes) => nodes.map((node) => node.type === 'folder'
-    ? { label: node.name, items: items(node.children) }
+  const items = nodes => nodes.map(node => node.type === 'folder'
+    ? { label: node.name, items: items(node.children), ...(node.registered && !node.count ? { badge: { text: 'No documents', variant: /** @type {const} */ ('note'), class: 'docshelf-folder-empty' } } : {}) }
     : { label: artifactFileName(node.item), link: artifactUrl(node.item) });
-  return Array.from(
-    Map.groupBy(shelf.artifacts.map((item, index) => ({ item, folders: folders[index] })), (entry) => entry.item.project),
-    ([label, entries]) => ({ label, items: items(documentTree(entries)) }),
-  );
+  return shelfTrees(shelf).map(({ project, nodes }) => ({ label: project, items: items(nodes) }));
 }
 
 /**
@@ -459,6 +467,7 @@ async function writeGeneratedShelf(shelf, revisionState) {
   const generatedShelf = {
     version: shelf.version,
     shelfRevision: revisionState.shelfRevision,
+    folderGroups: shelfFolderGroups(shelf),
     artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
       project,
       route,
@@ -731,8 +740,9 @@ function createRevisionState(shelf, artifacts) {
       JSON.stringify(artifacts.map(({ route, revision }) => ({ route, revision }))),
     ),
     shelfRevision: contentRevision(
-      JSON.stringify(
-        shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
+      JSON.stringify({
+        folderGroups: shelfFolderGroups(shelf),
+        artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
           project,
           route,
           title,
@@ -741,7 +751,7 @@ function createRevisionState(shelf, artifacts) {
           ...(embedUrl ? { embedUrl } : {}),
           ...(folders[index].length ? { folders: folders[index] } : {}),
         })),
-      ),
+      }),
     ),
     artifacts,
   };

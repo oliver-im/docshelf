@@ -155,44 +155,47 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
 
 /** @typedef {{ project: string, source: string, sourcePath: string, canonicalPath?: string }} PlacedDirectory */
 
-/** Place each local document under the outermost watched folder of its own project that contains it, mirroring the disk.
- * Remote documents and files outside those folders stay at the project root. A project whose documents all sit in one
- * folder omits that folder's name; otherwise each folder is named by its basename, or by its source when basenames collide.
- * @template {PlacedDirectory} D
- * @param {Array<{ project: string, path?: string }>} documents Resolved local paths; remote documents omit them.
- * @param {D[]} directories Expanded folder registrations.
- * @returns {Array<{ folders: string[], directory?: D, root?: string, label?: string }>} In input order. */
-function placeDocuments(documents, directories) {
+/** Place local documents and explicit registrations in the same physical tree within each project.
+ * Folder identities use source paths independently of display names, document counts, and tree compaction.
+ * @param {Array<{ project: string, path?: string }>} documents
+ * @param {PlacedDirectory[]} directories
+ */
+export function documentLayout(documents, directories) {
+  const rootOf = (/** @type {PlacedDirectory} */ directory) => directory.canonicalPath || directory.sourcePath;
   const depth = (/** @type {string} */ value) => value.split(path.sep).length;
-  const placed = documents.map(({ project, path: file }) => {
-    /** @type {{ directory: D, root: string } | undefined} */
-    let best;
-    if (typeof file === 'string') for (const directory of directories) {
-      if (directory.project !== project.trim()) continue;
-      for (const root of new Set([directory.canonicalPath, directory.sourcePath])) {
-        if (root && file !== root && within(root, file) && (!best || depth(root) < depth(best.root))) best = { directory, root };
-      }
-    }
-    return { project: project.trim(), ...best, parts: best && typeof file === 'string' ? path.relative(best.root, path.dirname(file)).split(path.sep).filter(Boolean) : [] };
-  });
-  /** @type {Map<D, string | undefined>} */
-  const labels = new Map();
-  for (const project of new Set(placed.map(entry => entry.project))) {
-    const used = [...new Set(placed.filter(entry => entry.project === project).map(entry => entry.directory))];
-    if (used.length === 1 && used[0]) { labels.set(used[0], undefined); continue; }
-    const name = (/** @type {D} */ directory) => path.basename(directory.sourcePath) || directory.source;
-    for (const directory of used) if (directory) labels.set(directory, used.some(other => other && other !== directory && name(other) === name(directory)) ? directory.source : name(directory));
-  }
-  return placed.map(({ directory, root, parts }) => {
-    const label = directory && labels.get(directory);
-    return { folders: label ? [label, ...parts] : parts, directory, root, label };
-  });
+  const ordered = [...directories].sort((a, b) => depth(rootOf(a)) - depth(rootOf(b)) || a.source.localeCompare(b.source));
+  const outer = (/** @type {string} */ project, /** @type {string | undefined} */ folder) => folder === undefined ? undefined : ordered.find(directory => directory.project === project.trim() && within(rootOf(directory), folder));
+  const roots = [...new Set(directories.map(directory => outer(directory.project, rootOf(directory))))].filter(directory => directory !== undefined);
+  const name = (/** @type {PlacedDirectory} */ directory) => path.basename(directory.sourcePath) || directory.source;
+  const keyFor = (/** @type {string} */ project, /** @type {string} */ folder) => digest(JSON.stringify([project.trim(), folder]));
+  const registered = new Set(directories.map(directory => keyFor(directory.project, rootOf(directory))));
+  /** @type {Map<string, string>} */
+  const paths = new Map();
+  /** @param {string} project @param {string | undefined} folder @returns {import('../core/src/directories.js').FolderSegment[]} */
+  const place = (project, folder) => {
+    const directory = outer(project, folder);
+    if (!directory || folder === undefined) return [];
+    const root = rootOf(directory);
+    const label = roots.some(other => other !== directory && other.project === directory.project && name(other) === name(directory)) ? directory.source : name(directory);
+    const parts = path.relative(root, folder).split(path.sep).filter(Boolean);
+    return [label, ...parts].map((name, index) => {
+      const source = path.join(root, ...parts.slice(0, index));
+      const key = keyFor(project, source);
+      paths.set(key, source);
+      return { name, key, ...(registered.has(key) ? { registered: true } : {}) };
+    });
+  };
+  return {
+    documents: documents.map(document => place(document.project, document.path === undefined ? undefined : path.dirname(document.path))),
+    directories: directories.map(directory => ({ project: directory.project, folders: place(directory.project, rootOf(directory)) })),
+    paths,
+  };
 }
 
-/** Folder names for each document, in input order; see placeDocuments.
+/** Display folder names for each document, in input order.
  * @param {Array<{ project: string, path?: string }>} documents @param {PlacedDirectory[]} directories @returns {string[][]} */
 export function documentFolders(documents, directories) {
-  return placeDocuments(documents, directories).map(entry => entry.folders);
+  return documentLayout(documents, directories).documents.map(folders => folders.map(folder => folder.name));
 }
 
 /** The same preview/commit API is used by the Obsidian modal and loopback web interface. */
@@ -307,7 +310,7 @@ export async function removeProjectFromShelf(options, expectedRevision) {
 /** Remove one folder row: this project's documents listed under it and its folders inside it. Every folder still
  * registered that contains it, whatever its project, excludes it so files added there later stay off the shelf too. */
 export async function prepareFolderRemoval({ shelfPath, base = path.dirname(shelfPath), roots, project, folder, relativeOnly = false }) {
-  if (typeof project !== 'string' || !project.trim() || project.length > 8192 || !Array.isArray(folder) || !folder.length || folder.length > 64 || folder.some(part => typeof part !== 'string' || !part || part.length > 8192 || part.includes('\0'))) throw new Error('Choose a folder to remove.');
+  if (typeof project !== 'string' || !project.trim() || project.length > 8192 || typeof folder !== 'string' || !/^[a-f0-9]{64}$/.test(folder)) throw new Error('Choose a folder to remove.');
   const name = project.trim();
   const { shelfFile, baseline, config } = await readRegistration(shelfPath, roots);
   const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
@@ -316,19 +319,23 @@ export async function prepareFolderRemoval({ shelfPath, base = path.dirname(shel
     const source = path.resolve(base, entry.source);
     return realpath(source).catch(() => source);
   }));
-  const placed = placeDocuments(expanded.artifacts.map((entry, index) => ({ project: typeof entry?.project === 'string' ? entry.project : '', path: local[index] })), expanded.directories);
-  const key = JSON.stringify(folder);
-  const listed = placed.flatMap((entry, index) => entry.root && entry.directory?.project === name && JSON.stringify(entry.folders.slice(0, folder.length)) === key ? [index] : []);
-  const first = placed[listed[0]];
-  if (!first?.root) throw new Error('This folder changed or is no longer on the shelf. Close this dialog and try again.');
-  const target = path.join(first.root, ...folder.slice(first.label ? 1 : 0));
+  const layout = documentLayout(expanded.artifacts.map((entry, index) => ({ project: typeof entry?.project === 'string' ? entry.project : '', path: local[index] })), expanded.directories);
+  const candidates = [
+    ...layout.documents.filter((_, index) => expanded.artifacts[index]?.project?.trim() === name),
+    ...layout.directories.filter(entry => entry.project === name).map(entry => entry.folders),
+  ];
+  const selected = candidates.find(folders => folders.some(segment => segment.key === folder));
+  const target = layout.paths.get(folder);
+  if (!selected || !target) throw new Error('This folder changed or is no longer on the shelf. Close this dialog and try again.');
+  const title = selected.slice(0, selected.findIndex(segment => segment.key === folder) + 1).map(segment => segment.name).join('/');
+  const listed = layout.documents.flatMap((folders, index) => expanded.artifacts[index]?.project?.trim() === name && folders.some(segment => segment.key === folder) ? [index] : []);
   const documents = listed.map(index => expanded.artifacts[index]);
   const inside = new Set(expanded.directories.filter(entry => entry.project === name && within(target, entry.canonicalPath || entry.sourcePath)).map(entry => entry.id));
   config.directories = config.directories.filter(entry => !inside.has(entry.id));
   const excluded = excludeFolders(config, expanded.directories, [target]);
   const { canonical, changed } = await withoutDocuments(config, expanded.directories, base, documents);
   const revision = digest(JSON.stringify([baseline, name, folder, target, documents, canonical, config]));
-  return { shelfFile, baseline, config, revision, title: folder.join('/'), documents: documents.length, folders: inside.size, foldersExcluded: new Set([...excluded, ...changed]).size };
+  return { shelfFile, baseline, config, revision, title, documents: documents.length, folders: inside.size, foldersExcluded: new Set([...excluded, ...changed]).size };
 }
 
 export async function removeFolderFromShelf(options, expectedRevision) {

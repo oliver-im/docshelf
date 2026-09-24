@@ -4,7 +4,7 @@ import type { SearchHit } from '../core/search';
 import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
 import { documentLabel } from '../core/catalog';
-import { documentTree, type DocumentTreeNode } from '@docshelf/core/directories';
+import type { DocumentTreeNode, FolderSegment } from '@docshelf/core/directories';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
@@ -15,9 +15,9 @@ const stringList = (value: unknown): string[] => Array.isArray(value) ? [...new 
 const orderMap = (value: unknown): Map<string, string[]> => new Map(value && typeof value === 'object' && !Array.isArray(value)
   ? Object.entries(value).map(([key, names]) => [key, stringList(names)]) : []);
 type FolderNode = Extract<DocumentTreeNode<Artifact>, { type: 'folder' }>;
-/** A folder row is ordered among its siblings by its first folder name below the parent, which stays stable when merged rows split. */
-const childName = (node: FolderNode, parent: string[]): string => (JSON.parse(node.key) as string[])[parent.length];
-const siblingsKey = (project: string, parent: string[]): string => JSON.stringify([project, ...parent]);
+/** Keep the first folder's identity as its ordering key when single-folder rows merge or split. */
+const childKey = (node: FolderNode): string => node.orderKey;
+const siblingsKey = (project: string, parent: string): string => JSON.stringify([project, parent]);
 
 export class ShelfView extends ItemView {
   private query = '';
@@ -99,11 +99,11 @@ export class ShelfView extends ItemView {
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
-    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders]]);
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories]);
     if (key === this.renderedResults) return;
     this.renderedResults = key;
     this.results.empty();
-    if (!artifacts.length) {
+    if (!artifacts.length && !this.plugin.catalog?.directories?.length) {
       const empty = this.results.createDiv({ cls: 'docshelf-empty' });
       empty.createEl('h3', { text: 'Your documents, in one place' });
       empty.createEl('p', { text: 'Add files or folders. Documents stay in their projects and folders update automatically.' });
@@ -112,7 +112,7 @@ export class ShelfView extends ItemView {
       empty.createEl('button', { text: 'Create empty shelf file' }).onclick = () => { void this.plugin.createShelf(); };
       return;
     }
-    if (!hits.length) { this.results.createEl('p', { text: 'Try a title, project, or phrase from the content.', cls: 'docshelf-empty' }); return; }
+    if (searching && !hits.length) { this.results.createEl('p', { text: 'Try a title, project, or phrase from the content.', cls: 'docshelf-empty' }); return; }
     if (searching) {
       for (const hit of hits) this.renderItem(this.results, hit, true, folders.get(hit.artifact.route) || []);
       return;
@@ -124,6 +124,7 @@ export class ShelfView extends ItemView {
       if (!groups.has(project)) groups.set(project, []);
       groups.get(project)!.push(hit);
     }
+    for (const directory of this.plugin.catalog?.directories || []) if (!groups.has(directory.project)) groups.set(directory.project, []);
     for (const project of this.orderedProjects(groups.keys())) {
       const documents = groups.get(project)!;
       const group = this.results.createDiv({ cls: 'docshelf-project' });
@@ -196,18 +197,19 @@ export class ShelfView extends ItemView {
         this.app.workspace.requestSaveLayout();
       };
       const ordered = this.orderedDocuments(project, documents.map(hit => hit.artifact));
-      this.renderTree(items, project, documentTree(ordered.map(artifact => ({ item: artifact, folders: folders.get(artifact.route) || [] }))));
+      this.renderTree(items, project, this.plugin.projectTree(project, ordered), folders);
     }
   }
 
-  private renderTree(parent: HTMLElement, project: string, nodes: DocumentTreeNode<Artifact>[], path: string[] = []): void {
-    for (const node of this.orderedFolders(project, path, nodes)) {
+  private renderTree(parent: HTMLElement, project: string, nodes: DocumentTreeNode<Artifact>[], folders: Map<string, FolderSegment[]>, parentKey = ROOT_FOLDER): void {
+    for (const node of this.orderedFolders(project, parentKey, nodes)) {
       const collapseKey = JSON.stringify([project, node.key]);
       const folder = parent.createDiv({ cls: 'docshelf-folder' });
       const toggle = folder.createEl('button', { cls: 'docshelf-folder-toggle', attr: { type: 'button', 'aria-expanded': String(!this.collapsedFolders.has(collapseKey)), 'aria-description': 'Drag to reorder folders. Press Shift+F10 for folder actions.' } });
       setIcon(toggle.createSpan({ cls: 'docshelf-project-chevron', attr: { 'aria-hidden': 'true' } }), 'chevron-right');
       setIcon(toggle.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), 'folder');
       toggle.createSpan({ text: node.name, cls: 'docshelf-folder-name' });
+      if (node.registered && !node.count) toggle.createSpan({ text: 'No documents', cls: 'docshelf-folder-empty' });
       toggle.dataset.project = project;
       toggle.dataset.folder = node.key;
       setTooltip(toggle, node.name, { placement: 'right' });
@@ -220,31 +222,30 @@ export class ShelfView extends ItemView {
         else this.collapsedFolders.delete(collapseKey);
         this.app.workspace.requestSaveLayout();
       };
-      this.makeFolderSortable(folder, toggle, project, path, node);
-      const showMenu = () => this.showFolderMenu(project, path, node, toggle);
+      this.makeFolderSortable(folder, toggle, project, parentKey, node);
+      const showMenu = () => this.showFolderMenu(project, parentKey, node, toggle);
       toggle.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); showMenu(); });
       toggle.addEventListener('keydown', event => {
         if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); event.stopPropagation(); showMenu(); }
       });
-      this.renderTree(items, project, node.children, JSON.parse(node.key) as string[]);
+      this.renderTree(items, project, node.children, folders, node.key);
     }
     // Folders stay above the documents beside them.
-    for (const node of nodes) if (node.type === 'document') this.renderItem(parent, { artifact: node.item, excerpt: '' }, false, path);
+    for (const node of nodes) if (node.type === 'document') this.renderItem(parent, { artifact: node.item, excerpt: '' }, false, folders.get(node.item.route) || []);
   }
 
   /** Folder rows under one parent: saved order first, then the rest alphabetically as the tree lists them. */
-  private orderedFolders(project: string, parent: string[], nodes: DocumentTreeNode<Artifact>[]): FolderNode[] {
+  private orderedFolders(project: string, parent: string, nodes: DocumentTreeNode<Artifact>[]): FolderNode[] {
     const folders = nodes.filter((node): node is FolderNode => node.type === 'folder');
     const order = this.folderOrder.get(siblingsKey(project, parent)) || [];
-    const byName = new Map(folders.map(node => [childName(node, parent), node]));
+    const byKey = new Map(folders.map(node => [childKey(node), node]));
     const saved = new Set(order);
-    return [...order.flatMap(name => byName.has(name) ? [byName.get(name)!] : []), ...folders.filter(node => !saved.has(childName(node, parent)))];
+    return [...order.flatMap(name => byKey.has(name) ? [byKey.get(name)!] : []), ...folders.filter(node => !saved.has(childKey(node)))];
   }
 
-  /** Names of the folder rows under one parent, read from the live catalog in display order. */
-  private siblingFolders(project: string, parent: string[]): string[] {
-    const folders = this.plugin.documentFolders();
-    const key = JSON.stringify(parent);
+  /** Stable ordering keys of the folder rows under one parent, read from the live catalog in display order. */
+  private siblingFolders(project: string, parent: string): string[] {
+    const key = parent;
     const find = (nodes: DocumentTreeNode<Artifact>[]): DocumentTreeNode<Artifact>[] | undefined => {
       for (const node of nodes) if (node.type === 'folder') {
         if (node.key === key) return node.children;
@@ -252,12 +253,12 @@ export class ShelfView extends ItemView {
         if (found) return found;
       }
     };
-    const tree = documentTree(this.orderedDocuments(project).map(artifact => ({ item: artifact, folders: folders.get(artifact.route) || [] })));
-    const children = parent.length ? find(tree) : tree;
-    return children ? this.orderedFolders(project, parent, children).map(node => childName(node, parent)) : [];
+    const tree = this.plugin.projectTree(project, this.orderedDocuments(project));
+    const children = parent === ROOT_FOLDER ? tree : find(tree);
+    return children ? this.orderedFolders(project, parent, children).map(node => childKey(node)) : [];
   }
 
-  private saveSiblingFolders(project: string, parent: string[], order: string[], focusKey: string): void {
+  private saveSiblingFolders(project: string, parent: string, order: string[], focusKey: string): void {
     const key = siblingsKey(project, parent);
     if (order.length) this.folderOrder.set(key, order);
     else this.folderOrder.delete(key);
@@ -266,17 +267,17 @@ export class ShelfView extends ItemView {
     Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-folder-toggle')).find(button => button.dataset.project === project && button.dataset.folder === focusKey)?.focus();
   }
 
-  private showFolderMenu(project: string, parent: string[], node: FolderNode, toggle: HTMLButtonElement): void {
+  private showFolderMenu(project: string, parent: string, node: FolderNode, toggle: HTMLButtonElement): void {
     const menu = this.createMenu(project);
-    this.addMoveActions(menu, childName(node, parent), () => this.siblingFolders(project, parent), order => this.saveSiblingFolders(project, parent, order, node.key));
+    this.addMoveActions(menu, childKey(node), () => this.siblingFolders(project, parent), order => this.saveSiblingFolders(project, parent, order, node.key));
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project, folder: JSON.parse(node.key) as string[] })));
+    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project, folder: node.key, name: node.path.join('/') })));
     this.showMenu(menu, toggle);
   }
 
-  private makeFolderSortable(folder: HTMLElement, toggle: HTMLButtonElement, project: string, parent: string[], node: FolderNode): void {
+  private makeFolderSortable(folder: HTMLElement, toggle: HTMLButtonElement, project: string, parent: string, node: FolderNode): void {
     const siblings = siblingsKey(project, parent);
-    const name = childName(node, parent);
+    const name = childKey(node);
     toggle.draggable = true;
     toggle.addEventListener('dragstart', event => {
       if (!event.dataTransfer) { event.preventDefault(); return; }
@@ -323,20 +324,20 @@ export class ShelfView extends ItemView {
   /** Documents directly inside one folder, in display order. */
   private folderDocuments(project: string, folder: string): string[] {
     const folders = this.plugin.documentFolders();
-    return this.orderedDocuments(project).filter(artifact => JSON.stringify(folders.get(artifact.route) || []) === folder).map(artifact => artifact.route);
+    return this.orderedDocuments(project).filter(artifact => (folders.get(artifact.route)?.at(-1)?.key || ROOT_FOLDER) === folder).map(artifact => artifact.route);
   }
 
   /** Reorder one folder's documents within the positions they already hold in the project order. */
   private saveFolderDocuments(project: string, folder: string, order: string[], focusRoute: string): void {
     const folders = this.plugin.documentFolders();
     const routes = this.orderedDocuments(project).map(artifact => artifact.route);
-    const inFolder = (route: string) => JSON.stringify(folders.get(route) || []) === folder;
+    const inFolder = (route: string) => (folders.get(route)?.at(-1)?.key || ROOT_FOLDER) === folder;
     if (routes.filter(inFolder).length !== order.length) return;
     const next = [...order];
     this.saveDocumentOrder(project, routes.map(route => inFolder(route) ? next.shift()! : route), focusRoute);
   }
 
-  private orderedProjects(names: Iterable<string> = (this.plugin.catalog?.artifacts || []).map(artifact => artifact.project)): string[] {
+  private orderedProjects(names: Iterable<string> = [...(this.plugin.catalog?.artifacts || []), ...(this.plugin.catalog?.directories || [])].map(entry => entry.project)): string[] {
     const projects = [...new Set(names)].sort((a, b) => a.localeCompare(b));
     const available = new Set(projects);
     const saved = new Set(this.projectOrder);
@@ -502,12 +503,12 @@ export class ShelfView extends ItemView {
     if (this.renderAfterDrag) { this.renderAfterDrag = false; this.renderResults(); }
   }
 
-  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean, folders: string[]): void {
+  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean, folders: FolderSegment[]): void {
     const kind = { markdown: 'Markdown', html: 'HTML', github: 'GitHub Markdown', claude: 'Claude artifact' }[artifact.kind];
     const icon = { markdown: 'file-text', html: 'file-code', github: 'github', claude: 'globe' }[artifact.kind];
     const label = documentLabel(artifact);
-    const folder = JSON.stringify(folders);
-    const location = [artifact.project, ...folders.length ? [folders.join('/')] : []].join(' › ');
+    const folder = folders.at(-1)?.key || ROOT_FOLDER;
+    const location = [artifact.project, ...folders.length ? [folders.map(folder => folder.name).join('/')] : []].join(' › ');
     const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [label.title, kind, searching ? location : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
     button.toggleClass('docshelf-search-result', searching);
     button.dataset.route = artifact.route;

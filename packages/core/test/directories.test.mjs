@@ -36,22 +36,32 @@ test('common generated trees are skipped as descendants, never as selected roots
   assert.equal(excludedPath(''), false);
 });
 
+const segments = names => names.map((name, index) => ({ name, key: names.slice(0, index + 1).join(':') }));
+const outline = nodes => nodes.map(node => node.type === 'folder' ? { [node.name]: outline(node.children) } : node.item);
+
 test('document trees list folders first, keep document order, and merge single-folder chains', () => {
   const tree = documentTree([
     { item: 'z.md', folders: [] },
-    { item: 'guide.md', folders: ['b', 'guides', 'v2'] },
+    { item: 'guide.md', folders: segments(['b', 'guides', 'v2']) },
     { item: 'a.md', folders: [] },
-    { item: 'note.md', folders: ['a'] },
-    { item: 'deep.md', folders: ['a', 'x', 'y'] },
+    { item: 'note.md', folders: segments(['a']) },
+    { item: 'deep.md', folders: segments(['a', 'x', 'y']) },
   ]);
-  assert.deepEqual(tree, [
-    { type: 'folder', name: 'a', key: '["a"]', children: [
-      { type: 'folder', name: 'x/y', key: '["a","x","y"]', children: [{ type: 'document', item: 'deep.md' }] },
-      { type: 'document', item: 'note.md' },
-    ] },
-    { type: 'folder', name: 'b/guides/v2', key: '["b","guides","v2"]', children: [{ type: 'document', item: 'guide.md' }] },
-    { type: 'document', item: 'z.md' },
-    { type: 'document', item: 'a.md' },
-  ]);
+  assert.deepEqual(outline(tree), [{ a: [{ 'x/y': ['deep.md'] }, 'note.md'] }, { 'b/guides/v2': ['guide.md'] }, 'z.md', 'a.md']);
+  assert.deepEqual([tree[1].key, tree[1].orderKey, tree[1].count], ['b:guides:v2', 'b', 1]);
   assert.deepEqual(documentTree([]), []);
+});
+
+test('registered folders retain empty rows and prevent compaction across their boundaries', () => {
+  const root = [{ name: 'Reports', key: 'root', registered: true }];
+  const nested = [...root, { name: 'Drafts', key: 'nested', registered: true }];
+  const empty = documentTree([], [root, nested]);
+  assert.deepEqual(outline(empty), [{ Reports: [{ Drafts: [] }] }]);
+  assert.equal(empty[0].count, 0);
+  const populated = documentTree([{ item: 'note.md', folders: nested }], [root, nested]);
+  assert.equal(populated[0].key, empty[0].key);
+  assert.equal(populated[0].children[0].key, empty[0].children[0].key);
+  assert.equal(populated[0].count, 1);
+  const renamed = documentTree([], [[{ ...root[0], name: 'Renamed' }]]);
+  assert.equal(renamed[0].key, empty[0].key);
 });

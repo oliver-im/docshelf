@@ -31,6 +31,7 @@ const blankFrameUrl = 'about:blank';
   class="docshelf-viewer"
   data-docshelf-viewer
   data-artifacts={JSON.stringify(artifacts)}
+  data-folder-groups={JSON.stringify(shelf.folderGroups)}
   data-shelf-revision={shelf.shelfRevision}
   data-docshelf-live-updates={String(liveUpdatesEnabled)}
 >
@@ -657,6 +658,19 @@ const blankFrameUrl = 'about:blank';
       const button = menuItem('Add…');
       const removeButton = menuItem('Remove from shelf…');
       menu.append(button, removeButton); sidebar.append(menu);
+      const folderGroups = JSON.parse(root.dataset.folderGroups || '[]') as Array<{ project: string; folders: Array<{ key: string; name: string; title: string }> }>;
+      for (const group of sidebar.querySelectorAll('ul.top-level > li > details')) {
+        const headings = Array.from(group.querySelectorAll<HTMLElement>('summary'));
+        const project = headings[0]?.querySelector('.large')?.textContent || '';
+        const folders = folderGroups.find(entry => entry.project === project)?.folders;
+        if (!folders || folders.length !== headings.length - 1) continue;
+        folders.forEach((folder, index) => {
+          const heading = headings[index + 1];
+          if (heading.querySelector('.large')?.textContent !== folder.name) return;
+          heading.dataset.docshelfFolder = folder.key;
+          heading.dataset.docshelfFolderName = folder.title;
+        });
+      }
       let project = '';
       let removal: ShelfGroup | undefined;
       let removalToken: string | undefined;
@@ -689,8 +703,8 @@ const blankFrameUrl = 'about:blank';
         const summary = target.closest('ul.top-level > li')?.querySelector(':scope > details > summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
         const heading = target.closest('summary');
-        const folder = heading && heading !== summary && heading.parentElement ? folderPath(heading.parentElement) : undefined;
-        removal = !project ? undefined : heading === summary ? { project } : folder ? { project, folder } : undefined;
+        const folder = heading instanceof HTMLElement ? heading.dataset.docshelfFolder : undefined;
+        removal = !project ? undefined : heading === summary ? { project } : folder ? { project, folder, name: (heading as HTMLElement).dataset.docshelfFolderName } : undefined;
         removalToken = undefined;
         removeButton.hidden = true;
         const request = ++opened;
@@ -711,19 +725,6 @@ const blankFrameUrl = 'about:blank';
         if (event.defaultPrevented || !(event.target instanceof HTMLElement) || !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return;
         event.preventDefault(); const rect = event.target.getBoundingClientRect(); show(event.target, rect.left, rect.bottom);
       });
-    }
-
-    /** A folder row's path is the part its documents' folder paths share: a row holding one subfolder
-     * and no documents merges with that subfolder, so its contents always diverge right below it. */
-    function folderPath(group: Element): string[] | undefined {
-      const paths = Array.from(group.querySelectorAll<HTMLAnchorElement>('a[href]'), (link) => {
-        const route = artifactRouteFromLink(link);
-        return artifacts.find((artifact) => artifact.route === route)?.folders;
-      });
-      if (!paths.length || paths.some((folders) => !folders?.length)) return undefined;
-      const shared = [...paths[0]!];
-      for (const folders of paths) while (shared.length && shared.some((part, index) => folders![index] !== part)) shared.pop();
-      return shared.length ? shared : undefined;
     }
 
     function addImportedSidebarLink(artifact: Artifact) {
@@ -1626,8 +1627,8 @@ const blankFrameUrl = 'about:blank';
     border-inline-start-color: transparent;
   }
 
-  /* Retain Starlight's sidebar shell for imports, without an empty disclosure. */
-  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty)) {
+  /* Hide only the empty fallback group; registered empty folders retain their actions. */
+  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty):not(:has(> details > summary .docshelf-folder-empty))) {
     display: none;
   }
 
@@ -1672,6 +1673,14 @@ const blankFrameUrl = 'about:blank';
 
   :global(#starlight__sidebar ul ul summary:hover .large) {
     color: var(--sl-color-white);
+  }
+
+  :global(#starlight__sidebar .docshelf-folder-empty) {
+    color: var(--sl-color-gray-3);
+    background: transparent;
+    border: 0;
+    font-size: var(--sl-text-xs);
+    font-weight: 400;
   }
 
   :global(#starlight__sidebar a[data-docshelf-current]) {

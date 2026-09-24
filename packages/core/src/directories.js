@@ -47,44 +47,55 @@ export function excludedPath(relative, exclude = []) {
   return parts.some(part => part.startsWith('.') || ignoredDirectoryNames.includes(part)) || exclude.some(rule => rule.startsWith('./') ? within(rule.slice(2)) : rule.includes('/') ? within(rule) : parts.includes(rule));
 }
 
+/** @typedef {{ name: string, key: string, registered?: boolean }} FolderSegment */
+
 /**
  * @template T
- * @typedef {{ type: 'folder', name: string, key: string, children: DocumentTreeNode<T>[] } | { type: 'document', item: T }} DocumentTreeNode
+ * @typedef {{ type: 'folder', name: string, key: string, orderKey: string, path: string[], registered: boolean, count: number, children: DocumentTreeNode<T>[] } | { type: 'document', item: T }} DocumentTreeNode
  */
 
 /**
  * @template T
- * @typedef {{ folders: Map<string, TreeBranch<T>>, documents: T[] }} TreeBranch
+ * @typedef {{ folders: Map<string, TreeBranch<T> & FolderSegment>, documents: T[] }} TreeBranch
  */
 
-/** Nest documents by folder. Folders come first alphabetically, and documents keep their given order.
- * A folder whose only content is one subfolder merges with it into a single `a/b` row.
- * A folder's key is `JSON.stringify` of its full path, which equals that of its own documents' `folders`.
+/** Nest documents by stable folder identity, retaining explicitly registered empty folders.
+ * Folders come first alphabetically, and documents keep their given order. Single-folder chains
+ * merge into an `a/b` row, stopping at registration boundaries. Labels never define identity.
  * @template T
- * @param {Array<{ item: T, folders: string[] }>} entries
+ * @param {Array<{ item: T, folders: FolderSegment[] }>} entries
+ * @param {FolderSegment[][]} [registrations]
  * @returns {DocumentTreeNode<T>[]} */
-export function documentTree(entries) {
+export function documentTree(entries, registrations = []) {
   /** @type {TreeBranch<T>} */
   const root = { folders: new Map(), documents: [] };
-  for (const { item, folders } of entries) {
+  /** @param {FolderSegment[]} folders */
+  const branchFor = folders => {
     let branch = root;
-    for (const name of folders) {
-      let next = branch.folders.get(name);
-      if (!next) branch.folders.set(name, next = { folders: new Map(), documents: [] });
+    for (const segment of folders) {
+      let next = branch.folders.get(segment.key);
+      if (!next) branch.folders.set(segment.key, next = { ...segment, folders: new Map(), documents: [] });
+      if (segment.registered) next.registered = true;
       branch = next;
     }
-    branch.documents.push(item);
-  }
+    return branch;
+  };
+  for (const folders of registrations) branchFor(folders);
+  for (const { item, folders } of entries) branchFor(folders).documents.push(item);
   /** @param {TreeBranch<T>} branch @param {string[]} parent @returns {DocumentTreeNode<T>[]} */
   const nodes = (branch, parent) => [
-    ...[...branch.folders].sort(([a], [b]) => a.localeCompare(b)).map(([name, folder]) => {
-      const path = [...parent, name];
-      while (!folder.documents.length && folder.folders.size === 1) {
-        const [[child, only]] = folder.folders;
-        path.push(child);
+    ...[...branch.folders.values()].sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key)).map(folder => {
+      const orderKey = folder.key;
+      const path = [...parent, folder.name];
+      while (!folder.registered && !folder.documents.length && folder.folders.size === 1) {
+        const [only] = folder.folders.values();
+        if (only.registered) break;
+        path.push(only.name);
         folder = only;
       }
-      return { type: /** @type {const} */ ('folder'), name: path.slice(parent.length).join('/'), key: JSON.stringify(path), children: nodes(folder, path) };
+      const children = nodes(folder, path);
+      const count = children.reduce((sum, child) => sum + (child.type === 'document' ? 1 : child.count), 0);
+      return { type: /** @type {const} */ ('folder'), name: path.slice(parent.length).join('/'), key: folder.key, orderKey, path, registered: !!folder.registered, count, children };
     }),
     ...branch.documents.map(item => ({ type: /** @type {const} */ ('document'), item })),
   ];

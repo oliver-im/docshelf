@@ -118,3 +118,26 @@ test('a folder membership change during a build prevents publishing the stale sn
   await writeFile(shelfPath, JSON.stringify({ ...config, directories: [] }));
   assert.equal(await implementation.artifactSourcesMatch(current, updated), false);
 });
+
+test('empty registrations generate sidebar identities and change the live shelf revision', async t => {
+  const { fixture, implementation } = await isolatedArtifacts(t);
+  const shelfPath = path.join(fixture, 'shelf.json');
+  const config = { version: 2, artifacts: [], directories: [] };
+  await writeFile(shelfPath, JSON.stringify(config));
+  const empty = await implementation.syncArtifacts(await implementation.loadShelfFrom(shelfPath));
+  await mkdir(path.join(fixture, 'reports'));
+  config.directories.push({ id: 'reports', source: 'reports', project: 'Reports' });
+  await writeFile(shelfPath, JSON.stringify(config));
+  const watched = await implementation.syncArtifacts(await implementation.loadShelfFrom(shelfPath));
+  assert.notEqual(watched.shelfRevision, empty.shelfRevision);
+  const generated = JSON.parse(await readFile(implementation.generatedShelfPath, 'utf8'));
+  assert.deepEqual(generated.artifacts, []);
+  assert.equal(generated.folderGroups[0].project, 'Reports');
+  const key = generated.folderGroups[0].folders[0].key;
+  assert.match(key, /^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(generated).includes(fixture), false, 'Generated folder IDs must not expose absolute source paths.');
+  await writeFile(path.join(fixture, 'reports/first.md'), '# First');
+  await implementation.syncArtifacts(await implementation.loadShelfFrom(shelfPath));
+  const populated = JSON.parse(await readFile(implementation.generatedShelfPath, 'utf8'));
+  assert.equal(populated.folderGroups[0].folders[0].key, key);
+});

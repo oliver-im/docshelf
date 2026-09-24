@@ -61,11 +61,12 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const expectedOutline = JSON.stringify([{ 'watched-documents': [{ nested: ['second.md'] }, 'first.md'] }, 'loose-document.md']);
   await poll(async () => JSON.stringify(await outline()) === expectedOutline, 'Folder documents did not nest as they sit on disk.');
   await page.screenshot({ path: '.local/runtime/directories-added.png' });
-  const folderToggle = page.locator(`.docshelf-folder-toggle[data-folder='${JSON.stringify(['watched-documents'])}']`);
+  const folderToggle = page.locator('.docshelf-folder-toggle[data-project="Watched project"]').filter({ has: page.getByText('watched-documents', { exact: true }) });
+  const folderId = await folderToggle.getAttribute('data-folder');
   await folderToggle.click();
   assert.equal(await folderToggle.getAttribute('aria-expanded'), 'false');
   assert.equal(await page.locator('.docshelf-item').filter({ hasText: 'Folder second' }).isVisible(), false);
-  assert.deepEqual(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().collapsedFolders), [JSON.stringify(['Watched project', JSON.stringify(['watched-documents'])])]);
+  assert.deepEqual(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().collapsedFolders), [JSON.stringify(['Watched project', folderId])]);
   await folderToggle.click();
   assert.equal(await page.locator('.docshelf-item').filter({ hasText: 'Folder second' }).isVisible(), true);
   // Reordering stays within a folder, so a document alone in its folder cannot move.
@@ -224,18 +225,21 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await mkdir(path.dirname(alphaNote));
   await writeFile(alphaNote, '# Alpha note\n');
   await page.evaluate(folder => app.plugins.getPlugin('docshelf').addSources([folder], 'Removable project'), directory);
-  const folderRow = name => page.locator(`.docshelf-folder-toggle[data-project="Removable project"][data-folder='${JSON.stringify([name])}']`);
-  const folderNames = () => page.evaluate(() => [...document.querySelectorAll('.docshelf-folder-toggle[data-project="Removable project"]')].map(toggle => toggle.textContent));
+  const folderRow = name => page.locator('.docshelf-folder-toggle[data-project="Removable project"]').filter({ has: page.getByText(name, { exact: true }) });
+  const folderNames = () => page.evaluate(() => [...document.querySelectorAll('.docshelf-folder-toggle[data-project="Removable project"]')].map(toggle => toggle.querySelector('.docshelf-folder-name').textContent).slice(1));
   const moveFolder = async (name, direction) => {
     await folderRow(name).click({ button: 'right' });
     await page.locator('.menu-item').filter({ hasText: new RegExp(`^Move ${direction}$`) }).click();
   };
   const savedFolderOrder = () => page.evaluate(() => app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().folderOrder);
   await poll(async () => JSON.stringify(await folderNames()) === JSON.stringify(['alpha', 'nested']), 'Project folders did not render alphabetically.');
+  const parentId = await folderRow('watched-documents').getAttribute('data-folder');
+  const alphaId = await folderRow('alpha').getAttribute('data-folder');
+  const nestedId = await folderRow('nested').getAttribute('data-folder');
   await moveFolder('nested', 'up');
   assert.deepEqual(await folderNames(), ['nested', 'alpha']);
   assert.equal(await folderRow('nested').evaluate(el => el === document.activeElement), true);
-  assert.deepEqual(await savedFolderOrder(), { [JSON.stringify(['Removable project'])]: ['nested', 'alpha'] });
+  assert.deepEqual(await savedFolderOrder(), { [JSON.stringify(['Removable project', parentId])]: [nestedId, alphaId] });
   await folderRow('alpha').dragTo(folderRow('nested'), { targetPosition: { x: 30, y: 2 } });
   assert.deepEqual(await folderNames(), ['alpha', 'nested']);
   await moveFolder('alpha', 'down');
@@ -248,7 +252,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).click();
   await page.waitForSelector('.docshelf-remove');
   await poll(() => page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).isEnabled(), 'Folder removal confirmation did not become ready.');
-  assert.match(await page.locator('.docshelf-remove').textContent(), /“alpha” folder[\s\S]*1 document from the shelf\. Files added to this folder later will stay off the shelf too\./);
+  assert.match(await page.locator('.docshelf-remove').textContent(), /“watched-documents\/alpha” folder[\s\S]*1 document from the shelf\. Files added to this folder later will stay off the shelf too\./);
   await page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).click();
   await poll(() => page.evaluate(file => !app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.sourcePath === file), alphaNote), 'Removing a folder left its document on the shelf.');
   assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories.find(entry => entry.project === 'Removable project').exclude, ['./alpha']);
@@ -270,6 +274,47 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.project === 'Removable project')), 'Removing a project left its documents on the shelf.');
   assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories, []);
   assert.equal(await readFile(path.join(directory, 'nested/second.md'), 'utf8'), '# Folder second\n');
+
+  // Explicit empty registrations remain in the same tree, preserving identity and collapse state.
+  const emptyRoot = path.join(workspace, 'empty-watched');
+  await mkdir(path.join(emptyRoot, 'unregistered'), { recursive: true });
+  await page.evaluate(folder => app.plugins.getPlugin('docshelf').addSources([folder], 'Empty project'), emptyRoot);
+  const emptyProject = page.locator('.docshelf-project-toggle[data-project="Empty project"]');
+  const emptyRow = page.locator('.docshelf-folder-toggle[data-project="Empty project"]');
+  await poll(() => emptyRow.isVisible(), 'An empty watched folder was hidden.');
+  assert.equal(await emptyRow.count(), 1, 'Unregistered empty descendants must remain hidden.');
+  assert.equal(await emptyRow.locator('.docshelf-folder-empty').textContent(), 'No documents');
+  assert.equal(await emptyProject.locator('.docshelf-project-count').textContent(), '0');
+  const emptyKey = await emptyRow.getAttribute('data-folder');
+  await emptyRow.click();
+  assert.equal(await emptyRow.getAttribute('aria-expanded'), 'false');
+  await poll(() => page.evaluate(() => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return plugin.watcher?._readyEmitted && !plugin.loading && !plugin.refreshPending && plugin.timer === null;
+  }), 'The empty folder watch did not finish starting.');
+  const newNote = path.join(emptyRoot, 'arrived.md');
+  await writeFile(newNote, '# Arrived later\n');
+  await poll(() => page.evaluate(file => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return plugin.catalog.artifacts.some(artifact => artifact.sourcePath === file) && !plugin.loading && !plugin.refreshPending && plugin.timer === null && plugin.watcher._pendingWrites.size === 0;
+  }, newNote), 'An empty folder stopped watching for documents.');
+  await poll(async () => await emptyRow.locator('.docshelf-folder-empty').count() === 0, 'The empty-folder label remained after discovery.');
+  assert.equal(await emptyRow.getAttribute('data-folder'), emptyKey);
+  assert.equal(await emptyRow.getAttribute('aria-expanded'), 'false', 'Discovery must preserve folder collapse state.');
+  await rm(newNote);
+  await poll(() => emptyRow.locator('.docshelf-folder-empty').isVisible(), 'The folder disappeared when its last document was removed.');
+  assert.equal(await emptyRow.getAttribute('data-folder'), emptyKey);
+  await page.screenshot({ path: '.local/runtime/empty-watched-folder.png' });
+  await emptyRow.press('Shift+F10');
+  await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).click();
+  await poll(() => page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).isEnabled(), 'Empty folder removal did not become ready.');
+  assert.match(await page.locator('.docshelf-remove').textContent(), /1 watched folder/);
+  await page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).click();
+  await poll(async () => await emptyProject.count() === 0, 'The last registration left an empty project behind.');
+  assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories, []);
+  await writeFile(newNote, '# After removal\n');
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  assert.equal(await page.evaluate(file => app.plugins.getPlugin('docshelf').catalog.artifacts.some(artifact => artifact.sourcePath === file), newNote), false);
 
   await rm(live);
   await writeFile(shelfPath, JSON.stringify(baseline));

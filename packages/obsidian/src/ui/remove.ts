@@ -2,8 +2,8 @@ import { Modal, Notice } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import { message, type Artifact } from '../core/types';
 
-/** A document, a project heading, or a folder row inside a project named by its folder path. */
-export type RemovalTarget = { artifact: Artifact } | { project: string; folder?: string[] };
+/** A document, a project heading, or a folder row inside a project identified independently of its display name. */
+export type RemovalTarget = { artifact: Artifact } | { project: string; folder?: string; name?: string };
 
 export class RemoveModal extends Modal {
   private closed = false;
@@ -14,17 +14,18 @@ export class RemoveModal extends Modal {
     const kind = 'artifact' in target ? 'document' : target.folder ? 'folder' : 'project';
     this.titleEl.setText('Remove from shelf?');
     this.contentEl.addClass('docshelf-remove');
-    this.contentEl.createEl('p', { text: 'artifact' in target
-      ? `Remove “${target.artifact.title}” from DocShelf? The original file or remote document will stay untouched.`
-      : target.folder
-        ? `Remove the “${target.folder.join('/')}” folder from DocShelf? Its original files will stay untouched.`
-        : `Remove the “${target.project}” project from DocShelf? Its original files and folders will stay untouched.` });
+    const describe = (name: string) => kind === 'document'
+      ? `Remove “${name}” from DocShelf? The original file or remote document will stay untouched.`
+      : kind === 'folder'
+        ? `Remove the “${name}” folder from DocShelf? Its original files will stay untouched.`
+        : `Remove the “${name}” project from DocShelf? Its original files and folders will stay untouched.`;
+    const description = this.contentEl.createEl('p', { text: describe('artifact' in target ? target.artifact.title : target.name || target.project) });
     const detail = this.contentEl.createEl('p', { cls: 'docshelf-muted', text: 'Checking registration…' });
     const folders = this.plugin.documentFolders();
     const affected = (artifact: Artifact) => {
       if ('artifact' in target) return artifact.source === target.artifact.source;
       const placed = folders.get(artifact.route) || [];
-      return artifact.project === target.project && (!target.folder || target.folder.every((part, index) => placed[index] === part));
+      return artifact.project === target.project && (!target.folder || placed.some(segment => segment.key === target.folder));
     };
     if (this.plugin.nativeViews().some(view => view.hasUnsavedEdits && view.artifact && affected(view.artifact))) {
       this.contentEl.createEl('p', { text: kind === 'document'
@@ -40,6 +41,7 @@ export class RemoveModal extends Modal {
     cancel.focus();
     void this.plugin.prepareRemove(target).then(prepared => {
       if (this.closed) return;
+      description.setText(describe(prepared.title));
       detail.setText(kind === 'document'
         ? prepared.foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.'
         : groupRemovalDetail(kind, prepared.documents, prepared.folders, prepared.foldersExcluded));
