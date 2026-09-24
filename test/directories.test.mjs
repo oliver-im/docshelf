@@ -161,6 +161,24 @@ test('web sidebar nests project folders and names a symlinked folder as selected
   assert.match(sidebar[0].items[0].items[1].link, /^\/artifacts\/folders\/project\/.+\.html$/);
 });
 
+test('web sidebar groups explicit documents and registered folders by trimmed project labels', async t => {
+  const f = await fixture(t);
+  f.config.directories[0].project = ' Project ';
+  f.config.directories[0].source = path.relative(docShelfRoot, path.join(f.base, 'docs'));
+  f.config.artifacts.push({ source: path.relative(docShelfRoot, path.join(f.base, 'docs/one.md')), route: 'one.html', title: 'First document', project: ' Project ' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const shelf = await loadShelfFrom(f.shelfPath, { workspaceRoot: f.base });
+  const sidebar = shelfSidebar(shelf);
+  assert.deepEqual(sidebar.map(group => group.label), ['Project']);
+  assert.deepEqual(sidebar[0].items.map(item => item.label), ['docs']);
+  assert.deepEqual(sidebar[0].items[0].items.map(item => item.label), ['nested', 'one.md']);
+  assert.equal(sidebar[0].items[0].badge, undefined);
+  const groups = shelfFolderGroups(shelf);
+  assert.deepEqual(groups.map(group => group.project), ['Project']);
+  assert.deepEqual(groups[0].folders.map(folder => folder.name), ['docs', 'nested']);
+  assert.equal(new Set(groups[0].folders.map(folder => folder.key)).size, 2);
+});
+
 test('empty registrations remain visible and removable without indexing empty descendants', async t => {
   const f = await fixture(t);
   await mkdir(path.join(f.base, 'empty/unregistered'), { recursive: true });

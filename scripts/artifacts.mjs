@@ -302,10 +302,10 @@ export function shelfFolders(shelf) {
 /** @param {Shelf} shelf */
 function shelfTrees(shelf) {
   const layout = documentLayout(shelf.artifacts.map(artifact => ({ project: artifact.project, path: artifact.sourcePath })), shelf.directories || []);
-  const projects = new Set([...shelf.artifacts.map(artifact => artifact.project), ...layout.directories.map(directory => directory.project)]);
+  const projects = new Set([...shelf.artifacts.map(artifact => artifact.project.trim()), ...layout.directories.map(directory => directory.project.trim())]);
   return [...projects].map(project => ({
     project,
-    nodes: documentTree(shelf.artifacts.flatMap((item, index) => item.project === project ? [{ item, folders: layout.documents[index] }] : []), layout.directories.filter(directory => directory.project === project).map(directory => directory.folders)),
+    nodes: documentTree(shelf.artifacts.flatMap((item, index) => item.project.trim() === project ? [{ item, folders: layout.documents[index] }] : []), layout.directories.filter(directory => directory.project.trim() === project).map(directory => directory.folders)),
   }));
 }
 
