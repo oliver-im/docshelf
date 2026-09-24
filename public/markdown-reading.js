@@ -1,12 +1,13 @@
 (() => {
   const root = document.querySelector('.markdown-document');
-  if (!root || root.dataset.docshelfReading === 'true') return;
+  if (!(root instanceof HTMLElement) || root.dataset.docshelfReading === 'true') return;
   root.dataset.docshelfReading = 'true';
   // Structure is rendered on the server, before source-line controls are measured.
   for (const container of root.querySelectorAll('.markdown-table')) {
     const table = container.querySelector('table');
     const scroller = container.querySelector('.markdown-table-scroll');
     const hint = container.querySelector('.markdown-table-hint');
+    if (!table || !(scroller instanceof HTMLElement) || !(hint instanceof HTMLElement)) continue;
 
     const updateOverflow = () => {
       const overflowing = scroller.scrollWidth > scroller.clientWidth + 1;
@@ -20,20 +21,22 @@
   }
 
   const outline = document.querySelector('.markdown-outline details');
-  if (!outline) return;
+  if (!(outline instanceof HTMLDetailsElement)) return;
   const wide = window.matchMedia('(min-width: 70rem)');
   const updateLayout = () => { outline.open = wide.matches; };
   wide.addEventListener('change', updateLayout);
   updateLayout();
 
-  const entries = Array.from(outline.querySelectorAll('a')).map((link) => ({
-    link,
-    heading: document.getElementById(decodeURIComponent(link.hash.slice(1))),
-  })).filter((entry) => entry.heading);
+  const entries = Array.from(outline.querySelectorAll('a')).flatMap((link) => {
+    let id;
+    try { id = decodeURIComponent(link.hash.slice(1)); } catch { return []; }
+    const heading = document.getElementById(id);
+    return heading ? [{ link, heading }] : [];
+  });
   let clickedEntry = entries.find((entry) => entry.link.hash === window.location.hash) || null;
 
   outline.addEventListener('click', (event) => {
-    const link = event.target.closest('a');
+    const link = event.target instanceof Element ? event.target.closest('a') : null;
     if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const entry = entries.find((item) => item.link === link);
     if (!entry) return;
@@ -45,6 +48,7 @@
   });
 
   let scheduled = false;
+  /** @param {{ link: HTMLAnchorElement, heading: HTMLElement } | null | undefined} current */
   const setCurrentSection = (current) => {
     for (const entry of entries) {
       if (entry === current) entry.link.setAttribute('aria-current', 'location');

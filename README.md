@@ -67,11 +67,11 @@ For a foreground server on other platforms or without automatic startup, use `np
 
 ### Install the Obsidian plugin
 
-Requires **desktop Obsidian 1.13.7 or later**. The **desktop beta** supports manual installation and is not yet listed in the community directory. Runtime verification covers macOS with Obsidian 1.13.7; Windows, Linux, and Obsidian 1.14.2 are not yet verified.
+Requires **desktop Obsidian 1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. Runtime verification of this **desktop beta** covers macOS with Obsidian 1.13.7; Windows, Linux, and Obsidian 1.14.2 are not yet verified.
 
 **[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
-Extract the ZIP and copy its `docshelf` folder into `<vault>/.obsidian/plugins/`. Enable **DocShelf** in Community plugins.
+For manual installation, extract the ZIP and copy its `docshelf` folder into `<vault>/.obsidian/plugins/`. Enable **DocShelf** in Community plugins.
 
 To produce that ZIP from this checkout:
 
@@ -106,6 +106,7 @@ To register documents manually, follow the [web app registration guide](https://
 - [DocShelf Web: navigation, line links, and remote imports](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md)
 - [Using both apps with one shelf](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md)
 - [Development and verification](https://github.com/oliver-im/docshelf/blob/main/docs/local-server.md#development-and-verification)
+- [Contributing](CONTRIBUTING.md)
 - [Releasing DocShelf](https://github.com/oliver-im/docshelf/blob/main/docs/releasing.md)
 - [Security and file access](https://github.com/oliver-im/docshelf/blob/main/SECURITY.md)
 
@@ -113,5 +114,5 @@ To register documents manually, follow the [web app registration guide](https://
 
 MIT. Themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.2.2/docshelf-0.2.2.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.2.2
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.2.3/docshelf-0.2.3.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.2.3

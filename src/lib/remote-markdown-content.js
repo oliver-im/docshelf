@@ -1,5 +1,8 @@
 import { marked } from 'marked';
 
+/** @typedef {import('marked').Token} Token */
+/** @typedef {{ start: number, end: number }} SourceRange */
+
 const rangedRendererMethods = [
   'heading',
   'paragraph',
@@ -20,22 +23,35 @@ const rangedRendererMethods = [
 export function renderRemoteMarkdownContent(markdown) {
   const tokens = marked.lexer(markdown, { gfm: true });
   const ranges = sourceRanges(tokens);
-  annotateParagraphHardBreaks(tokens, ranges);
+  /** @type {WeakMap<Token, number>} */
+  const hardBreakLines = new WeakMap();
+  annotateParagraphHardBreaks(tokens, ranges, hardBreakLines);
   const renderer = new marked.Renderer();
   renderer.html = () => '';
 
-  for (const method of rangedRendererMethods) {
-    const render = renderer[method];
-    renderer[method] = function (token) {
+  /**
+   * Keep each renderer's token type and Marked's renderer context intact.
+   * @template {Token} T
+   * @param {(token: T) => string} render
+   * @returns {(this: import('marked').Renderer, token: T) => string}
+   */
+  function withSourceRange(render) {
+    return function (token) {
       return addSourceRange(render.call(this, token), ranges.get(token));
     };
   }
+  renderer.heading = withSourceRange(renderer.heading);
+  renderer.paragraph = withSourceRange(renderer.paragraph);
+  renderer.code = withSourceRange(renderer.code);
+  renderer.blockquote = withSourceRange(renderer.blockquote);
+  renderer.list = withSourceRange(renderer.list);
+  renderer.table = withSourceRange(renderer.table);
 
   const renderBreak = renderer.br;
   renderer.br = function (token) {
     const html = renderBreak.call(this, token);
-    const sourceLine = token.docshelfLineBreakAfter;
-    return Number.isSafeInteger(sourceLine) && sourceLine > 0
+    const sourceLine = hardBreakLines.get(token);
+    return typeof sourceLine === 'number' && Number.isSafeInteger(sourceLine) && sourceLine > 0
       ? html.replace(/^<br\b/i, `<br data-docshelf-line-break-after="${sourceLine}"`)
       : html;
   };
@@ -50,39 +66,42 @@ export function renderRemoteMarkdownContent(markdown) {
  * Annotate authored hard breaks without changing normal Markdown paragraph
  * flow, matching DocShelf's registered-Markdown renderer.
  *
- * @param {Array<Record<string, any>>} tokens
- * @param {WeakMap<Record<string, any>, { start: number, end: number }>} ranges
+ * @param {Token[]} tokens
+ * @param {WeakMap<Token, SourceRange>} ranges
+ * @param {WeakMap<Token, number>} hardBreakLines
  */
-function annotateParagraphHardBreaks(tokens, ranges) {
+function annotateParagraphHardBreaks(tokens, ranges, hardBreakLines) {
   for (const token of tokens) {
     const range = ranges.get(token);
     if (token.type === 'paragraph' && range && Array.isArray(token.tokens)) {
-      annotateInlineBreaks(token.tokens, range.start);
+      annotateInlineBreaks(token.tokens, range.start, hardBreakLines);
     }
   }
 }
 
 /**
- * @param {Array<Record<string, any>>} tokens
+ * @param {Token[]} tokens
  * @param {number} startingLine
+ * @param {WeakMap<Token, number>} hardBreakLines
  */
-function annotateInlineBreaks(tokens, startingLine) {
+function annotateInlineBreaks(tokens, startingLine, hardBreakLines) {
   let sourceLine = startingLine;
 
   for (const token of tokens) {
     const raw = typeof token.raw === 'string' ? token.raw : '';
     const lineBreaks = countLineBreaks(raw);
 
-    if (token.type === 'br') token.docshelfLineBreakAfter = sourceLine;
-    if (Array.isArray(token.tokens)) {
-      annotateInlineBreaks(token.tokens, sourceLine);
+    if (token.type === 'br') hardBreakLines.set(token, sourceLine);
+    if ('tokens' in token && Array.isArray(token.tokens)) {
+      annotateInlineBreaks(token.tokens, sourceLine, hardBreakLines);
     }
     sourceLine += lineBreaks;
   }
 }
 
-/** @param {Array<Record<string, any>>} tokens */
+/** @param {Token[]} tokens */
 function sourceRanges(tokens) {
+  /** @type {WeakMap<Token, SourceRange>} */
   const ranges = new WeakMap();
   let sourceLine = 1;
 

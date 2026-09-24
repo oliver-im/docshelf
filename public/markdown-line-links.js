@@ -1,12 +1,18 @@
 (() => {
+  /** @typedef {{ start: number, end: number }} LineRange */
+  /** @typedef {LineRange & { element: HTMLElement }} SourceBlock */
+  /** @typedef {LineRange & { block: SourceBlock | null, controls: HTMLDivElement }} LineGroup */
+  /** @typedef {{ line: number, button: HTMLButtonElement }} LineControl */
+  /** @typedef {'push' | 'replace'} HistoryMode */
   const root = document.querySelector('.markdown-document');
-  if (!root || root.dataset.docshelfLineLinks === 'true') return;
+  if (!(root instanceof HTMLElement) || root.dataset.docshelfLineLinks === 'true') return;
 
   const lineFragmentPattern = /^#L([1-9]\d*)(?:-L([1-9]\d*))?$/;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const blocks = Array.from(
     root.querySelectorAll('[data-docshelf-line-start][data-docshelf-line-end]'),
   )
+    .filter((element) => element instanceof HTMLElement)
     .map((element) => ({
       element,
       start: Number(element.dataset.docshelfLineStart),
@@ -30,10 +36,14 @@
   if (sourceLineCount === 0) return;
 
   root.dataset.docshelfLineLinks = 'true';
+  /** @type {number | null} */
   let anchor = null;
+  /** @type {LineRange | null} */
   let selection = null;
   let appliedHash = window.location.hash;
+  /** @type {LineGroup[]} */
   const lineGroups = [];
+  /** @type {LineControl[]} */
   const lineControls = [];
   const rootStyle = window.getComputedStyle(root);
   const defaultPaddingStart = Number.parseFloat(rootStyle.paddingBlockStart) || 0;
@@ -82,14 +92,15 @@
 
   const positionLineControls = () => {
     const leadingLineCount = blocks[0] ? Math.max(0, blocks[0].start - 1) : 0;
-    const trailingLineCount = blocks.at(-1)
-      ? Math.max(0, sourceLineCount - blocks.at(-1).end)
+    const lastBlock = blocks.at(-1);
+    const trailingLineCount = lastBlock
+      ? Math.max(0, sourceLineCount - lastBlock.end)
       : sourceLineCount;
     root.style.paddingBlockStart = `${Math.max(
       defaultPaddingStart,
       leadingLineCount * defaultLineHeight,
     )}px`;
-    root.parentElement.style.setProperty('--docshelf-document-padding-start', root.style.paddingBlockStart);
+    root.parentElement?.style.setProperty('--docshelf-document-padding-start', root.style.paddingBlockStart);
     root.style.paddingBlockEnd = `${Math.max(
       defaultPaddingEnd,
       trailingLineCount * defaultLineHeight,
@@ -154,6 +165,7 @@
   void document.fonts?.ready.then(scheduleLineControlPositioning);
   positionLineControls();
 
+  /** @param {number} line */
   function createLineControl(line) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -208,7 +220,9 @@
     return button;
   }
 
+  /** @param {LineGroup} group @param {number} groupTop @param {number} groupBottom @param {number} rootTop */
   function sizeLineControls(group, groupTop, groupBottom, rootTop) {
+    /** @type {Map<number, number>} */
     const heights = new Map();
 
     if (!group.block) {
@@ -234,7 +248,8 @@
         for (let line = visibleStart + 1; line <= visibleEnd; line += 1) {
           const previous = measuredLines.get(line - 1);
           const current = measuredLines.get(line);
-          boundaries.push((previous.bottom + current.top) / 2);
+          boundaries.push(previous && current ? (previous.bottom + current.top) / 2
+            : blockTop + (blockBottom - blockTop) * (line - visibleStart) / (visibleEnd - visibleStart + 1));
         }
         boundaries.push(blockBottom);
 
@@ -255,17 +270,21 @@
     }
   }
 
+  /** @param {Map<number, number>} heights @param {number} start @param {number} end @param {number} top @param {number} bottom */
   function distributeLineHeights(heights, start, end, top, bottom) {
     if (end < start) return;
     const height = Math.max(0, bottom - top) / (end - start + 1);
     for (let line = start; line <= end; line += 1) heights.set(line, height);
   }
 
+  /** @param {SourceBlock} block @param {number} rootTop */
   function measureSourceLines(block, rootTop) {
+    /** @type {Map<number, HTMLBRElement>} */
     const breakByLine = new Map();
     for (const sourceBreak of block.element.querySelectorAll(
       'br[data-docshelf-line-break-after]',
     )) {
+      if (!(sourceBreak instanceof HTMLBRElement)) continue;
       const line = Number(sourceBreak.dataset.docshelfLineBreakAfter);
       if (Number.isSafeInteger(line) && line >= block.start && line < block.end) {
         breakByLine.set(line, sourceBreak);
@@ -274,7 +293,9 @@
 
     if (breakByLine.size !== block.end - block.start) return null;
 
+    /** @type {Map<number, { top: number, bottom: number }>} */
     const measurements = new Map();
+    /** @type {HTMLBRElement | null} */
     let previousBreak = null;
 
     for (let line = block.start; line <= block.end; line += 1) {
@@ -304,14 +325,18 @@
   });
   window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
-    if (event.data?.type !== 'docshelf-apply-line-selection') return;
+    /** @type {unknown} */
+    const data = event.data;
+    if (!data || typeof data !== 'object' || !('type' in data) || data.type !== 'docshelf-apply-line-selection') return;
+    if (!('hash' in data)) return;
 
-    const hash = event.data.hash;
+    const hash = data.hash;
     if (typeof hash !== 'string' || (hash && !hash.startsWith('#'))) return;
+    const scroll = !('scroll' in data) || data.scroll !== false;
     const changed = appliedHash !== hash;
     replaceFrameHash(hash);
-    applyHash(hash, event.data.scroll !== false);
-    if (changed && event.data.scroll !== false && !parseLineFragment(hash)) {
+    applyHash(hash, scroll);
+    if (changed && scroll && !parseLineFragment(hash)) {
       if (!hash) window.scrollTo({ top: 0 });
       else {
         try {
@@ -333,6 +358,7 @@
 
   applyHash(window.location.hash, true);
 
+  /** @param {number} line @param {boolean} extend @param {HistoryMode} historyMode */
   function selectLine(line, extend, historyMode) {
     let start = line;
     let end = line;
@@ -350,6 +376,7 @@
     notifyParent(hash, historyMode);
   }
 
+  /** @param {string} hash @param {boolean} scroll */
   function applyHash(hash, scroll) {
     const range = parseLineFragment(hash);
 
@@ -364,6 +391,7 @@
     replaceFrameHash(lineFragment(range.start, range.end));
   }
 
+  /** @param {LineRange | null} range @param {boolean} scroll */
   function setSelection(range, scroll) {
     selection = range;
     let firstSelected = null;
@@ -404,6 +432,7 @@
     }
   }
 
+  /** @param {HistoryMode} historyMode @param {boolean} announce */
   function clearSelection(historyMode, announce) {
     if (!selection) return;
     selection = null;
@@ -414,6 +443,7 @@
     if (announce) status.textContent = 'Line selection cleared.';
   }
 
+  /** @param {LineControl} active @param {boolean} focus */
   function setRovingControl(active, focus) {
     for (const entry of lineControls) {
       entry.button.tabIndex = entry === active ? 0 : -1;
@@ -421,6 +451,7 @@
     if (focus) active.button.focus();
   }
 
+  /** @param {string} hash @param {HistoryMode} historyMode */
   function notifyParent(hash, historyMode) {
     if (window.parent === window) {
       const url = new URL(window.location.href);
@@ -444,6 +475,7 @@
     );
   }
 
+  /** @param {string} hash */
   function replaceFrameHash(hash) {
     appliedHash = hash;
     if (window.parent === window) return;
@@ -464,6 +496,7 @@
     return status;
   }
 
+  /** @param {string} hash @returns {LineRange | null} */
   function parseLineFragment(hash) {
     const match = lineFragmentPattern.exec(typeof hash === 'string' ? hash : '');
     if (!match) return null;
@@ -474,10 +507,12 @@
       : null;
   }
 
+  /** @param {number} start @param {number} end */
   function lineFragment(start, end) {
     return start === end ? `#L${start}` : `#L${start}-L${end}`;
   }
 
+  /** @param {number} start @param {number} end */
   function lineDescription(start, end) {
     return start === end ? `line ${start}` : `lines ${start} through ${end}`;
   }

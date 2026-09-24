@@ -56,6 +56,18 @@ test('fragment commands from unrelated windows or origins are ignored', () => {
   assert.deepEqual(page.selected(), ['2']);
 });
 
+test('malformed parent messages leave the selected range and history intact', () => {
+  const page = runLineLinks({ hash: '#L2' });
+  for (const data of [null, false, 'theme', [], {}, { type: 'docshelf-apply-line-selection' },
+    { type: 'docshelf-apply-line-selection', hash: 42 }, { type: 'docshelf-theme', hash: '#L3' }]) {
+    page.apply('', { data });
+  }
+  assert.equal(page.location.hash, '#L2');
+  assert.deepEqual(page.selected(), ['2']);
+  assert.deepEqual(page.history, []);
+  assert.deepEqual(page.messages, []);
+});
+
 test('Blob imports restore sections, selections, and the top without rewriting Blob history', () => {
   const page = runLineLinks({ blob: true });
   page.apply('#security');
@@ -79,7 +91,8 @@ function runLineLinks({ hash = '', standalone = false, blob = false }) {
   const location = new URL(blob
     ? `blob:http://shelf.localhost/test${hash}`
     : `http://shelf.localhost/artifacts/test.html?__docshelf_revision=test${hash}`);
-  const makeElement = () => ({
+  class HTMLElement {}
+  const makeElement = () => Object.assign(new HTMLElement(), {
     dataset: {}, children: [], attributes: new Map(), scrolls: 0,
     style: { setProperty() {} },
     classList: { add() {} },
@@ -118,7 +131,7 @@ function runLineLinks({ hash = '', standalone = false, blob = false }) {
     },
   };
   vm.runInNewContext(script, {
-    URL, Event, window,
+    URL, Event, HTMLElement, window,
     document: {
       querySelector: () => root,
       createElement: makeElement,
