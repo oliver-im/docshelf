@@ -15,7 +15,9 @@
     "dev": "astro dev",
     "build": "npm run build --workspace @docshelf/core && npm run build:web && npm run build:obsidian",
     "precheck": "npm run sync",
-    "check": "astro check",
+    "check": "astro check && npm run check:web-scripts",
+    "precheck:web-scripts": "astro sync",
+    "check:web-scripts": "tsc --project tsconfig.web.json",
     "prepreview": "npm run sync",
     "preview": "astro preview",
     "watch": "node scripts/watch.mjs",
@@ -32,7 +34,8 @@
     "prebuild:web": "npm run sync",
     "build:web": "astro build",
     "build:obsidian": "npm run build --workspace obsidian-docshelf && node scripts/stage-obsidian.mjs",
-    "lint": "eslint packages/obsidian/src \"public/*.js\" \"src/lib/*.{ts,js}\""
+    "prelint": "astro sync",
+    "lint": "eslint packages/obsidian/src \"public/*.js\" \"src/lib/*.{ts,js}\" src/content.config.ts"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.2.4",

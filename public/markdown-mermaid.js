@@ -1,6 +1,8 @@
 (() => {
+  /** @typedef {{ diagram: HTMLDivElement, failureReported: boolean, fallback: HTMLElement, notice: HTMLParagraphElement | null, source: string }} MermaidBlock */
   const blocks = Array.from(
     document.querySelectorAll('pre > code.language-mermaid'),
+    /** @returns {MermaidBlock | null} */
     (code) => {
       const fallback = code.parentElement;
       if (!fallback) return null;
@@ -18,10 +20,11 @@
         source: code.textContent || '',
       };
     },
-  ).filter(Boolean);
+  ).filter((block) => block !== null);
 
-  const mermaid = window.mermaid;
-  if (blocks.length === 0 || typeof mermaid?.initialize !== 'function') return;
+  const loadedMermaid = window.mermaid;
+  if (blocks.length === 0 || typeof loadedMermaid?.initialize !== 'function') return;
+  const mermaid = loadedMermaid;
 
   let renderPending = false;
   let rendering = false;
@@ -70,6 +73,7 @@
     }
   }
 
+  /** @param {MermaidBlock} block @param {number} index @param {number} sequence */
   async function renderBlock(block, index, sequence) {
     try {
       const { svg, bindFunctions } = await mermaid.render(
@@ -79,7 +83,9 @@
       if (renderPending) return;
 
       // Treat renderer output as untrusted markup, including HTML labels inside SVG.
-      const fragment = window.DOMPurify.sanitize(svg, {
+      const purifier = window.DOMPurify;
+      if (!purifier) throw new Error('The diagram sanitizer is unavailable.');
+      const fragment = purifier.sanitize(svg, {
         RETURN_DOM_FRAGMENT: true,
         // Mermaid uses foreignObject for HTML labels; its children still pass through sanitization.
         ADD_TAGS: ['foreignObject'],
@@ -105,6 +111,7 @@
     }
   }
 
+  /** @param {MermaidBlock} block */
   function showFailureNotice(block) {
     if (!block.notice) {
       block.notice = document.createElement('p');

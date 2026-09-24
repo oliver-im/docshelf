@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "checkJs": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    ".astro/types.d.ts",
+    "public/*.js",
+    "src/lib/*",
+    "src/content.config.ts",
+    "src/types/*.d.ts"
+  ]
+}

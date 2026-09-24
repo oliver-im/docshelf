@@ -152,6 +152,7 @@ function rewriteRemoteLinks(content, options) {
 
 /** @param {Element} content */
 function addHeadingIds(content) {
+  /** @type {Map<string, number>} */
   const used = new Map();
   for (const heading of content.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
     const base = slug(heading.textContent || '') || 'section';

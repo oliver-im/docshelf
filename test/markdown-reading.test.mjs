@@ -6,6 +6,9 @@ import vm from 'node:vm';
 const script = await readFile(new URL('../public/markdown-reading.js', import.meta.url), 'utf8');
 
 test('outline highlights clamped destinations and resumes tracking when the reader scrolls', () => {
+  class Element {}
+  class HTMLElement extends Element {}
+  class HTMLDetailsElement extends HTMLElement {}
   const listeners = new Map();
   const on = (type, listener) => listeners.set(type, listener);
   const entries = ['first', 'second', 'last'].map((id, index) => ({
@@ -16,29 +19,33 @@ test('outline highlights clamped destinations and resumes tracking when the read
       removeAttribute(name) { this.attributes.delete(name); },
     },
   }));
-  const outline = {
+  const outline = Object.assign(new HTMLDetailsElement(), {
     open: false,
-    querySelectorAll: () => entries.map((entry) => entry.link),
+    // Missing and malformed destinations must not disable the valid entries.
+    querySelectorAll: () => [...entries.map((entry) => entry.link), { hash: '#missing' }, { hash: '#%XX' }],
     addEventListener: on,
-  };
+  });
   const window = {
     location: { hash: '' }, innerHeight: 800, scrollY: 1200,
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     addEventListener: on,
     requestAnimationFrame(callback) { callback(); },
   };
-  const root = { dataset: {}, querySelectorAll: () => [] };
+  // An incomplete table wrapper must not prevent outline setup either.
+  const root = Object.assign(new HTMLElement(), { dataset: {}, querySelectorAll: () => [{ querySelector: () => null }] });
   const document = {
     documentElement: { scrollHeight: 2000 },
     querySelector: (selector) => selector === '.markdown-document' ? root : outline,
     getElementById: (id) => entries.find((entry) => entry.link.hash === `#${id}`)?.heading,
   };
-  vm.runInNewContext(script, { window, document });
+  vm.runInNewContext(script, { window, document, Element, HTMLElement, HTMLDetailsElement });
   const current = () => entries.find((entry) => entry.link.attributes.has('aria-current'))?.link.hash;
   assert.equal(outline.open, true);
   assert.equal(current(), '#last', 'the final heading need not reach the top at maximum scroll');
 
-  listeners.get('click')({ target: { closest: () => entries[1].link }, button: 0 });
+  listeners.get('click')({ target: null, button: 0 });
+  assert.equal(current(), '#last');
+  listeners.get('click')({ target: Object.assign(new Element(), { closest: () => entries[1].link }), button: 0 });
   listeners.get('scroll')();
   assert.equal(current(), '#second', 'a clicked short section stays selected during clamped scrolling');
 
