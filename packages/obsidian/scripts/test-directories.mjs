@@ -50,7 +50,28 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const saved = JSON.parse(await readFile(shelfPath, 'utf8'));
   assert.equal(saved.directories[0].project, 'Watched project');
   assert.equal(saved.artifacts.find(entry => entry.source.endsWith('loose-document.md')).project, 'Watched project');
+  // Folder documents nest as they sit on disk, while the loose file stays at the project root.
+  const outline = () => page.evaluate(() => {
+    const group = [...document.querySelectorAll('.docshelf-project')].find(group => group.querySelector('.docshelf-project-name')?.textContent === 'Watched project');
+    const walk = parent => [...parent.children].map(child => child.matches('.docshelf-folder')
+      ? { [child.querySelector(':scope > .docshelf-folder-toggle').textContent]: walk(child.querySelector(':scope > .docshelf-folder-items')) }
+      : child.querySelector('.docshelf-item-title').textContent);
+    return group && walk(group.querySelector('.docshelf-project-items'));
+  });
+  const expectedOutline = JSON.stringify([{ 'watched-documents': [{ nested: ['second.md'] }, 'first.md'] }, 'loose-document.md']);
+  await poll(async () => JSON.stringify(await outline()) === expectedOutline, 'Folder documents did not nest as they sit on disk.');
   await page.screenshot({ path: '.local/runtime/directories-added.png' });
+  const folderToggle = page.locator(`.docshelf-folder-toggle[data-folder='${JSON.stringify(['watched-documents'])}']`);
+  await folderToggle.click();
+  assert.equal(await folderToggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('.docshelf-item').filter({ hasText: 'Folder second' }).isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().collapsedFolders), [JSON.stringify(['Watched project', JSON.stringify(['watched-documents'])])]);
+  await folderToggle.click();
+  assert.equal(await page.locator('.docshelf-item').filter({ hasText: 'Folder second' }).isVisible(), true);
+  // Reordering stays within a folder, so a document alone in its folder cannot move.
+  await page.locator('.docshelf-item').filter({ hasText: 'Folder first' }).click({ button: 'right' });
+  assert.deepEqual(await page.locator('.menu-item').filter({ hasText: /^Move (up|down)$/ }).evaluateAll(items => items.map(item => item.classList.contains('is-disabled'))), [true, true]);
+  await page.keyboard.press('Escape');
   await page.getByLabel('Add…', { exact: true }).first().click();
   await chooseProject();
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').pickingSources), 'Repeated selection did not finish.');
@@ -94,6 +115,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const fromSearch = path.join(workspace, 'search-context.md');
   await writeFile(fromSearch, '# Search context\n');
   await page.evaluate(file => { window.docshelfPickerTest.paths = [file]; }, fromSearch);
+  assert.equal(await page.locator('.docshelf-search-result').filter({ hasText: 'Live discovery' }).locator('.docshelf-item-project').textContent(), 'Watched project › watched-documents/nested');
   await page.locator('.docshelf-search-result').filter({ hasText: 'Live discovery' }).click({ button: 'right' });
   assert.equal(await page.locator('.menu-item').filter({ hasText: /^Move (up|down)$/ }).count(), 0, 'Search rows must not reorder the hidden project list.');
   await page.locator('.menu-item').filter({ hasText: 'Add…' }).click();
@@ -197,8 +219,47 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   assert.equal(await review.getByRole('textbox', { name: 'Your edits', exact: true }).inputValue(), '# Unsaved folder draft');
   await review.getByRole('button', { name: 'Save edited version', exact: true }).click();
   await poll(async () => (await readFile(live, 'utf8')) === '# Unsaved folder draft', 'The recovered draft could not save after review.');
-  // A project heading removes its watched folder and documents from the shelf only.
+  // Folder rows reorder among themselves, and removing one keeps files added to it later off the shelf.
+  const alphaNote = path.join(directory, 'alpha/alpha-note.md');
+  await mkdir(path.dirname(alphaNote));
+  await writeFile(alphaNote, '# Alpha note\n');
   await page.evaluate(folder => app.plugins.getPlugin('docshelf').addSources([folder], 'Removable project'), directory);
+  const folderRow = name => page.locator(`.docshelf-folder-toggle[data-project="Removable project"][data-folder='${JSON.stringify([name])}']`);
+  const folderNames = () => page.evaluate(() => [...document.querySelectorAll('.docshelf-folder-toggle[data-project="Removable project"]')].map(toggle => toggle.textContent));
+  const moveFolder = async (name, direction) => {
+    await folderRow(name).click({ button: 'right' });
+    await page.locator('.menu-item').filter({ hasText: new RegExp(`^Move ${direction}$`) }).click();
+  };
+  const savedFolderOrder = () => page.evaluate(() => app.workspace.getLeavesOfType('docshelf-shelf')[0].view.getState().folderOrder);
+  await poll(async () => JSON.stringify(await folderNames()) === JSON.stringify(['alpha', 'nested']), 'Project folders did not render alphabetically.');
+  await moveFolder('nested', 'up');
+  assert.deepEqual(await folderNames(), ['nested', 'alpha']);
+  assert.equal(await folderRow('nested').evaluate(el => el === document.activeElement), true);
+  assert.deepEqual(await savedFolderOrder(), { [JSON.stringify(['Removable project'])]: ['nested', 'alpha'] });
+  await folderRow('alpha').dragTo(folderRow('nested'), { targetPosition: { x: 30, y: 2 } });
+  assert.deepEqual(await folderNames(), ['alpha', 'nested']);
+  await moveFolder('alpha', 'down');
+  assert.deepEqual(await folderNames(), ['nested', 'alpha']);
+  await page.locator('.docshelf-project-toggle').filter({ hasText: 'Removable project' }).click({ button: 'right' });
+  await page.locator('.menu-item').filter({ hasText: 'Reset to alphabetical' }).click();
+  assert.deepEqual(await folderNames(), ['alpha', 'nested']);
+  assert.deepEqual(await savedFolderOrder(), {});
+  await folderRow('alpha').click({ button: 'right' });
+  await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).click();
+  await page.waitForSelector('.docshelf-remove');
+  await poll(() => page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).isEnabled(), 'Folder removal confirmation did not become ready.');
+  assert.match(await page.locator('.docshelf-remove').textContent(), /“alpha” folder[\s\S]*1 document from the shelf\. Files added to this folder later will stay off the shelf too\./);
+  await page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).click();
+  await poll(() => page.evaluate(file => !app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.sourcePath === file), alphaNote), 'Removing a folder left its document on the shelf.');
+  assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories.find(entry => entry.project === 'Removable project').exclude, ['./alpha']);
+  assert.equal(await readFile(alphaNote, 'utf8'), '# Alpha note\n');
+  const laterAlpha = path.join(directory, 'alpha/later.md');
+  await writeFile(laterAlpha, '# Later alpha\n');
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  assert.equal(await page.evaluate(file => app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.sourcePath === file), laterAlpha), false, 'A file added to a removed folder reappeared.');
+  await poll(async () => JSON.stringify(await folderNames()) === JSON.stringify(['nested']), 'The removed folder row did not disappear.');
+
+  // A project heading removes its watched folder and documents from the shelf only.
   await page.locator('.docshelf-project-toggle').filter({ hasText: 'Removable project' }).click({ button: 'right' });
   await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).click();
   await page.waitForSelector('.docshelf-remove');
@@ -213,5 +274,5 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await rm(live);
   await writeFile(shelfPath, JSON.stringify(baseline));
   await poll(() => page.evaluate(count => app.plugins.getPlugin('docshelf').catalog.artifacts.length === count, baseline.artifacts.length), 'Removing a folder left discovered documents in the catalog.');
-  console.log('Project selection/creation, immediate mixed-picker registration, cancellation, deduplication, invalid selections, contextual Add, recursive discovery, live edits, confirmed document and project removal/cancellation, exact folder exclusions, source preservation, and unsaved draft protection passed.');
+  console.log('Project selection/creation, immediate mixed-picker registration, cancellation, deduplication, invalid selections, contextual Add, recursive discovery, live edits, nested folder rows, folder and document ordering, confirmed document, folder, and project removal/cancellation, exact folder exclusions, source preservation, and unsaved draft protection passed.');
 }

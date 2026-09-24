@@ -18,10 +18,21 @@ button.docshelf-project-toggle:hover { color: var(--text-normal); background: va
 .docshelf-project-chevron svg { width: 14px; height: 14px; }
 .docshelf-project-toggle[aria-expanded="true"] .docshelf-project-chevron { transform: rotate(90deg); }
 .docshelf-project-name { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: grab; }
-.docshelf-project-toggle.is-dragging, .docshelf-item.is-dragging { opacity: 0.5; }
+.docshelf-project-toggle.is-dragging, .docshelf-folder-toggle.is-dragging, .docshelf-item.is-dragging { opacity: 0.5; }
 .docshelf-project-count { flex-shrink: 0; color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 400; }
 .docshelf-project-items[hidden] { display: none; }
 .docshelf-project-items { padding-left: 20px; }
+button.docshelf-folder-toggle { display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; height: auto; min-height: 28px; margin: 0; padding: 4px 6px; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: 400; text-align: left; white-space: nowrap; background: transparent; box-shadow: none; border: 0; border-radius: var(--radius-s); cursor: pointer; }
+button.docshelf-folder-toggle:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.docshelf-folder-toggle[aria-expanded="true"] .docshelf-project-chevron { transform: rotate(90deg); }
+.docshelf-folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; cursor: grab; }
+.docshelf-folder { position: relative; }
+.docshelf-folder.docshelf-drop-before::before, .docshelf-folder.docshelf-drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--interactive-accent); pointer-events: none; }
+.docshelf-folder.docshelf-drop-before::before { top: -1px; }
+.docshelf-folder.docshelf-drop-after::after { bottom: -1px; }
+.docshelf-folder-items[hidden] { display: none; }
+/* The guide sits under the chevron; child icons line up with the folder icon. */
+.docshelf-folder-items { margin-left: 12px; padding-left: 7px; border-left: var(--nav-indentation-guide-width, 1px) solid var(--nav-indentation-guide-color, var(--background-modifier-border)); }
 button.docshelf-item { display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; height: auto; min-height: 28px; gap: 4px; margin: 0; padding: 4px 6px; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: 400; text-align: left; white-space: normal; background: transparent; box-shadow: none; border: 0; border-radius: var(--radius-s); cursor: pointer; }
 button.docshelf-item:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
 button.docshelf-item[draggable="true"] { position: relative; cursor: grab; }

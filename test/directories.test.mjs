@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
-import { expandShelf, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
+import { expandShelf, documentFolders, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
 import { createRegistrationHandler } from '../scripts/registration.mjs';
 import { watchScope } from '../packages/local/watch-scope.mjs';
 import { SourceWatcher } from '../scripts/source-watcher.mjs';
-import { loadShelfFrom, docShelfRoot } from '../scripts/artifacts.mjs';
+import { loadShelfFrom, docShelfRoot, shelfSidebar } from '../scripts/artifacts.mjs';
 
 async function fixture(t) {
   const base = await realpath(await temporaryDirectory(t, tmpdir(), 'docshelf-folders-'));
@@ -106,6 +106,44 @@ test('web expands relative directory registrations and retains missing folders',
   assert.equal(missing.artifacts.length, 0);
   assert.equal(missing.directories.length, 1);
   assert.match(missing.warnings[0], /unavailable/);
+});
+
+test('documents nest under the outermost folder of their own project, as on disk', async t => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.base, 'docs/nested/deeper'), { recursive: true });
+  await mkdir(path.join(f.base, 'other/docs'), { recursive: true });
+  await writeFile(path.join(f.base, 'docs/nested/deeper/three.md'), '# Three\n');
+  await writeFile(path.join(f.base, 'other/docs/four.md'), '# Four\n');
+  await writeFile(path.join(f.base, 'loose.md'), '# Loose\n');
+  const place = async config => {
+    const expanded = await expandShelf(config, f.base, f.roots);
+    const folders = documentFolders(expanded.artifacts.map(entry => ({ project: entry.project, path: /^https?:/.test(entry.source) ? undefined : path.join(f.base, entry.source) })), expanded.directories);
+    return Object.fromEntries(expanded.artifacts.map((entry, index) => [path.basename(entry.source), folders[index]]));
+  };
+  // A single folder holding every document omits its own name, and explicit files inside it keep their place.
+  f.config.artifacts.push({ source: 'docs/nested/deeper/three.md', route: 'three.html', title: 'Three', project: ' Project ' });
+  assert.deepEqual(await place(f.config), { 'three.md': ['nested', 'deeper'], 'one.md': [], 'two.html': ['nested'] });
+  // Remote documents and files outside the folder sit at the project root beside the named folder.
+  f.config.artifacts.push({ source: 'https://claude.ai/public/artifacts/12345678-1234-1234-1234-123456789abc', route: 'remote.html', title: 'Remote', project: 'Project' });
+  f.config.artifacts.push({ source: 'loose.md', route: 'loose.html', title: 'Loose', project: 'Project' });
+  const mixed = await place(f.config);
+  assert.deepEqual([mixed['one.md'], mixed['three.md'], mixed['12345678-1234-1234-1234-123456789abc'], mixed['loose.md']], [['docs'], ['docs', 'nested', 'deeper'], [], []]);
+  // Same-named folders are told apart by their registered sources; another project's folder keeps its own documents.
+  f.config.directories.push({ id: 'other', source: 'other/docs', project: 'Project' }, { id: 'nested', source: 'docs/nested', project: 'Nested' });
+  const named = await place(f.config);
+  assert.deepEqual([named['one.md'], named['four.md'], named['two.html'], named['three.md']], [['docs'], ['other/docs'], [], ['docs', 'nested', 'deeper']]);
+});
+
+test('web sidebar nests project folders and names a symlinked folder as selected', async t => {
+  const f = await fixture(t);
+  await symlink(path.join(f.base, 'docs'), path.join(f.base, 'alias'));
+  f.config.directories[0].source = path.relative(docShelfRoot, path.join(f.base, 'alias'));
+  f.config.artifacts.push({ source: 'https://claude.ai/public/artifacts/12345678-1234-1234-1234-123456789abc', route: 'remote.html', title: 'Remote', project: 'Project' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const sidebar = shelfSidebar(await loadShelfFrom(f.shelfPath, { workspaceRoot: f.base }));
+  const labels = items => items.map(item => item.items ? { [item.label]: labels(item.items) } : item.label);
+  assert.deepEqual(labels(sidebar), [{ Project: [{ alias: [{ nested: ['two.html'] }, 'one.md'] }, 'Remote'] }]);
+  assert.match(sidebar[0].items[0].items[1].link, /^\/artifacts\/folders\/project\/.+\.html$/);
 });
 
 test('immediate addition commits its preparation while protecting concurrent shelf edits', async t => {
@@ -211,11 +249,59 @@ test('removing a project drops its folders and documents while other projects ke
   assert.equal(await readFile(path.join(f.base, 'docs/one.md'), 'utf8'), '# First document\n');
   assert.equal(await readFile(path.join(f.base, 'loose.md'), 'utf8'), '# loose.md\n');
   const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
-  assert.deepEqual(saved.directories.map(entry => [entry.id, entry.exclude]), [['parent', ['./loose.md', './docs/one.md']], ['nested', []]]);
+  assert.deepEqual(saved.directories.map(entry => [entry.id, entry.exclude]), [['parent', ['./docs', './loose.md']], ['nested', []]]);
   assert.deepEqual(saved.artifacts.map(entry => entry.route), ['kept.html']);
-  // The parent folder must not pick the removed documents back up, and the nested folder keeps its own documents.
+  // The parent folder must not pick the removed documents back up, even ones added later, and the nested folder keeps its own documents.
+  await writeFile(path.join(f.base, 'docs/later.md'), '# Later\n');
   const after = await expandShelf(saved, f.base, f.roots);
   assert.deepEqual(after.artifacts.map(entry => [entry.project, entry.source]).sort(), [['Nested', 'docs/nested/two.html'], ['Other', 'kept.md'], ['Parent', 'other.md']]);
+});
+
+test('removing a folder row drops what it lists, keeps later files out, and blocks stale saves', async t => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.base, 'docs/nested/deeper'), { recursive: true });
+  await mkdir(path.join(f.base, 'docs/nested/inner'), { recursive: true });
+  await writeFile(path.join(f.base, 'docs/nested/deeper/three.md'), '# Three\n');
+  await writeFile(path.join(f.base, 'docs/nested/inner/four.md'), '# Four\n');
+  await writeFile(path.join(f.base, 'docs/nested/pinned.md'), '# Pinned\n');
+  await writeFile(path.join(f.base, 'loose.md'), '# Loose\n');
+  f.config.artifacts.push({ source: 'docs/nested/pinned.md', route: 'pinned.html', title: 'Pinned', project: 'Project' });
+  f.config.directories.push(
+    { id: 'deeper', source: 'docs/nested/deeper', project: 'Project' },
+    { id: 'parent', source: '.', project: 'Parent' },
+    { id: 'inner', source: 'docs/nested/inner', project: 'Inner' },
+  );
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const discovered = (await expandShelf(f.config, f.base, f.roots)).artifacts.find(entry => entry.source === 'docs/nested/two.html');
+  const before = await readFile(f.shelfPath, 'utf8');
+  // One folder holds all of Project's documents, so its rows start below it.
+  const options = { ...f, project: 'Project', folder: ['nested'] };
+  const prepared = await prepareFolderRemoval(options);
+  assert.deepEqual([prepared.title, prepared.documents, prepared.folders, prepared.foldersExcluded], ['nested', 3, 1, 2]);
+  assert.equal(await readFile(f.shelfPath, 'utf8'), before, 'Preparing or cancelling must not write.');
+  await assert.rejects(prepareFolderRemoval({ ...options, folder: ['missing'] }), /no longer on the shelf/);
+  await assert.rejects(prepareFolderRemoval({ ...options, folder: 'nested' }), /Choose a folder/);
+  await assert.rejects(removeFolderFromShelf(options, 'stale'), /changed/);
+  await removeFolderFromShelf(options, prepared.revision);
+  const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
+  assert.deepEqual(saved.directories.map(entry => [entry.id, entry.exclude]), [['project', ['./nested']], ['parent', ['./docs/nested']], ['inner', []]]);
+  assert.deepEqual(saved.artifacts, []);
+  assert.throws(() => assertRegisteredSource(f.shelfPath, { ...discovered, sourcePath: path.join(f.base, discovered.source) }, f.roots), /no longer included/);
+  await writeFile(path.join(f.base, 'docs/nested/later.md'), '# Later\n');
+  const after = await expandShelf(saved, f.base, f.roots);
+  assert.deepEqual(after.artifacts.map(entry => [entry.project, entry.source]).sort(), [['Inner', 'docs/nested/inner/four.md'], ['Parent', 'loose.md'], ['Project', 'docs/one.md']]);
+  for (const file of ['docs/nested/two.html', 'docs/nested/pinned.md', 'docs/nested/deeper/three.md']) assert.ok(await readFile(path.join(f.base, file), 'utf8'));
+
+  // With a loose file beside it, the watched folder is its own named row, and removing that row drops the registration.
+  saved.artifacts.push({ source: 'loose.md', route: 'loose.html', title: 'Loose', project: 'Project' });
+  await writeFile(f.shelfPath, JSON.stringify(saved));
+  const named = { ...f, project: 'Project', folder: ['docs'] };
+  const whole = await prepareFolderRemoval(named);
+  assert.deepEqual([whole.title, whole.documents, whole.folders, whole.foldersExcluded], ['docs', 1, 1, 1]);
+  await removeFolderFromShelf(named, whole.revision);
+  const final = JSON.parse(await readFile(f.shelfPath, 'utf8'));
+  assert.deepEqual(final.directories.map(entry => [entry.id, entry.exclude]), [['parent', ['./docs/nested', './docs']], ['inner', []]]);
+  assert.deepEqual(final.artifacts.map(entry => entry.route), ['loose.html']);
 });
 
 test('removal rejects changed registrations, stale confirmations, and concurrent shelf updates', async t => {
@@ -246,6 +332,19 @@ test('web removal accepts registered routes only and leaves version 1 compatible
   await assert.rejects(handler({ action: 'remove', route: 'remote.html' }), /changed/);
   assert.deepEqual(await handler({ action: 'remove', route: 'remote.html', revision: preview.revision }), { removed: true });
   assert.deepEqual(JSON.parse(await readFile(f.shelfPath, 'utf8')), { version: 1, custom: 'preserved', artifacts: [] });
+});
+
+test('web folder removal requires its project and previews counts', async t => {
+  const f = await fixture(t);
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const handler = createRegistrationHandler({ root: f.base, getShelfPath: async () => f.shelfPath, getRoots: async () => ({ workspace: f.base, checkout: f.base }) });
+  await assert.rejects(handler({ action: 'remove-preview', folder: ['nested'] }), /registration request/);
+  await assert.rejects(handler({ action: 'remove-preview', route: 'x.html', folder: ['nested'] }), /registration request/);
+  await assert.rejects(handler({ action: 'remove-preview', project: 'Project', folder: [''] }), /Choose a folder/);
+  const preview = await handler({ action: 'remove-preview', project: 'Project', folder: ['nested'] });
+  assert.deepEqual({ ...preview, revision: typeof preview.revision }, { revision: 'string', title: 'nested', documents: 1, folders: 0, foldersExcluded: 1 });
+  assert.deepEqual(await handler({ action: 'remove', project: 'Project', folder: ['nested'], revision: preview.revision }), { removed: true });
+  assert.deepEqual(JSON.parse(await readFile(f.shelfPath, 'utf8')).directories[0].exclude, ['./nested']);
 });
 
 test('web project removal previews counts and accepts a route or a project, never both', async t => {

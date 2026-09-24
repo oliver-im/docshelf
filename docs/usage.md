@@ -40,7 +40,7 @@ want it, and add entries for files that already exist:
   `npm run setup` records it in the login service.
 - `route` is a unique, lowercase path ending in `.html`, even for Markdown.
   Keep routes stable so bookmarks keep working.
-- `project` labels the sidebar groups. Rows show the source filename; Claude Artifacts show `title`, and Obsidian adds a distinct `title` after the filename.
+- `project` labels the sidebar groups; documents from registered folders nest by subfolder, as described in [folder tree](folders.md#folder-tree). Rows show the source filename; Claude Artifacts show `title`, and Obsidian adds a distinct `title` after the filename.
 - `description` is optional; it can be omitted or empty.
 
 The web app creates generated snapshots and never edits original files. Links

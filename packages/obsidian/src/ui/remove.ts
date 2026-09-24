@@ -2,7 +2,8 @@ import { Modal, Notice } from 'obsidian';
 import type DocShelfPlugin from '../main';
 import { message, type Artifact } from '../core/types';
 
-export type RemovalTarget = { artifact: Artifact } | { project: string };
+/** A document, a project heading, or a folder row inside a project named by its folder path. */
+export type RemovalTarget = { artifact: Artifact } | { project: string; folder?: string[] };
 
 export class RemoveModal extends Modal {
   private closed = false;
@@ -10,17 +11,25 @@ export class RemoveModal extends Modal {
 
   onOpen(): void {
     const target = this.target;
-    const project = 'project' in target;
+    const kind = 'artifact' in target ? 'document' : target.folder ? 'folder' : 'project';
     this.titleEl.setText('Remove from shelf?');
     this.contentEl.addClass('docshelf-remove');
-    this.contentEl.createEl('p', { text: 'project' in target
-      ? `Remove the “${target.project}” project from DocShelf? Its original files and folders will stay untouched.`
-      : `Remove “${target.artifact.title}” from DocShelf? The original file or remote document will stay untouched.` });
+    this.contentEl.createEl('p', { text: 'artifact' in target
+      ? `Remove “${target.artifact.title}” from DocShelf? The original file or remote document will stay untouched.`
+      : target.folder
+        ? `Remove the “${target.folder.join('/')}” folder from DocShelf? Its original files will stay untouched.`
+        : `Remove the “${target.project}” project from DocShelf? Its original files and folders will stay untouched.` });
     const detail = this.contentEl.createEl('p', { cls: 'docshelf-muted', text: 'Checking registration…' });
-    if (this.plugin.nativeViews().some(view => view.hasUnsavedEdits && ('project' in target ? view.artifact?.project === target.project : view.artifact?.source === target.artifact.source))) {
-      this.contentEl.createEl('p', { text: project
-        ? 'Open unsaved drafts will be kept, but you will need to add their documents again before saving them to the originals.'
-        : 'Your open unsaved draft will be kept, but you will need to add the document again before saving it to the original.' });
+    const folders = this.plugin.documentFolders();
+    const affected = (artifact: Artifact) => {
+      if ('artifact' in target) return artifact.source === target.artifact.source;
+      const placed = folders.get(artifact.route) || [];
+      return artifact.project === target.project && (!target.folder || target.folder.every((part, index) => placed[index] === part));
+    };
+    if (this.plugin.nativeViews().some(view => view.hasUnsavedEdits && view.artifact && affected(view.artifact))) {
+      this.contentEl.createEl('p', { text: kind === 'document'
+        ? 'Your open unsaved draft will be kept, but you will need to add the document again before saving it to the original.'
+        : 'Open unsaved drafts will be kept, but you will need to add their documents again before saving them to the originals.' });
     }
     const error = this.contentEl.createDiv({ cls: 'docshelf-error', attr: { role: 'alert' } });
     const actions = this.contentEl.createDiv({ cls: 'docshelf-add-actions' });
@@ -31,9 +40,9 @@ export class RemoveModal extends Modal {
     cancel.focus();
     void this.plugin.prepareRemove(target).then(prepared => {
       if (this.closed) return;
-      detail.setText(project
-        ? projectRemovalDetail(prepared.documents, prepared.folders, prepared.foldersExcluded)
-        : prepared.foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.');
+      detail.setText(kind === 'document'
+        ? prepared.foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.'
+        : groupRemovalDetail(kind, prepared.documents, prepared.folders, prepared.foldersExcluded));
       remove.disabled = false;
       remove.onclick = async () => {
         remove.disabled = true;
@@ -41,7 +50,7 @@ export class RemoveModal extends Modal {
         try {
           await prepared.commit();
           this.close();
-          new Notice(`${project ? 'Project' : 'Document'} removed from shelf.`);
+          new Notice(`${kind[0].toUpperCase()}${kind.slice(1)} removed from shelf.`);
         } catch (caught) {
           if (!this.closed) { error.setText(message(caught)); remove.setText('Remove'); }
         }
@@ -52,8 +61,11 @@ export class RemoveModal extends Modal {
   onClose(): void { this.closed = true; this.contentEl.empty(); }
 }
 
-function projectRemovalDetail(documents: number, folders: number, foldersExcluded: number): string {
+function groupRemovalDetail(kind: 'project' | 'folder', documents: number, folders: number, foldersExcluded: number): string {
   const count = (value: number, noun: string) => value ? [`${value} ${noun}${value === 1 ? '' : 's'}`] : [];
   const removed = [...count(documents, 'document'), ...count(folders, 'watched folder')].join(' and ');
-  return `This removes ${removed} from the shelf. ${foldersExcluded ? 'Its documents will also be excluded from other watched folders so they stay off the shelf.' : 'You can add them again later.'}`;
+  const after = kind === 'folder'
+    ? foldersExcluded ? 'Files added to this folder later will stay off the shelf too.' : 'You can add it again later.'
+    : foldersExcluded ? 'Its documents will also be excluded from other watched folders so they stay off the shelf.' : 'You can add them again later.';
+  return `This removes ${removed} from the shelf. ${after}`;
 }

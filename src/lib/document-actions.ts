@@ -2,6 +2,12 @@ import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
 import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import './document-actions.css';
 
+/** A project heading, or a folder row inside it named by its folder path. */
+export interface ShelfGroup {
+  project: string;
+  folder?: string[];
+}
+
 interface DocumentArtifact {
   route: string;
   title: string;
@@ -182,13 +188,14 @@ export function createDocumentActions(options: { basePath: string; localActions:
     void confirmRemoval(selection.trigger, selection.token, { artifact: selection.artifact });
   });
 
-  async function confirmRemoval(trigger: HTMLElement, token: string | undefined, target: { artifact: DocumentArtifact } | { project: string }) {
-    const project = 'project' in target;
+  async function confirmRemoval(trigger: HTMLElement, token: string | undefined, target: { artifact: DocumentArtifact } | ShelfGroup) {
+    const kind = 'artifact' in target ? 'document' : target.folder ? 'folder' : 'project';
     const imported = 'artifact' in target && !!target.artifact.imported;
-    const noun = project ? 'project' : 'document';
-    const describe = (name: string) => project
-      ? `Remove the “${name}” project from DocShelf? Its original files and folders will stay untouched.`
-      : `Remove “${name}” from DocShelf? The original file or remote document will stay untouched.`;
+    const describe = (name: string) => ({
+      project: `Remove the “${name}” project from DocShelf? Its original files and folders will stay untouched.`,
+      folder: `Remove the “${name}” folder from DocShelf? Its original files will stay untouched.`,
+      document: `Remove “${name}” from DocShelf? The original file or remote document will stay untouched.`,
+    })[kind];
     const dialog = document.createElement('dialog');
     dialog.className = 'docshelf-remove-dialog';
     dialog.setAttribute('aria-labelledby', 'docshelf-remove-title');
@@ -198,7 +205,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
     title.textContent = 'Remove from shelf?';
     const description = document.createElement('p');
     description.id = 'docshelf-remove-description';
-    description.textContent = describe('project' in target ? target.project : target.artifact.title);
+    description.textContent = describe('artifact' in target ? target.artifact.title : target.folder?.join('/') || target.project);
     const detail = document.createElement('p');
     detail.textContent = imported ? 'This removes the import from this browser. You can add it again later.' : 'Checking registration…';
     const error = document.createElement('p');
@@ -221,10 +228,10 @@ export function createDocumentActions(options: { basePath: string; localActions:
       const response = await fetch(`${options.basePath}__docshelf/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DocShelf-Request': 'document-actions', 'X-DocShelf-Token': token! },
-        body: JSON.stringify({ action, ...('project' in target ? { project: target.project } : { route: target.artifact.route }), revision }),
+        body: JSON.stringify({ action, ...('artifact' in target ? { route: target.artifact.route } : target), revision }),
       });
       const result = await responseRecord(response);
-      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `Could not remove the ${noun}.`);
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : `Could not remove the ${kind}.`);
       return result;
     };
     try {
@@ -235,9 +242,9 @@ export function createDocumentActions(options: { basePath: string; localActions:
         const { title: name, foldersExcluded, documents, folders } = prepared;
         if (typeof name !== 'string' || typeof revision !== 'string' || typeof foldersExcluded !== 'number') throw new Error('The local server returned an invalid removal preview.');
         description.textContent = describe(name);
-        if (project) {
+        if (kind !== 'document') {
           if (typeof documents !== 'number' || typeof folders !== 'number') throw new Error('The local server returned an invalid removal preview.');
-          detail.textContent = projectRemovalDetail(documents, folders, foldersExcluded);
+          detail.textContent = groupRemovalDetail(kind, documents, folders, foldersExcluded);
         } else detail.textContent = foldersExcluded ? 'This document will also be excluded from its watched folders so it stays off the shelf.' : 'You can add it again later.';
       }
       confirm.disabled = false;
@@ -249,9 +256,9 @@ export function createDocumentActions(options: { basePath: string; localActions:
           else if (typeof revision === 'string') await request('remove', revision);
           else throw new Error('Preview the removal again before confirming.');
           dialog.close();
-          showNotice(`${project ? 'Project' : 'Document'} removed from shelf. The catalog will update shortly.`);
+          showNotice(`${kind[0].toUpperCase()}${kind.slice(1)} removed from shelf. The catalog will update shortly.`);
         } catch (caught) {
-          error.textContent = caught instanceof Error ? caught.message : `Could not remove the ${noun}.`;
+          error.textContent = caught instanceof Error ? caught.message : `Could not remove the ${kind}.`;
           confirm.textContent = 'Remove';
         }
       };
@@ -290,8 +297,9 @@ export function createDocumentActions(options: { basePath: string; localActions:
       const capability = await fetchCapabilities();
       return capability?.remove === true && typeof capability.token === 'string' ? capability.token : undefined;
     },
-    removeProject(project: string, trigger: HTMLElement, token: string) {
-      void confirmRemoval(trigger, token, { project });
+    /** Remove a project heading, or one of its folder rows. */
+    removeGroup(group: ShelfGroup, trigger: HTMLElement, token: string) {
+      void confirmRemoval(trigger, token, group);
     },
     add(link: HTMLAnchorElement, getArtifact: () => DocumentArtifact | undefined, viewerUrl: () => string) {
       const row = link.parentElement;
@@ -356,10 +364,13 @@ export function createDocumentActions(options: { basePath: string; localActions:
   };
 }
 
-function projectRemovalDetail(documents: number, folders: number, foldersExcluded: number) {
+function groupRemovalDetail(kind: 'project' | 'folder', documents: number, folders: number, foldersExcluded: number) {
   const count = (value: number, noun: string) => value ? [`${value} ${noun}${value === 1 ? '' : 's'}`] : [];
   const removed = [...count(documents, 'document'), ...count(folders, 'watched folder')].join(' and ');
-  return `This removes ${removed} from the shelf. ${foldersExcluded ? 'Its documents will also be excluded from other watched folders so they stay off the shelf.' : 'You can add them again later.'}`;
+  const after = kind === 'folder'
+    ? foldersExcluded ? 'Files added to this folder later will stay off the shelf too.' : 'You can add it again later.'
+    : foldersExcluded ? 'Its documents will also be excluded from other watched folders so they stay off the shelf.' : 'You can add them again later.';
+  return `This removes ${removed} from the shelf. ${after}`;
 }
 
 function menuLink(label: string) {

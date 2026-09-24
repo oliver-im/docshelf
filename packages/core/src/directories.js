@@ -38,11 +38,57 @@ function directoryString(value, field) {
 }
 
 /** Relative paths use forward slashes. The explicitly selected root is never excluded.
+ * A `./` rule names one exact path from the root; when that path is a folder, it covers everything inside it.
  * @param {string} relative @param {string[]} [exclude] */
 export function excludedPath(relative, exclude = []) {
   if (!relative) return false;
   const parts = relative.split('/');
-  return parts.some(part => part.startsWith('.') || ignoredDirectoryNames.includes(part)) || exclude.some(rule => rule.startsWith('./') ? relative === rule.slice(2) : rule.includes('/') ? relative === rule || relative.startsWith(`${rule}/`) : parts.includes(rule));
+  const within = (/** @type {string} */ rule) => relative === rule || relative.startsWith(`${rule}/`);
+  return parts.some(part => part.startsWith('.') || ignoredDirectoryNames.includes(part)) || exclude.some(rule => rule.startsWith('./') ? within(rule.slice(2)) : rule.includes('/') ? within(rule) : parts.includes(rule));
+}
+
+/**
+ * @template T
+ * @typedef {{ type: 'folder', name: string, key: string, children: DocumentTreeNode<T>[] } | { type: 'document', item: T }} DocumentTreeNode
+ */
+
+/**
+ * @template T
+ * @typedef {{ folders: Map<string, TreeBranch<T>>, documents: T[] }} TreeBranch
+ */
+
+/** Nest documents by folder. Folders come first alphabetically, and documents keep their given order.
+ * A folder whose only content is one subfolder merges with it into a single `a/b` row.
+ * A folder's key is `JSON.stringify` of its full path, which equals that of its own documents' `folders`.
+ * @template T
+ * @param {Array<{ item: T, folders: string[] }>} entries
+ * @returns {DocumentTreeNode<T>[]} */
+export function documentTree(entries) {
+  /** @type {TreeBranch<T>} */
+  const root = { folders: new Map(), documents: [] };
+  for (const { item, folders } of entries) {
+    let branch = root;
+    for (const name of folders) {
+      let next = branch.folders.get(name);
+      if (!next) branch.folders.set(name, next = { folders: new Map(), documents: [] });
+      branch = next;
+    }
+    branch.documents.push(item);
+  }
+  /** @param {TreeBranch<T>} branch @param {string[]} parent @returns {DocumentTreeNode<T>[]} */
+  const nodes = (branch, parent) => [
+    ...[...branch.folders].sort(([a], [b]) => a.localeCompare(b)).map(([name, folder]) => {
+      const path = [...parent, name];
+      while (!folder.documents.length && folder.folders.size === 1) {
+        const [[child, only]] = folder.folders;
+        path.push(child);
+        folder = only;
+      }
+      return { type: /** @type {const} */ ('folder'), name: path.slice(parent.length).join('/'), key: JSON.stringify(path), children: nodes(folder, path) };
+    }),
+    ...branch.documents.map(item => ({ type: /** @type {const} */ ('document'), item })),
+  ];
+  return nodes(root, []);
 }
 
 /** @param {string} filename */

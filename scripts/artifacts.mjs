@@ -21,11 +21,12 @@ import {
   rewriteArtifactLinks,
 } from './artifact-html.mjs';
 import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
+import { documentTree } from '@docshelf/core/directories';
 import { renderMarkdownArtifact } from './markdown.mjs';
 import { writeSearchIndex } from './search-index.mjs';
 import { normalizeBasePath } from './site-path.mjs';
 import { acquireSyncLock, describeLockOwner, isProcessAlive } from './watcher-lock.mjs';
-import { expandShelf } from '../packages/local/shelf.mjs';
+import { documentFolders, expandShelf } from '../packages/local/shelf.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const docShelfRoot = path.resolve(scriptsDirectory, '..');
@@ -286,6 +287,41 @@ export function artifactFileName(artifact) {
 }
 
 /**
+ * Each document's folder path within its project, in shelf order.
+ *
+ * @param {Shelf} shelf
+ * @returns {string[][]}
+ */
+export function shelfFolders(shelf) {
+  return documentFolders(
+    shelf.artifacts.map((artifact) => ({ project: artifact.project, path: artifact.sourcePath })),
+    shelf.directories || [],
+  );
+}
+
+/**
+ * @typedef {{ label: string, link: string } | { label: string, items: SidebarItem[] }} SidebarItem
+ */
+
+/**
+ * Group documents by project, then nest each project's folder documents as they sit on disk.
+ *
+ * @param {Shelf} shelf
+ * @returns {Array<{ label: string, items: SidebarItem[] }>}
+ */
+export function shelfSidebar(shelf) {
+  const folders = shelfFolders(shelf);
+  /** @param {import('@docshelf/core/directories').DocumentTreeNode<Artifact>[]} nodes @returns {SidebarItem[]} */
+  const items = (nodes) => nodes.map((node) => node.type === 'folder'
+    ? { label: node.name, items: items(node.children) }
+    : { label: artifactFileName(node.item), link: artifactUrl(node.item) });
+  return Array.from(
+    Map.groupBy(shelf.artifacts.map((item, index) => ({ item, folders: folders[index] })), (entry) => entry.item.project),
+    ([label, entries]) => ({ label, items: items(documentTree(entries)) }),
+  );
+}
+
+/**
  * Regenerate public/artifacts and the generated shelf from the registered sources.
  *
  * Every caller serializes on the artifact-sync lock: `npm run sync` and the `pre*` hooks wait for
@@ -419,10 +455,11 @@ async function writeGeneratedShelf(shelf, revisionState) {
   const revisions = new Map(
     revisionState.artifacts.map((artifact) => [artifact.route, artifact.revision]),
   );
+  const folders = shelfFolders(shelf);
   const generatedShelf = {
     version: shelf.version,
     shelfRevision: revisionState.shelfRevision,
-    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
+    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
       project,
       route,
       title,
@@ -430,6 +467,7 @@ async function writeGeneratedShelf(shelf, revisionState) {
       format,
       revision: revisions.get(route),
       ...(embedUrl ? { embedUrl } : {}),
+      ...(folders[index].length ? { folders: folders[index] } : {}),
     })),
   };
 
@@ -685,6 +723,8 @@ async function readArtifactSource(artifact, roots) {
 
 /** @param {Shelf} shelf @param {ArtifactRevision[]} artifacts */
 function createRevisionState(shelf, artifacts) {
+  // Folder placement shapes the sidebar, so a change must reload open viewers.
+  const folders = shelfFolders(shelf);
   return {
     version: 1,
     revision: contentRevision(
@@ -692,13 +732,14 @@ function createRevisionState(shelf, artifacts) {
     ),
     shelfRevision: contentRevision(
       JSON.stringify(
-        shelf.artifacts.map(({ project, route, title, description, embedUrl, format }) => ({
+        shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
           project,
           route,
           title,
           description,
           format,
           ...(embedUrl ? { embedUrl } : {}),
+          ...(folders[index].length ? { folders: folders[index] } : {}),
         })),
       ),
     ),
