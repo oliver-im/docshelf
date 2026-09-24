@@ -19,8 +19,8 @@ import { RecoveryStore } from './core/editing';
 import { IndexSources } from './core/index-sources';
 import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
-import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
-import { RemoveModal } from './ui/remove';
+import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf } from '../../local/shelf.mjs';
+import { RemoveModal, type RemovalTarget } from './ui/remove';
 import { shell } from 'electron';
 
 export default class DocShelfPlugin extends Plugin {
@@ -347,25 +347,31 @@ export default class DocShelfPlugin extends Plugin {
     } finally { progress.hide(); }
   }
 
-  showRemove(artifact: Artifact): void {
+  showRemove(target: RemovalTarget): void {
     if (this.disposed) return;
     this.removeModal?.close();
-    this.removeModal = new RemoveModal(this, artifact);
+    this.removeModal = new RemoveModal(this, target);
     this.removeModal.open();
   }
 
-  async prepareRemove(artifact: Artifact) {
+  async prepareRemove(target: RemovalTarget) {
     const shelfPath = this.shelfPath();
     const base = path.dirname(shelfPath);
     const workspaceRoot = this.settings.workspaceRoot;
     const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
-    const options = { shelfPath, roots, route: artifact.route, source: artifact.source };
-    const prepared = await prepareRemoval(options);
-    return { foldersExcluded: prepared.foldersExcluded, commit: async () => {
+    const commit = (remove: () => Promise<unknown>) => async () => {
       if (this.disposed || this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Close this dialog and try again.');
-      await removeFromShelf(options, prepared.revision);
+      await remove();
       await this.refresh();
-    } };
+    };
+    if ('project' in target) {
+      const options = { shelfPath, roots, project: target.project };
+      const prepared = await prepareProjectRemoval(options);
+      return { documents: prepared.documents, folders: prepared.folders, foldersExcluded: prepared.foldersExcluded, commit: commit(() => removeProjectFromShelf(options, prepared.revision)) };
+    }
+    const options = { shelfPath, roots, route: target.artifact.route, source: target.artifact.source };
+    const prepared = await prepareRemoval(options);
+    return { documents: 1, folders: 0, foldersExcluded: prepared.foldersExcluded, commit: commit(() => removeFromShelf(options, prepared.revision)) };
   }
 
   showSettings(): void { new ConfigureModal(this).open(); }

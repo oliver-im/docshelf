@@ -197,8 +197,21 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   assert.equal(await review.getByRole('textbox', { name: 'Your edits', exact: true }).inputValue(), '# Unsaved folder draft');
   await review.getByRole('button', { name: 'Save edited version', exact: true }).click();
   await poll(async () => (await readFile(live, 'utf8')) === '# Unsaved folder draft', 'The recovered draft could not save after review.');
+  // A project heading removes its watched folder and documents from the shelf only.
+  await page.evaluate(folder => app.plugins.getPlugin('docshelf').addSources([folder], 'Removable project'), directory);
+  await page.locator('.docshelf-project-toggle').filter({ hasText: 'Removable project' }).click({ button: 'right' });
+  await page.locator('.menu-item').filter({ hasText: 'Remove from shelf…' }).click();
+  await page.waitForSelector('.docshelf-remove');
+  await poll(() => page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).isEnabled(), 'Project removal confirmation did not become ready.');
+  assert.match(await page.locator('.docshelf-remove').textContent(), /“Removable project” project[\s\S]*1 watched folder/);
+  await page.screenshot({ path: '.local/runtime/remove-project-confirmation.png' });
+  await page.locator('.docshelf-remove button').filter({ hasText: /^Remove$/ }).click();
+  await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.project === 'Removable project')), 'Removing a project left its documents on the shelf.');
+  assert.deepEqual(JSON.parse(await readFile(shelfPath, 'utf8')).directories, []);
+  assert.equal(await readFile(path.join(directory, 'nested/second.md'), 'utf8'), '# Folder second\n');
+
   await rm(live);
   await writeFile(shelfPath, JSON.stringify(baseline));
   await poll(() => page.evaluate(count => app.plugins.getPlugin('docshelf').catalog.artifacts.length === count, baseline.artifacts.length), 'Removing a folder left discovered documents in the catalog.');
-  console.log('Project selection/creation, immediate mixed-picker registration, cancellation, deduplication, invalid selections, contextual Add, recursive discovery, live edits, confirmed removal/cancellation, exact folder exclusions, source preservation, and unsaved draft protection passed.');
+  console.log('Project selection/creation, immediate mixed-picker registration, cancellation, deduplication, invalid selections, contextual Add, recursive discovery, live edits, confirmed document and project removal/cancellation, exact folder exclusions, source preservation, and unsaved draft protection passed.');
 }

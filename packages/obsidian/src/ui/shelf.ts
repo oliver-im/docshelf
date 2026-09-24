@@ -211,6 +211,8 @@ export class ShelfView extends ItemView {
       Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-project-toggle')).find(button => button.dataset.project === project)?.focus();
     }));
     menu.addItem(item => item.setTitle('Reset project order').setIcon('list-restart').setDisabled(!this.projectOrder.length).onClick(() => this.saveProjectOrder([], project)));
+    menu.addSeparator();
+    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project })));
     this.showMenu(menu, toggle);
   }
 
@@ -219,7 +221,7 @@ export class ShelfView extends ItemView {
     const menu = this.createMenu(project);
     if (!searching) this.addMoveActions(menu, route, () => this.orderedDocuments(project).map(item => item.route), order => this.saveDocumentOrder(project, order, route));
     menu.addSeparator();
-    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove(artifact)));
+    menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ artifact })));
     this.showMenu(menu, button);
   }
 

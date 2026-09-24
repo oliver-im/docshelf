@@ -501,7 +501,7 @@ const blankFrameUrl = 'about:blank';
       };
       openButton.addEventListener('click', () => openAdd());
       window.addEventListener('docshelf:add', event => openAdd((event as CustomEvent<{ project?: string }>).detail?.project || ''));
-      installShelfAddMenu();
+      installShelfMenu();
       for (const button of closeButtons) button.addEventListener('click', closeDialog);
       dialog.addEventListener('click', (event) => {
         if (event.target === dialog) closeDialog();
@@ -646,32 +646,59 @@ const blankFrameUrl = 'about:blank';
       }
     }
 
-    function installShelfAddMenu() {
+    function installShelfMenu() {
       const sidebar = document.querySelector<HTMLElement>('#starlight__sidebar');
       if (!sidebar) return;
       const menu = document.createElement('div');
       if (!('showPopover' in menu)) return;
       menu.className = 'docshelf-document-menu'; menu.setAttribute('popover', 'manual'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Shelf actions');
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Add…'; button.setAttribute('role', 'menuitem');
-      menu.append(button); sidebar.append(menu);
+      const menuItem = (label: string) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = label; item.setAttribute('role', 'menuitem'); return item; };
+      const button = menuItem('Add…');
+      const removeButton = menuItem('Remove from shelf…');
+      menu.append(button, removeButton); sidebar.append(menu);
       let project = '';
+      let removalToken: string | undefined;
       let anchor: HTMLElement | null = null;
+      let point = { x: 0, y: 0 };
+      let opened = 0;
       const close = () => { if (menu.matches(':popover-open')) menu.hidePopover(); };
       button.onclick = () => { close(); window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } })); };
-      menu.onkeydown = event => { if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); } };
+      removeButton.onclick = () => { close(); if (anchor && removalToken) documentActions.removeProject(project, anchor, removalToken); };
+      menu.onkeydown = event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const items = [button, removeButton].filter(item => !item.hidden);
+          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+          items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+        } else if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); }
+      };
       document.addEventListener('pointerdown', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
       document.addEventListener('focusin', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
       document.addEventListener('scroll', close, true);
       window.addEventListener('resize', close);
       window.addEventListener('blur', close);
+      const place = () => {
+        menu.style.left = `${Math.max(8, Math.min(point.x, innerWidth - menu.offsetWidth - 8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(point.y, innerHeight - menu.offsetHeight - 8))}px`;
+      };
       const show = (target: HTMLElement, x: number, y: number) => {
         anchor = target.closest<HTMLElement>('summary, button, a') || target;
         const summary = target.closest('details')?.querySelector('summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
+        removalToken = undefined;
+        removeButton.hidden = true;
+        const request = ++opened;
+        point = { x, y };
         menu.showPopover();
-        menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
-        menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+        place();
         button.focus();
+        // Only a project heading offers project removal, and only when the loopback watcher can change the shelf.
+        if (project && summary?.contains(target)) void documentActions.removalToken().then(token => {
+          if (!token || request !== opened || !menu.matches(':popover-open')) return;
+          removalToken = token;
+          removeButton.hidden = false;
+          place();
+        });
       };
       sidebar.addEventListener('contextmenu', event => { if (event.defaultPrevented || !(event.target instanceof HTMLElement) || event.target.closest('input, textarea')) return; event.preventDefault(); show(event.target, event.clientX, event.clientY); });
       sidebar.addEventListener('keydown', event => {

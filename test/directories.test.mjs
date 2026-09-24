@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
-import { expandShelf, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
+import { expandShelf, prepareAddition, addToShelf, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, assertRegisteredSource } from '../packages/local/shelf.mjs';
 import { createRegistrationHandler } from '../scripts/registration.mjs';
 import { watchScope } from '../packages/local/watch-scope.mjs';
 import { SourceWatcher } from '../scripts/source-watcher.mjs';
@@ -190,6 +190,34 @@ test('removing discovered files blocks stale native saves and accepts literal fi
   assert.equal((await expandShelf(saved, f.base, f.roots)).artifacts.length, 2);
 });
 
+test('removing a project drops its folders and documents while other projects keep theirs', async t => {
+  const f = await fixture(t);
+  for (const file of ['loose.md', 'other.md', 'kept.md']) await writeFile(path.join(f.base, file), `# ${file}\n`);
+  f.config.artifacts.push(
+    { source: 'loose.md', route: 'loose.html', title: 'Loose', project: 'Project' },
+    { source: 'https://claude.ai/public/artifacts/12345678-1234-1234-1234-123456789abc', route: 'remote.html', title: 'Remote', project: 'Project' },
+    { source: 'kept.md', route: 'kept.html', title: 'Kept', project: 'Other' },
+  );
+  f.config.directories.push({ id: 'parent', source: '.', project: 'Parent' }, { id: 'nested', source: 'docs/nested', project: 'Nested' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const before = await readFile(f.shelfPath, 'utf8');
+  const options = { ...f, project: ' Project ' };
+  const prepared = await prepareProjectRemoval(options);
+  assert.deepEqual([prepared.title, prepared.documents, prepared.folders, prepared.foldersExcluded], ['Project', 3, 1, 1]);
+  assert.equal(await readFile(f.shelfPath, 'utf8'), before, 'Preparing or cancelling must not write.');
+  await assert.rejects(prepareProjectRemoval({ ...f, project: 'Missing' }), /no longer on the shelf/);
+  await assert.rejects(removeProjectFromShelf(options, 'stale'), /changed/);
+  await removeProjectFromShelf(options, prepared.revision);
+  assert.equal(await readFile(path.join(f.base, 'docs/one.md'), 'utf8'), '# First document\n');
+  assert.equal(await readFile(path.join(f.base, 'loose.md'), 'utf8'), '# loose.md\n');
+  const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
+  assert.deepEqual(saved.directories.map(entry => [entry.id, entry.exclude]), [['parent', ['./loose.md', './docs/one.md']], ['nested', []]]);
+  assert.deepEqual(saved.artifacts.map(entry => entry.route), ['kept.html']);
+  // The parent folder must not pick the removed documents back up, and the nested folder keeps its own documents.
+  const after = await expandShelf(saved, f.base, f.roots);
+  assert.deepEqual(after.artifacts.map(entry => [entry.project, entry.source]).sort(), [['Nested', 'docs/nested/two.html'], ['Other', 'kept.md'], ['Parent', 'other.md']]);
+});
+
 test('removal rejects changed registrations, stale confirmations, and concurrent shelf updates', async t => {
   const f = await fixture(t);
   await writeFile(f.shelfPath, JSON.stringify(f.config));
@@ -218,6 +246,20 @@ test('web removal accepts registered routes only and leaves version 1 compatible
   await assert.rejects(handler({ action: 'remove', route: 'remote.html' }), /changed/);
   assert.deepEqual(await handler({ action: 'remove', route: 'remote.html', revision: preview.revision }), { removed: true });
   assert.deepEqual(JSON.parse(await readFile(f.shelfPath, 'utf8')), { version: 1, custom: 'preserved', artifacts: [] });
+});
+
+test('web project removal previews counts and accepts a route or a project, never both', async t => {
+  const f = await fixture(t);
+  f.config.artifacts.push({ source: 'https://claude.ai/public/artifacts/12345678-1234-1234-1234-123456789abc', route: 'remote.html', title: 'Remote', project: 'Other' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const handler = createRegistrationHandler({ root: f.base, getShelfPath: async () => f.shelfPath, getRoots: async () => ({ workspace: f.base, checkout: f.base }) });
+  await assert.rejects(handler({ action: 'remove-preview', route: 'remote.html', project: 'Project' }), /registration request/);
+  await assert.rejects(handler({ action: 'remove-preview' }), /registration request/);
+  const preview = await handler({ action: 'remove-preview', project: 'Project' });
+  assert.deepEqual({ ...preview, revision: typeof preview.revision }, { revision: 'string', title: 'Project', documents: 2, folders: 1, foldersExcluded: 0 });
+  assert.deepEqual(await handler({ action: 'remove', project: 'Project', revision: preview.revision }), { removed: true });
+  const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
+  assert.deepEqual([saved.directories, saved.artifacts.map(entry => entry.route)], [[], ['remote.html']]);
 });
 
 

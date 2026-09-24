@@ -224,26 +224,7 @@ export async function prepareRemoval({ shelfPath, base = path.dirname(shelfPath)
   const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
   const artifact = expanded.artifacts.find(entry => entry.route === route);
   if (!artifact || expectedSource !== undefined && normalizedSource(artifact.source) !== normalizedSource(expectedSource)) throw new Error('This document changed or is no longer on the shelf. Close this dialog and try again.');
-  const source = normalizedSource(artifact.source);
-  const remote = /^https?:/i.test(source);
-  const sourcePath = path.resolve(base, source);
-  const canonical = remote ? null : await realpath(sourcePath).catch(error => { if (unavailable(error)) return sourcePath; throw error; });
-  const keep = [];
-  for (const entry of config.artifacts) {
-    const same = remote ? entry.route === route : !/^https?:/i.test(entry.source) && (await realpath(path.resolve(base, entry.source)).catch(() => path.resolve(base, entry.source))) === canonical;
-    if (!same) keep.push(entry);
-  }
-  config.artifacts = keep;
-  let foldersExcluded = 0;
-  if (!remote) for (const directory of expanded.directories) {
-    const root = directory.canonicalPath || directory.sourcePath;
-    const relative = portable(path.relative(root, canonical));
-    if (!relative || !within(root, canonical) || !directory.recursive && relative.includes('/') || excludedPath(relative, directory.exclude)) continue;
-    config.directories.find(entry => entry.id === directory.id).exclude.push(`./${relative}`);
-    foldersExcluded++;
-  }
-  if (config.version === 1) delete config.directories;
-  shelfConfig(config); // Validate generated exclusions before offering confirmation.
+  const { canonical, foldersExcluded } = await withoutDocuments(config, expanded.directories, base, [artifact]);
   const revision = digest(JSON.stringify([baseline, artifact, canonical, config]));
   return { shelfFile, baseline, config, revision, title: artifact.title, foldersExcluded };
 }
@@ -253,6 +234,64 @@ export async function removeFromShelf(options, expectedRevision) {
   if (prepared.revision !== expectedRevision) throw new Error('The shelf or document changed. Close this dialog and try again.');
   await commitRegistration(prepared, 'The shelf changed. Close this dialog and try again.');
   return { removed: true };
+}
+
+/** Remove a project's folders and every document listed under it; other projects' folders exclude those exact sources. */
+export async function prepareProjectRemoval({ shelfPath, base = path.dirname(shelfPath), roots, project, relativeOnly = false }) {
+  if (typeof project !== 'string' || !project.trim() || project.length > 8192) throw new Error('Choose a project to remove.');
+  const name = project.trim();
+  const { shelfFile, baseline, config } = await readRegistration(shelfPath, roots);
+  const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
+  // Apps trim labels before grouping, so match the heading the same way.
+  const documents = expanded.artifacts.filter(entry => typeof entry?.project === 'string' && entry.project.trim() === name);
+  const folders = expanded.directories.filter(entry => entry.project === name).length;
+  if (!documents.length && !folders) throw new Error('This project changed or is no longer on the shelf. Close this dialog and try again.');
+  config.directories = config.directories.filter(entry => entry.project !== name);
+  const { canonical, foldersExcluded } = await withoutDocuments(config, expanded.directories, base, documents);
+  const revision = digest(JSON.stringify([baseline, name, documents, canonical, config]));
+  return { shelfFile, baseline, config, revision, title: name, documents: documents.length, folders, foldersExcluded };
+}
+
+export async function removeProjectFromShelf(options, expectedRevision) {
+  const prepared = await prepareProjectRemoval(options);
+  if (prepared.revision !== expectedRevision) throw new Error('The shelf or project changed. Close this dialog and try again.');
+  await commitRegistration(prepared, 'The shelf changed. Close this dialog and try again.');
+  return { removed: true };
+}
+
+/** Drop explicit registrations of the removed documents, then exclude their exact sources from every folder still registered. */
+async function withoutDocuments(config, directories, base, removed) {
+  const routes = new Set();
+  const canonical = [];
+  for (const artifact of removed) {
+    const source = normalizedSource(artifact.source);
+    const sourcePath = path.resolve(base, source);
+    if (/^https?:/i.test(source)) routes.add(artifact.route);
+    else canonical.push(await realpath(sourcePath).catch(error => { if (unavailable(error)) return sourcePath; throw error; }));
+  }
+  const files = new Set(canonical);
+  const keep = [];
+  for (const entry of config.artifacts) {
+    const same = routes.has(entry.route) || files.size > 0 && !/^https?:/i.test(entry.source) && files.has(await realpath(path.resolve(base, entry.source)).catch(() => path.resolve(base, entry.source)));
+    if (!same) keep.push(entry);
+  }
+  config.artifacts = keep;
+  let foldersExcluded = 0;
+  for (const directory of directories) {
+    const registration = config.directories.find(entry => entry.id === directory.id);
+    if (!registration) continue;
+    const root = directory.canonicalPath || directory.sourcePath;
+    const count = registration.exclude.length;
+    for (const file of files) {
+      const relative = portable(path.relative(root, file));
+      if (!relative || !within(root, file) || !registration.recursive && relative.includes('/') || excludedPath(relative, registration.exclude)) continue;
+      registration.exclude.push(`./${relative}`);
+    }
+    if (registration.exclude.length > count) foldersExcluded++;
+  }
+  if (config.version === 1) delete config.directories;
+  shelfConfig(config); // Validate generated exclusions before offering confirmation.
+  return { canonical, foldersExcluded };
 }
 
 async function commitRegistration(prepared, changedMessage) {
