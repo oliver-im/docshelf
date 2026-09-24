@@ -310,5 +310,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.2.3/docshelf-0.2.3.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.2.3
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.3.0/docshelf-0.3.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.3.0

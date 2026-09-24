@@ -114,5 +114,5 @@ To register documents manually, follow the [web app registration guide](https://
 
 MIT. Themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.2.3/docshelf-0.2.3.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.2.3
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.3.0/docshelf-0.3.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.3.0
