@@ -19,4 +19,4 @@ Existing shelf files, routes, settings, and recovery records remain compatible; 
 
 Requires desktop Obsidian **1.13.7 or later**. Local runtime checks target macOS with Obsidian 1.13.7 and Electron 34.2.0. Windows, Linux, and Obsidian 1.14.2 remain unverified; mobile is unsupported.
 
-The aggregate tests, type and lint checks, and builds pass. The disposable-vault runtime run passed the functional scenarios, including the new folder lifecycle, but its final check for renderer errors still fails on `illegal access` messages. These messages also occur on the earlier branch revision; the full runtime suite is not currently green.
+The aggregate tests, type and lint checks, builds, and package checks pass. The complete packaged 0.3.0 runtime suite passed in a disposable vault, including fresh installation, preservation of settings and recovery files during plugin replacement, and the new folder lifecycle. Earlier local runs intermittently reported `illegal access` renderer errors, also seen on the earlier branch revision; the successful packaged run reported none.
