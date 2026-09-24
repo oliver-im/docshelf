@@ -31,6 +31,7 @@ const blankFrameUrl = 'about:blank';
   class="docshelf-viewer"
   data-docshelf-viewer
   data-artifacts={JSON.stringify(artifacts)}
+  data-folder-groups={JSON.stringify(shelf.folderGroups)}
   data-shelf-revision={shelf.shelfRevision}
   data-docshelf-live-updates={String(liveUpdatesEnabled)}
 >
@@ -168,12 +169,13 @@ const blankFrameUrl = 'about:blank';
   import { artifactsShareRemoteSource } from '../lib/artifact-identity.js';
   import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
   import { htmlSandbox } from '../lib/html-sandbox.js';
-  import { createDocumentActions } from '../lib/document-actions';
+  import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
 
   interface Artifact {
     route: string;
     format?: 'html' | 'markdown' | 'claude';
     project?: string;
+    folders?: string[];
     title: string;
     revision: string;
     embedUrl?: string;
@@ -501,7 +503,7 @@ const blankFrameUrl = 'about:blank';
       };
       openButton.addEventListener('click', () => openAdd());
       window.addEventListener('docshelf:add', event => openAdd((event as CustomEvent<{ project?: string }>).detail?.project || ''));
-      installShelfAddMenu();
+      installShelfMenu();
       for (const button of closeButtons) button.addEventListener('click', closeDialog);
       dialog.addEventListener('click', (event) => {
         if (event.target === dialog) closeDialog();
@@ -646,32 +648,77 @@ const blankFrameUrl = 'about:blank';
       }
     }
 
-    function installShelfAddMenu() {
+    function installShelfMenu() {
       const sidebar = document.querySelector<HTMLElement>('#starlight__sidebar');
       if (!sidebar) return;
       const menu = document.createElement('div');
       if (!('showPopover' in menu)) return;
       menu.className = 'docshelf-document-menu'; menu.setAttribute('popover', 'manual'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Shelf actions');
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Add…'; button.setAttribute('role', 'menuitem');
-      menu.append(button); sidebar.append(menu);
+      const menuItem = (label: string) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = label; item.setAttribute('role', 'menuitem'); return item; };
+      const button = menuItem('Add…');
+      const removeButton = menuItem('Remove from shelf…');
+      menu.append(button, removeButton); sidebar.append(menu);
+      const folderGroups = JSON.parse(root.dataset.folderGroups || '[]') as Array<{ project: string; folders: Array<{ key: string; name: string; title: string }> }>;
+      for (const group of sidebar.querySelectorAll('ul.top-level > li > details')) {
+        const headings = Array.from(group.querySelectorAll<HTMLElement>('summary'));
+        const project = headings[0]?.querySelector('.large')?.textContent || '';
+        const folders = folderGroups.find(entry => entry.project === project)?.folders;
+        if (!folders || folders.length !== headings.length - 1) continue;
+        folders.forEach((folder, index) => {
+          const heading = headings[index + 1];
+          if (heading.querySelector('.large')?.textContent !== folder.name) return;
+          heading.dataset.docshelfFolder = folder.key;
+          heading.dataset.docshelfFolderName = folder.title;
+        });
+      }
       let project = '';
+      let removal: ShelfGroup | undefined;
+      let removalToken: string | undefined;
       let anchor: HTMLElement | null = null;
+      let point = { x: 0, y: 0 };
+      let opened = 0;
       const close = () => { if (menu.matches(':popover-open')) menu.hidePopover(); };
       button.onclick = () => { close(); window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } })); };
-      menu.onkeydown = event => { if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); } };
+      removeButton.onclick = () => { close(); if (anchor && removal && removalToken) documentActions.removeGroup(removal, anchor, removalToken); };
+      menu.onkeydown = event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const items = [button, removeButton].filter(item => !item.hidden);
+          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+          items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+        } else if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); }
+      };
       document.addEventListener('pointerdown', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
       document.addEventListener('focusin', event => { if (event.target instanceof Node && !menu.contains(event.target)) close(); });
       document.addEventListener('scroll', close, true);
       window.addEventListener('resize', close);
       window.addEventListener('blur', close);
+      const place = () => {
+        menu.style.left = `${Math.max(8, Math.min(point.x, innerWidth - menu.offsetWidth - 8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(point.y, innerHeight - menu.offsetHeight - 8))}px`;
+      };
       const show = (target: HTMLElement, x: number, y: number) => {
         anchor = target.closest<HTMLElement>('summary, button, a') || target;
-        const summary = target.closest('details')?.querySelector('summary');
+        // Folder groups nest inside their project, so read the project from the top-level group.
+        const summary = target.closest('ul.top-level > li')?.querySelector(':scope > details > summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
+        const heading = target.closest('summary');
+        const folder = heading instanceof HTMLElement ? heading.dataset.docshelfFolder : undefined;
+        removal = !project ? undefined : heading === summary ? { project } : folder ? { project, folder, name: (heading as HTMLElement).dataset.docshelfFolderName } : undefined;
+        removalToken = undefined;
+        removeButton.hidden = true;
+        const request = ++opened;
+        point = { x, y };
         menu.showPopover();
-        menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
-        menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+        place();
         button.focus();
+        // Project headings and folder rows offer removal only when the loopback watcher can change the shelf.
+        if (removal) void documentActions.removalToken().then(token => {
+          if (!token || request !== opened || !menu.matches(':popover-open')) return;
+          removalToken = token;
+          removeButton.hidden = false;
+          place();
+        });
       };
       sidebar.addEventListener('contextmenu', event => { if (event.defaultPrevented || !(event.target instanceof HTMLElement) || event.target.closest('input, textarea')) return; event.preventDefault(); show(event.target, event.clientX, event.clientY); });
       sidebar.addEventListener('keydown', event => {
@@ -746,6 +793,7 @@ const blankFrameUrl = 'about:blank';
           ? normalizeSelection(requested)
           : emptySelection(artifact.route);
       const changed = selectionKey(currentSelection) !== selectionKey(selection);
+      const routeChanged = currentArtifact?.route !== artifact.route;
       currentArtifact = artifact;
       currentSelection = selection;
       document.title = `${artifact.title} | DocShelf`;
@@ -758,6 +806,8 @@ const blankFrameUrl = 'about:blank';
         if (isCurrent) {
           entry.link.setAttribute('data-docshelf-current', '');
           entry.link.setAttribute('aria-current', 'page');
+          // Reveal a newly selected document inside collapsed project and folder groups.
+          if (routeChanged) for (let group = entry.link.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
         } else {
           entry.link.removeAttribute('data-docshelf-current');
           entry.link.removeAttribute('aria-current');
@@ -1577,8 +1627,8 @@ const blankFrameUrl = 'about:blank';
     border-inline-start-color: transparent;
   }
 
-  /* Retain Starlight's sidebar shell for imports, without an empty disclosure. */
-  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty)) {
+  /* Hide only the empty fallback group; registered empty folders retain their actions. */
+  :global(html:has(.docshelf-viewer) #starlight__sidebar li:has(> details > ul:empty):not(:has(> details > summary .docshelf-folder-empty))) {
     display: none;
   }
 
@@ -1612,6 +1662,25 @@ const blankFrameUrl = 'about:blank';
   :global(html:has(.docshelf-viewer) main > .content-panel:last-of-type > .sl-container),
   :global(html:has(.docshelf-viewer) .sl-markdown-content) {
     height: 100%;
+  }
+
+  /* Folder groups inside a project read as rows, not as project headings. */
+  :global(#starlight__sidebar ul ul summary .large) {
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+  }
+
+  :global(#starlight__sidebar ul ul summary:hover .large) {
+    color: var(--sl-color-white);
+  }
+
+  :global(#starlight__sidebar .docshelf-folder-empty) {
+    color: var(--sl-color-gray-3);
+    background: transparent;
+    border: 0;
+    font-size: var(--sl-text-xs);
+    font-weight: 400;
   }
 
   :global(#starlight__sidebar a[data-docshelf-current]) {

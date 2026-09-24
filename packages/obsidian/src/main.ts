@@ -19,8 +19,9 @@ import { RecoveryStore } from './core/editing';
 import { IndexSources } from './core/index-sources';
 import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
-import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf } from '../../local/shelf.mjs';
-import { RemoveModal } from './ui/remove';
+import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
+import { documentTree, type FolderSegment } from '@docshelf/core/directories';
+import { RemoveModal, type RemovalTarget } from './ui/remove';
 import { shell } from 'electron';
 
 export default class DocShelfPlugin extends Plugin {
@@ -302,6 +303,18 @@ export default class DocShelfPlugin extends Plugin {
 
   nativeViews(): NativeMarkdownView[] { return this.app.workspace.getLeavesOfType(NATIVE_MARKDOWN_VIEW).map(leaf => leaf.view).filter((view): view is NativeMarkdownView => view instanceof NativeMarkdownView); }
 
+  /** Display segments with stable source identities, keyed by document route. */
+  documentFolders(): Map<string, FolderSegment[]> {
+    const artifacts = this.catalog?.artifacts || [];
+    const layout = documentLayout(artifacts.map(artifact => ({ project: artifact.project, path: artifact.canonicalPath || artifact.sourcePath })), this.catalog?.directories || []);
+    return new Map(artifacts.map((artifact, index) => [artifact.route, layout.documents[index]]));
+  }
+
+  projectTree(project: string, artifacts: Artifact[]) {
+    const layout = documentLayout(artifacts.map(artifact => ({ project: artifact.project, path: artifact.canonicalPath || artifact.sourcePath })), (this.catalog?.directories || []).filter(directory => directory.project === project));
+    return documentTree(artifacts.map((item, index) => ({ item, folders: layout.documents[index] })), layout.directories.map(directory => directory.folders));
+  }
+
   revealRecovery(): void {
     shell.showItemInFolder(this.recovery.directory);
   }
@@ -347,25 +360,36 @@ export default class DocShelfPlugin extends Plugin {
     } finally { progress.hide(); }
   }
 
-  showRemove(artifact: Artifact): void {
+  showRemove(target: RemovalTarget): void {
     if (this.disposed) return;
     this.removeModal?.close();
-    this.removeModal = new RemoveModal(this, artifact);
+    this.removeModal = new RemoveModal(this, target);
     this.removeModal.open();
   }
 
-  async prepareRemove(artifact: Artifact) {
+  async prepareRemove(target: RemovalTarget) {
     const shelfPath = this.shelfPath();
     const base = path.dirname(shelfPath);
     const workspaceRoot = this.settings.workspaceRoot;
     const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
-    const options = { shelfPath, roots, route: artifact.route, source: artifact.source };
-    const prepared = await prepareRemoval(options);
-    return { foldersExcluded: prepared.foldersExcluded, commit: async () => {
+    const commit = (remove: () => Promise<unknown>) => async () => {
       if (this.disposed || this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Close this dialog and try again.');
-      await removeFromShelf(options, prepared.revision);
+      await remove();
       await this.refresh();
-    } };
+    };
+    if ('project' in target && target.folder) {
+      const options = { shelfPath, roots, project: target.project, folder: target.folder };
+      const prepared = await prepareFolderRemoval(options);
+      return { title: prepared.title, documents: prepared.documents, folders: prepared.folders, foldersExcluded: prepared.foldersExcluded, commit: commit(() => removeFolderFromShelf(options, prepared.revision)) };
+    }
+    if ('project' in target) {
+      const options = { shelfPath, roots, project: target.project };
+      const prepared = await prepareProjectRemoval(options);
+      return { title: prepared.title, documents: prepared.documents, folders: prepared.folders, foldersExcluded: prepared.foldersExcluded, commit: commit(() => removeProjectFromShelf(options, prepared.revision)) };
+    }
+    const options = { shelfPath, roots, route: target.artifact.route, source: target.artifact.source };
+    const prepared = await prepareRemoval(options);
+    return { title: target.artifact.title, documents: 1, folders: 0, foldersExcluded: prepared.foldersExcluded, commit: commit(() => removeFromShelf(options, prepared.revision)) };
   }
 
   showSettings(): void { new ConfigureModal(this).open(); }

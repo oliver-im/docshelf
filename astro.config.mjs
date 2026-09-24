@@ -4,12 +4,11 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import {
   artifactBuildIntegration,
-  artifactFileName,
   artifactSearchIntegration,
-  artifactUrl,
   docshelfBasePath,
   loadShelf,
   runtimeRoot,
+  shelfSidebar,
 } from './scripts/artifacts.mjs';
 import { htmlIsolationIntegration } from './scripts/html-isolation.mjs';
 import { browserHost } from './scripts/server-security.mjs';
@@ -36,16 +35,7 @@ if (outDir) {
     throw new Error('DOCSHELF_WATCH_OUT_DIR must be a child of DocShelf .docshelf-runtime.');
   }
 }
-const shelfGroups = Array.from(
-  Map.groupBy(shelf.artifacts, (artifact) => artifact.project),
-  ([label, artifacts]) => ({
-    label,
-    items: artifacts.map((artifact) => ({
-      label: artifactFileName(artifact),
-      link: artifactUrl(artifact),
-    })),
-  }),
-);
+const shelfGroups = shelfSidebar(shelf);
 // Keep the navigation shell available when a hosted shelf starts empty so
 // browser-imported documents still have somewhere to appear.
 const sidebar = shelfGroups.length > 0 ? shelfGroups : [{ label: 'Shelf', items: [] }];

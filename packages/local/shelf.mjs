@@ -153,6 +153,51 @@ export async function expandShelf(value, base, roots, { allowUnavailable = false
   return { artifacts, directories, warnings };
 }
 
+/** @typedef {{ project: string, source: string, sourcePath: string, canonicalPath?: string }} PlacedDirectory */
+
+/** Place local documents and explicit registrations in the same physical tree within each project.
+ * Folder identities use source paths independently of display names, document counts, and tree compaction.
+ * @param {Array<{ project: string, path?: string }>} documents
+ * @param {PlacedDirectory[]} directories
+ */
+export function documentLayout(documents, directories) {
+  const rootOf = (/** @type {PlacedDirectory} */ directory) => directory.canonicalPath || directory.sourcePath;
+  const depth = (/** @type {string} */ value) => value.split(path.sep).length;
+  const ordered = [...directories].sort((a, b) => depth(rootOf(a)) - depth(rootOf(b)) || a.source.localeCompare(b.source));
+  const outer = (/** @type {string} */ project, /** @type {string | undefined} */ folder) => folder === undefined ? undefined : ordered.find(directory => directory.project === project.trim() && within(rootOf(directory), folder));
+  const roots = [...new Set(directories.map(directory => outer(directory.project, rootOf(directory))))].filter(directory => directory !== undefined);
+  const name = (/** @type {PlacedDirectory} */ directory) => path.basename(directory.sourcePath) || directory.source;
+  const keyFor = (/** @type {string} */ project, /** @type {string} */ folder) => digest(JSON.stringify([project.trim(), folder]));
+  const registered = new Set(directories.map(directory => keyFor(directory.project, rootOf(directory))));
+  /** @type {Map<string, string>} */
+  const paths = new Map();
+  /** @param {string} project @param {string | undefined} folder @returns {import('../core/src/directories.js').FolderSegment[]} */
+  const place = (project, folder) => {
+    const directory = outer(project, folder);
+    if (!directory || folder === undefined) return [];
+    const root = rootOf(directory);
+    const label = roots.some(other => other !== directory && other.project === directory.project && name(other) === name(directory)) ? directory.source : name(directory);
+    const parts = path.relative(root, folder).split(path.sep).filter(Boolean);
+    return [label, ...parts].map((name, index) => {
+      const source = path.join(root, ...parts.slice(0, index));
+      const key = keyFor(project, source);
+      paths.set(key, source);
+      return { name, key, ...(registered.has(key) ? { registered: true } : {}) };
+    });
+  };
+  return {
+    documents: documents.map(document => place(document.project, document.path === undefined ? undefined : path.dirname(document.path))),
+    directories: directories.map(directory => ({ project: directory.project, folders: place(directory.project, rootOf(directory)) })),
+    paths,
+  };
+}
+
+/** Display folder names for each document, in input order.
+ * @param {Array<{ project: string, path?: string }>} documents @param {PlacedDirectory[]} directories @returns {string[][]} */
+export function documentFolders(documents, directories) {
+  return documentLayout(documents, directories).documents.map(folders => folders.map(folder => folder.name));
+}
+
 /** The same preview/commit API is used by the Obsidian modal and loopback web interface. */
 export async function prepareAddition({ shelfPath, base = path.dirname(shelfPath), roots, sources, project = '', title = '', relativeOnly = false }) {
   if (!Array.isArray(sources) || !sources.length || sources.length > 100 || sources.some(source => typeof source !== 'string' || !source.trim() || source.length > 8192 || source.includes('\0'))) throw new Error('Enter up to 100 file or folder paths, one per line.');
@@ -224,28 +269,9 @@ export async function prepareRemoval({ shelfPath, base = path.dirname(shelfPath)
   const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
   const artifact = expanded.artifacts.find(entry => entry.route === route);
   if (!artifact || expectedSource !== undefined && normalizedSource(artifact.source) !== normalizedSource(expectedSource)) throw new Error('This document changed or is no longer on the shelf. Close this dialog and try again.');
-  const source = normalizedSource(artifact.source);
-  const remote = /^https?:/i.test(source);
-  const sourcePath = path.resolve(base, source);
-  const canonical = remote ? null : await realpath(sourcePath).catch(error => { if (unavailable(error)) return sourcePath; throw error; });
-  const keep = [];
-  for (const entry of config.artifacts) {
-    const same = remote ? entry.route === route : !/^https?:/i.test(entry.source) && (await realpath(path.resolve(base, entry.source)).catch(() => path.resolve(base, entry.source))) === canonical;
-    if (!same) keep.push(entry);
-  }
-  config.artifacts = keep;
-  let foldersExcluded = 0;
-  if (!remote) for (const directory of expanded.directories) {
-    const root = directory.canonicalPath || directory.sourcePath;
-    const relative = portable(path.relative(root, canonical));
-    if (!relative || !within(root, canonical) || !directory.recursive && relative.includes('/') || excludedPath(relative, directory.exclude)) continue;
-    config.directories.find(entry => entry.id === directory.id).exclude.push(`./${relative}`);
-    foldersExcluded++;
-  }
-  if (config.version === 1) delete config.directories;
-  shelfConfig(config); // Validate generated exclusions before offering confirmation.
+  const { canonical, changed } = await withoutDocuments(config, expanded.directories, base, [artifact]);
   const revision = digest(JSON.stringify([baseline, artifact, canonical, config]));
-  return { shelfFile, baseline, config, revision, title: artifact.title, foldersExcluded };
+  return { shelfFile, baseline, config, revision, title: artifact.title, foldersExcluded: changed.size };
 }
 
 export async function removeFromShelf(options, expectedRevision) {
@@ -253,6 +279,122 @@ export async function removeFromShelf(options, expectedRevision) {
   if (prepared.revision !== expectedRevision) throw new Error('The shelf or document changed. Close this dialog and try again.');
   await commitRegistration(prepared, 'The shelf changed. Close this dialog and try again.');
   return { removed: true };
+}
+
+/** Remove a project's folders and every document listed under it; other projects' folders exclude those exact sources. */
+export async function prepareProjectRemoval({ shelfPath, base = path.dirname(shelfPath), roots, project, relativeOnly = false }) {
+  if (typeof project !== 'string' || !project.trim() || project.length > 8192) throw new Error('Choose a project to remove.');
+  const name = project.trim();
+  const { shelfFile, baseline, config } = await readRegistration(shelfPath, roots);
+  const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
+  // Apps trim labels before grouping, so match the heading the same way.
+  const documents = expanded.artifacts.filter(entry => typeof entry?.project === 'string' && entry.project.trim() === name);
+  const folders = expanded.directories.filter(entry => entry.project === name).length;
+  if (!documents.length && !folders) throw new Error('This project changed or is no longer on the shelf. Close this dialog and try again.');
+  config.directories = config.directories.filter(entry => entry.project !== name);
+  // Keep files added later to a removed folder off the other projects' folders too.
+  const removedRoots = expanded.directories.filter(entry => entry.project === name).map(entry => entry.canonicalPath || entry.sourcePath);
+  const excluded = excludeFolders(config, expanded.directories, removedRoots);
+  const { canonical, changed } = await withoutDocuments(config, expanded.directories, base, documents);
+  const revision = digest(JSON.stringify([baseline, name, documents, canonical, config]));
+  return { shelfFile, baseline, config, revision, title: name, documents: documents.length, folders, foldersExcluded: new Set([...excluded, ...changed]).size };
+}
+
+export async function removeProjectFromShelf(options, expectedRevision) {
+  const prepared = await prepareProjectRemoval(options);
+  if (prepared.revision !== expectedRevision) throw new Error('The shelf or project changed. Close this dialog and try again.');
+  await commitRegistration(prepared, 'The shelf changed. Close this dialog and try again.');
+  return { removed: true };
+}
+
+/** Remove one folder row: this project's documents listed under it and its folders inside it. Every folder still
+ * registered that contains it, whatever its project, excludes it so files added there later stay off the shelf too. */
+export async function prepareFolderRemoval({ shelfPath, base = path.dirname(shelfPath), roots, project, folder, relativeOnly = false }) {
+  if (typeof project !== 'string' || !project.trim() || project.length > 8192 || typeof folder !== 'string' || !/^[a-f0-9]{64}$/.test(folder)) throw new Error('Choose a folder to remove.');
+  const name = project.trim();
+  const { shelfFile, baseline, config } = await readRegistration(shelfPath, roots);
+  const expanded = await expandShelf(config, base, roots, { relativeOnly, allowUnavailable: true });
+  const local = await Promise.all(expanded.artifacts.map(async entry => {
+    if (typeof entry?.source !== 'string' || /^https?:/i.test(entry.source)) return undefined;
+    const source = path.resolve(base, entry.source);
+    return realpath(source).catch(() => source);
+  }));
+  const layout = documentLayout(expanded.artifacts.map((entry, index) => ({ project: typeof entry?.project === 'string' ? entry.project : '', path: local[index] })), expanded.directories);
+  const candidates = [
+    ...layout.documents.filter((_, index) => expanded.artifacts[index]?.project?.trim() === name),
+    ...layout.directories.filter(entry => entry.project === name).map(entry => entry.folders),
+  ];
+  const selected = candidates.find(folders => folders.some(segment => segment.key === folder));
+  const target = layout.paths.get(folder);
+  if (!selected || !target) throw new Error('This folder changed or is no longer on the shelf. Close this dialog and try again.');
+  const title = selected.slice(0, selected.findIndex(segment => segment.key === folder) + 1).map(segment => segment.name).join('/');
+  const listed = layout.documents.flatMap((folders, index) => expanded.artifacts[index]?.project?.trim() === name && folders.some(segment => segment.key === folder) ? [index] : []);
+  const documents = listed.map(index => expanded.artifacts[index]);
+  const inside = new Set(expanded.directories.filter(entry => entry.project === name && within(target, entry.canonicalPath || entry.sourcePath)).map(entry => entry.id));
+  config.directories = config.directories.filter(entry => !inside.has(entry.id));
+  const excluded = excludeFolders(config, expanded.directories, [target]);
+  const { canonical, changed } = await withoutDocuments(config, expanded.directories, base, documents);
+  const revision = digest(JSON.stringify([baseline, name, folder, target, documents, canonical, config]));
+  return { shelfFile, baseline, config, revision, title, documents: documents.length, folders: inside.size, foldersExcluded: new Set([...excluded, ...changed]).size };
+}
+
+export async function removeFolderFromShelf(options, expectedRevision) {
+  const prepared = await prepareFolderRemoval(options);
+  if (prepared.revision !== expectedRevision) throw new Error('The shelf or folder changed. Close this dialog and try again.');
+  await commitRegistration(prepared, 'The shelf changed. Close this dialog and try again.');
+  return { removed: true };
+}
+
+/** Exclude each removed folder, by exact path, from every registered folder that strictly contains it.
+ * @returns {Set<string>} IDs of the folders that gained an exclusion. */
+function excludeFolders(config, directories, removed) {
+  const changed = new Set();
+  for (const directory of directories) {
+    const registration = config.directories.find(entry => entry.id === directory.id);
+    if (!registration?.recursive) continue;
+    const root = directory.canonicalPath || directory.sourcePath;
+    for (const folder of removed) {
+      const relative = portable(path.relative(root, folder));
+      if (!relative || !within(root, folder) || excludedPath(relative, registration.exclude)) continue;
+      registration.exclude.push(`./${relative}`);
+      changed.add(registration.id);
+    }
+  }
+  return changed;
+}
+
+/** Drop explicit registrations of the removed documents, then exclude their exact sources from every folder still registered. */
+async function withoutDocuments(config, directories, base, removed) {
+  const routes = new Set();
+  const canonical = [];
+  for (const artifact of removed) {
+    const source = normalizedSource(artifact.source);
+    const sourcePath = path.resolve(base, source);
+    if (/^https?:/i.test(source)) routes.add(artifact.route);
+    else canonical.push(await realpath(sourcePath).catch(error => { if (unavailable(error)) return sourcePath; throw error; }));
+  }
+  const files = new Set(canonical);
+  const keep = [];
+  for (const entry of config.artifacts) {
+    const same = routes.has(entry.route) || files.size > 0 && !/^https?:/i.test(entry.source) && files.has(await realpath(path.resolve(base, entry.source)).catch(() => path.resolve(base, entry.source)));
+    if (!same) keep.push(entry);
+  }
+  config.artifacts = keep;
+  const changed = new Set();
+  for (const directory of directories) {
+    const registration = config.directories.find(entry => entry.id === directory.id);
+    if (!registration) continue;
+    const root = directory.canonicalPath || directory.sourcePath;
+    for (const file of files) {
+      const relative = portable(path.relative(root, file));
+      if (!relative || !within(root, file) || !registration.recursive && relative.includes('/') || excludedPath(relative, registration.exclude)) continue;
+      registration.exclude.push(`./${relative}`);
+      changed.add(registration.id);
+    }
+  }
+  if (config.version === 1) delete config.directories;
+  shelfConfig(config); // Validate generated exclusions before offering confirmation.
+  return { canonical, changed };
 }
 
 async function commitRegistration(prepared, changedMessage) {
