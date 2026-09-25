@@ -4,6 +4,10 @@ Browse Markdown and HTML documents across your projects.
 
 [![Latest DocShelf for Obsidian release, including betas](https://img.shields.io/github/v/release/oliver-im/docshelf?include_prereleases&sort=semver&filter=%21v%2A&style=for-the-badge&label=Obsidian&labelColor=24283b&color=7045b3)](https://github.com/oliver-im/docshelf/releases) [![Download DocShelf for Obsidian ZIP](public/obsidian-download.svg)][obsidian-download]
 
+https://github.com/user-attachments/assets/c36997fb-03c5-4080-876f-6658b897e660
+
+*This showreel was made in one shot with Claude Opus 5.5.*
+
 ## Key features
 
 - **A shelf across projects.** Add files or folders where they live, and view their Markdown and HTML in Obsidian or in the browser. Folders are discovered recursively and update automatically.
