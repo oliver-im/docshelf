@@ -6,6 +6,8 @@ Browse Markdown and HTML documents across your projects.
 
 https://github.com/user-attachments/assets/c36997fb-03c5-4080-876f-6658b897e660
 
+*This showreel was made in one shot with Claude Opus 5.5.*
+
 ## Key features
 
 - **A shelf across projects.** Add files or folders where they live, and view their Markdown and HTML in Obsidian or in the browser. Folders are discovered recursively and update automatically.
