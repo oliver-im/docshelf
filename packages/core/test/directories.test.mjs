@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { distinctTitle, documentTitle, documentTree, excludedPath } from '../src/directories.js';
+import { distinctTitle, documentTitle, documentTree, excludedPath, parseDirectories } from '../src/directories.js';
 
 test('Markdown title inference skips code and honors scalar front matter', () => {
   assert.equal(documentTitle('```sh\n# install dependencies\n```\n# Real title', 'fallback.md'), 'Real title');
@@ -29,6 +29,19 @@ test('exact exclusions cover a named folder and everything inside it, literally'
   assert.equal(excludedPath('drafts-old/note.md', ['./drafts']), false);
   assert.equal(excludedPath('notes [v2]?.md', ['./notes [v2]?.md']), true);
   assert.equal(excludedPath('guides/v2/intro.md', ['./guides/v2']), true);
+});
+
+test('name exclusions match at any depth, while path exclusions start at the selected root', () => {
+  assert.equal(excludedPath('guides/drafts/note.md', ['drafts']), true);
+  assert.equal(excludedPath('reviews/archive/old.md', ['reviews/archive']), true);
+  assert.equal(excludedPath('team/reviews/archive/old.md', ['reviews/archive']), false);
+  assert.equal(excludedPath('reviews/archive-2/old.md', ['reviews/archive']), false);
+});
+
+test('folder IDs must be unique lowercase names because generated routes use them', () => {
+  const folder = id => ({ id, source: 'docs', project: 'Docs' });
+  assert.deepEqual(parseDirectories([folder('docs'), folder('docs-2')]).map(entry => entry.id), ['docs', 'docs-2']);
+  for (const value of [[folder('docs'), folder('docs')], [folder('Docs')]]) assert.throws(() => parseDirectories(value), /unique lowercase/);
 });
 
 test('common generated trees are skipped as descendants, never as selected roots', () => {
