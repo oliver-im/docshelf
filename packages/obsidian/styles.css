@@ -1,6 +1,6 @@
 .docshelf-shelf { padding: 14px; }
 .docshelf-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.docshelf-toolbar button, .docshelf-empty button { min-height: 32px; cursor: pointer; }
+.docshelf-toolbar button { min-height: 32px; cursor: pointer; }
 .docshelf-toolbar button[aria-pressed="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }
 .docshelf-search { width: 100%; min-height: 36px; }
 .docshelf-status { color: var(--text-muted); font-size: var(--font-ui-small); margin: 12px 0; }
@@ -51,8 +51,17 @@ button.docshelf-search-result { margin-bottom: 4px; padding: 8px 6px; }
 .docshelf-item-project { margin-left: 20px; color: var(--text-faint); font-size: var(--font-ui-smaller); line-height: 1.4; }
 .docshelf-muted { color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.5; }
 .docshelf-empty { padding: 20px 2px; color: var(--text-muted); line-height: 1.6; }
-.docshelf-empty h3 { color: var(--text-normal); }
-.docshelf-empty button { margin: 8px 8px 0 0; }
+.docshelf-empty-shelf { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 8px 16px; text-align: center; }
+/* Sidebar text, not a note heading: themes style h3 for Markdown. */
+.docshelf-empty-shelf h3 { margin: 0; color: var(--text-normal); font-family: var(--font-interface); font-size: var(--font-ui-medium); font-weight: var(--font-semibold); line-height: 1.3; }
+.docshelf-empty-shelf p { max-width: 280px; margin: 0; color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.5; }
+.docshelf-empty-shelf button { width: 100%; max-width: 240px; cursor: pointer; }
+.docshelf-empty-shelf button.mod-cta { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; }
+.docshelf-button-icon { display: flex; }
+.docshelf-button-icon svg { width: 16px; height: 16px; }
+button.docshelf-empty-link { height: auto; padding: 4px 8px; color: var(--text-muted); font-size: var(--font-ui-small); background: transparent; border: 0; box-shadow: none; }
+button.docshelf-empty-link:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.docshelf-empty-shelf p.docshelf-empty-note { margin-top: 4px; color: var(--text-faint); font-size: var(--font-ui-smaller); overflow-wrap: anywhere; }
 .docshelf-document { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .docshelf-document-header { flex: 0 0 auto; padding: 18px 24px 12px; border-bottom: 1px solid var(--background-modifier-border); }
 .docshelf-document-header h1 { font-size: 22px; line-height: 1.3; margin: 6px 0; }
