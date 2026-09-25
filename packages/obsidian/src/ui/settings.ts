@@ -28,7 +28,7 @@ function settingsRows(plugin: DocShelfPlugin, draft: Settings, saved?: (settings
           const snapshot = { ...draft };
           await plugin.configure(snapshot);
           if (plugin.error) new Notice(plugin.error);
-          else { saved?.(snapshot); new Notice('DocShelf settings saved.'); close?.(); }
+          else { saved?.(snapshot); new Notice(plugin.shelfMissing ? 'DocShelf settings saved. Adding documents will create the shelf file.' : 'DocShelf settings saved.'); close?.(); }
         } catch (error) { new Notice(String(error)); }
         finally { button.setDisabled(false); }
       })); } },

@@ -340,6 +340,18 @@ try {
   await poll(async () => (await documentRoutes()).length === 1, 'The document fixtures did not clear.');
   console.log('Document dragging, saved order, renames, new/removed documents, search relevance, drag cancellation, project boundaries, and order menus passed.');
 
+  // A shelf file that does not exist yet is the empty starting state, not an error.
+  const shelfSettings = await page.evaluate(() => ({ ...app.plugins.getPlugin('docshelf').settings }));
+  await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure({ ...settings, shelfPath: 'new-shelf.json' }), shelfSettings);
+  await page.locator('.docshelf-empty-shelf').waitFor();
+  assert.deepEqual(await page.evaluate(() => [app.plugins.getPlugin('docshelf').shelfMissing, app.plugins.getPlugin('docshelf').error]), [true, '']);
+  assert.equal(await page.locator('.docshelf-status').textContent(), '');
+  assert.match(await page.locator('.docshelf-empty-note').textContent(), /new-shelf\.json$/);
+  await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure(settings), shelfSettings);
+  await poll(async () => (await documentRoutes()).length === 1, 'The shelf did not reload after leaving the missing shelf.');
+  assert.equal(await page.locator('.docshelf-empty-shelf').count(), 0);
+  console.log('A missing shelf file shows the empty shelf without an error.');
+
   assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:reload')), true);
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Reload command did not complete.');
   assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:configure')), true);

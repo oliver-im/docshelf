@@ -5,6 +5,8 @@ import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
 import { documentLabel } from '../core/catalog';
 import type { DocumentTreeNode, FolderSegment } from '@docshelf/core/directories';
+import { homedir } from 'node:os';
+import path from 'node:path';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
@@ -18,6 +20,7 @@ type FolderNode = Extract<DocumentTreeNode<Artifact>, { type: 'folder' }>;
 /** Keep the first folder's identity as its ordering key when single-folder rows merge or split. */
 const childKey = (node: FolderNode): string => node.orderKey;
 const siblingsKey = (project: string, parent: string): string => JSON.stringify([project, parent]);
+const displayPath = (file: string): string => file.startsWith(homedir() + path.sep) ? `~${file.slice(homedir().length)}` : file;
 
 export class ShelfView extends ItemView {
   private query = '';
@@ -99,19 +102,11 @@ export class ShelfView extends ItemView {
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
-    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories]);
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath()]);
     if (key === this.renderedResults) return;
     this.renderedResults = key;
     this.results.empty();
-    if (!artifacts.length && !this.plugin.catalog?.directories?.length) {
-      const empty = this.results.createDiv({ cls: 'docshelf-empty' });
-      empty.createEl('h3', { text: 'Your documents, in one place' });
-      empty.createEl('p', { text: 'Add files or folders. Documents stay in their projects and folders update automatically.' });
-      empty.createEl('button', { text: 'Add…', cls: 'mod-cta' }).onclick = () => this.plugin.showAdd();
-      empty.createEl('button', { text: 'Configure shelf' }).onclick = () => this.plugin.showSettings();
-      empty.createEl('button', { text: 'Create empty shelf file' }).onclick = () => { void this.plugin.createShelf(); };
-      return;
-    }
+    if (!artifacts.length && !this.plugin.catalog?.directories?.length) { this.renderEmptyShelf(); return; }
     if (searching && !hits.length) { this.results.createEl('p', { text: 'Try a title, project, or phrase from the content.', cls: 'docshelf-empty' }); return; }
     if (searching) {
       for (const hit of hits) this.renderItem(this.results, hit, true, folders.get(hit.artifact.route) || []);
@@ -199,6 +194,17 @@ export class ShelfView extends ItemView {
       const ordered = this.orderedDocuments(project, documents.map(hit => hit.artifact));
       this.renderTree(items, project, this.plugin.projectTree(project, ordered), folders);
     }
+  }
+
+  private renderEmptyShelf(): void {
+    const empty = this.results.createDiv({ cls: 'docshelf-empty-shelf' });
+    empty.createEl('h3', { text: 'Your shelf is empty' });
+    const add = empty.createEl('button', { cls: 'mod-cta', attr: { type: 'button' } });
+    setIcon(add.createSpan({ cls: 'docshelf-button-icon', attr: { 'aria-hidden': 'true' } }), 'plus');
+    add.createSpan({ text: 'Add files or folders' });
+    add.onclick = () => this.plugin.showAdd();
+    empty.createEl('button', { text: 'Use an existing shelf…', cls: 'docshelf-empty-link', attr: { type: 'button' } }).onclick = () => this.plugin.showSettings();
+    if (this.plugin.shelfMissing) empty.createEl('p', { text: `Adding creates ${displayPath(this.plugin.shelfPath())}`, cls: 'docshelf-empty-note' });
   }
 
   private renderTree(parent: HTMLElement, project: string, nodes: DocumentTreeNode<Artifact>[], folders: Map<string, FolderSegment[]>, parentKey = ROOT_FOLDER): void {

@@ -1,6 +1,6 @@
 import { addIcon, FileSystemAdapter, Notice, Plugin, removeIcon, type WorkspaceLeaf } from 'obsidian';
 import { watch, type FSWatcher } from 'chokidar';
-import { writeFile, stat, realpath } from 'node:fs/promises';
+import { stat, lstat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { loadCatalog, findSource } from './core/catalog';
@@ -32,6 +32,8 @@ export default class DocShelfPlugin extends Plugin {
   ready: Promise<void> = Promise.resolve();
   error = '';
   loading = false;
+  /** The shelf file does not exist yet. Adding creates it. */
+  shelfMissing = false;
   recovery!: RecoveryStore;
   private watcher: FSWatcher | null = null;
   private watchSignature = '';
@@ -204,6 +206,7 @@ export default class DocShelfPlugin extends Plugin {
       }
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
+      this.shelfMissing = false;
       this.server.setCatalog(catalog, settings.runHtmlScripts);
       await this.search.replace(catalog.artifacts, contents, () => !this.disposed && settings === this.settings);
       if (this.disposed || settings !== this.settings) return;
@@ -211,13 +214,22 @@ export default class DocShelfPlugin extends Plugin {
       this.error = failures[0] || '';
       await this.updateWatcher(catalog);
     } catch (error) {
-      this.error = `${message(error)}${this.catalog ? ' Showing the last valid shelf.' : ''}`;
+      // Before any shelf loads, a missing file in an existing folder is the empty starting state.
+      this.shelfMissing = !this.catalog && await this.shelfNotCreated(error);
+      this.error = this.shelfMissing ? '' : `${message(error)}${this.catalog ? ' Showing the last valid shelf.' : ''}`;
       if (!this.catalog) await this.search.replace([], new Map());
       await this.updateWatcher(this.catalog);
     } finally {
       this.loading = false;
       if (!this.disposed) this.emit();
     }
+  }
+
+  private async shelfNotCreated(error: unknown): Promise<boolean> {
+    const shelfPath = this.shelfPath();
+    const { code, path: file } = error as NodeJS.ErrnoException;
+    // A dangling symlink is a broken shelf, not a missing one.
+    return code === 'ENOENT' && file === shelfPath && !(await lstat(shelfPath).catch(() => null));
   }
 
   private async updateWatcher(catalog: Catalog | null): Promise<void> {
@@ -393,15 +405,6 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   showSettings(): void { new ConfigureModal(this).open(); }
-
-  async createShelf(): Promise<void> {
-    try {
-      await writeFile(this.shelfPath(), `${JSON.stringify({ version: 1, artifacts: [] }, null, 2)}\n`, { flag: 'wx' });
-      await this.refresh();
-      new Notice('Empty shelf created. Add registrations to the JSON file, then reload.');
-      shell.showItemInFolder(this.shelfPath());
-    } catch (error) { new Notice(message(error)); }
-  }
 
   async revealArtifact(artifact: Artifact): Promise<void> {
     if (!artifact.sourcePath || !this.catalog) return;
