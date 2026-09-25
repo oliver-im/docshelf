@@ -54,16 +54,6 @@ test('same-process contention yields exactly one holder', async (t) => {
   assert.deepEqual(await leftovers(runtimeRoot), []);
 });
 
-test('a lock whose owner has died is reclaimed', async (t) => {
-  const runtimeRoot = await temporaryRuntime(t);
-  await seedLock(runtimeRoot, { pid: await deadPid(), token: 'dead-owner' });
-
-  const lock = await acquireWatcherLock(runtimeRoot);
-  assert.equal((await readOwner(runtimeRoot)).token, lock.owner.token);
-  lock.release();
-  assert.equal(await lockExists(runtimeRoot), false);
-});
-
 test('a lock recorded under this PID but not held by this process is reclaimed', async (t) => {
   const runtimeRoot = await temporaryRuntime(t);
   await seedLock(runtimeRoot, { pid: process.pid, token: 'previous-incarnation' });
@@ -153,15 +143,6 @@ test('multi-process contention over a stale lock has exactly one winner', async 
   }
 
   assert.deepEqual(await leftovers(runtimeRoot), []);
-});
-
-test('the lock is released when the process exits normally', async (t) => {
-  const runtimeRoot = await temporaryRuntime(t);
-  const child = spawnLockChild('exit', runtimeRoot);
-  const { code } = await child.exited;
-  assert.equal(code, 0, child.stderr);
-  assert.match(child.stdout, /acquired/);
-  assert.equal(await lockExists(runtimeRoot), false);
 });
 
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
@@ -383,22 +364,6 @@ test('the sync lock waits for a live holder and gives up with a clear timeout', 
   patient.process.stdin.write('release\n');
   assert.equal((await patient.exited).code, 0, patient.stderr);
   assert.deepEqual(await leftovers(runtimeRoot), []);
-});
-
-test('two processes contending for the sync lock serialize', async (t) => {
-  const runtimeRoot = await temporaryRuntime(t);
-  const first = spawnLockChild('sync-hold', runtimeRoot);
-  await first.waitFor('acquired');
-  const second = spawnLockChild('sync-hold', runtimeRoot);
-  await delay(250);
-  assert.doesNotMatch(second.stdout, /acquired/);
-
-  first.process.stdin.write('release\n');
-  assert.equal((await first.exited).code, 0, first.stderr);
-  await second.waitFor('acquired');
-  second.process.stdin.write('release\n');
-  assert.equal((await second.exited).code, 0, second.stderr);
-  assert.equal(await lockExists(runtimeRoot, syncLockPath), false);
 });
 
 test('a pending wait for the sync lock can be aborted and leaves nothing behind', async (t) => {

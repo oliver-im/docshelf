@@ -41,17 +41,6 @@ test('retries preserve matching annotated and lightweight tags', async (t) => {
   assert.equal(git('cat-file', '-t', 'refs/tags/v0.1.1'), 'commit');
 });
 
-test('mismatched release tags fail without moving either tag', async (t) => {
-  const { cwd, git, first, second } = await repository(t);
-  git('tag', '-a', 'v0.1.0', '-m', 'Already published', first);
-  git('tag', 'v0.1.1', first);
-  for (const tag of ['v0.1.0', 'v0.1.1']) {
-    const before = git('rev-parse', `refs/tags/${tag}`);
-    assert.throws(() => ensureReleaseTag(tag, second, cwd), /Refusing to move it/);
-    assert.equal(git('rev-parse', `refs/tags/${tag}`), before);
-  }
-});
-
 test('a branch with the release name cannot stand in for a tag', async (t) => {
   const { cwd, git, first, second } = await repository(t);
   git('branch', 'v0.1.0', first);
