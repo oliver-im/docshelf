@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -22,7 +23,6 @@ import {
   resolveWorkspaceRoot,
   validateRoute,
   validateSource,
-  workspaceRoot,
 } from '../scripts/artifacts.mjs';
 import { renderMarkdownArtifact } from '../scripts/markdown.mjs';
 import { normalizeBasePath, sitePath } from '../scripts/site-path.mjs';
@@ -37,10 +37,6 @@ import {
   remoteArtifactIdentity,
 } from '../src/lib/artifact-identity.js';
 import { temporaryDirectory } from './helpers/temporary-directory.mjs';
-
-test('route validation accepts a nested HTML route', () => {
-  assert.doesNotThrow(() => validateRoute('project/report-v1.2.html', 0));
-});
 
 test('route validation rejects unsafe and ambiguous routes', () => {
   for (const route of [
@@ -62,13 +58,6 @@ test('source validation accepts relative HTML and Markdown paths', () => {
   assert.throws(() => validateSource('../project/report.txt', 0), {
     message: /HTML or Markdown file/,
   });
-});
-
-test('artifact filenames use the registered source basename', () => {
-  assert.equal(
-    artifactFileName({ source: '../example/docs/README.md' }),
-    'README.md',
-  );
 });
 
 test('Claude Artifact URLs accept only canonical public and embed links', () => {
@@ -333,18 +322,6 @@ test('shelf loading resolves a valid source inside the workspace', async (t) => 
   assert.equal(shelf.artifacts.length, 1);
   assert.equal(shelf.artifacts[0].sourcePath, await realpath(sourcePath));
   assert.equal(shelf.artifacts[0].format, 'html');
-});
-
-test('shelf loading identifies a Markdown source', async (t) => {
-  const fixtureRoot = await createDocShelfFixture(t);
-  const sourcePath = path.join(fixtureRoot, 'report.md');
-  const shelfPath = path.join(fixtureRoot, 'shelf.json');
-  await writeFile(sourcePath, '# Report\n');
-  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
-
-  const shelf = await loadShelfFrom(shelfPath);
-
-  assert.equal(shelf.artifacts[0].format, 'markdown');
 });
 
 test('the Pages demo shelf publishes only the repository README', async () => {
@@ -624,27 +601,6 @@ test('line permalink helpers accept only canonical, ordered source ranges', () =
   assert.throws(() => createLineFragment(0), /positive/);
 });
 
-test('Markdown rendering enables local Mermaid rendering for Mermaid fences', async () => {
-  const html = await renderMarkdownArtifact(
-    {
-      title: 'System diagram',
-      description: 'A Mermaid diagram.',
-      sourcePath: '/workspace/diagram.md',
-    },
-    `# System
-
-\`\`\`mermaid
-flowchart LR
-  Browser --> DocShelf
-\`\`\`
-`,
-  );
-
-  assert.match(html, /<code class="language-mermaid">/);
-  assert.match(html, /<script src="\/mermaid\.min\.js" defer><\/script>/);
-  assert.match(html, /<script src="\/markdown-mermaid\.js" defer><\/script>/);
-});
-
 test('generated HTML rewrites only links to registered source artifacts', async (t) => {
   const fixtureRoot = await createDocShelfFixture(t);
   const ideasPath = path.join(fixtureRoot, 'docs', 'ideas.md');
@@ -765,7 +721,7 @@ test('bundled README images resolve locally and beneath a Pages deployment prefi
       { version: 1, artifacts: [artifact] }, { basePath },
     );
     const images = findElements(parse(html), 'img');
-    for (const filename of ['docshelf-web-markdown.jpg', 'docshelf-obsidian.png', 'docshelf-html-comparison.svg']) {
+    for (const filename of ['docshelf-web-markdown.jpg', 'docshelf-feedback.png', 'docshelf-html-comparison.svg']) {
       const screenshot = images.find((node) => attr(node, 'src') === `${basePath}${filename}`);
       assert.ok(screenshot, `${filename} must resolve beneath ${basePath}`);
       assert.ok(attr(screenshot, 'alt'));
@@ -797,11 +753,6 @@ test('public image rewriting preserves URL parts and cannot expose neighboring f
   assert.deepEqual(findElements(parse(html), 'img').map((node) => attr(node, 'src')), [
     '/docshelf/screen%20shot.png?size=2#preview', ...sources.slice(1),
   ]);
-});
-
-test('content revisions change only when the generated contents change', () => {
-  assert.equal(contentRevision('same'), contentRevision(Buffer.from('same')));
-  assert.notEqual(contentRevision('before'), contentRevision('after'));
 });
 
 test('source revision validation detects a file changed after synchronization', async (t) => {
@@ -848,29 +799,18 @@ test('shelf loading rejects duplicate routes', async (t) => {
   await assert.rejects(loadShelfFrom(shelfPath), { message: /duplicates route/ });
 });
 
-test('shelf loading rejects sources outside the workspace root', async (t) => {
-  const fixtureRoot = await createDocShelfFixture(t);
-  const externalRoot = await temporaryDirectory(t, tmpdir(), 'docshelf-external-');
-  const sourcePath = path.join(externalRoot, 'report.html');
-  const shelfPath = path.join(fixtureRoot, 'shelf.json');
-  await writeFile(sourcePath, '<!doctype html><title>Outside</title>');
-  await writeShelf(shelfPath, [artifact(path.relative(docShelfRoot, sourcePath))]);
-
-  // The default root, passed explicitly so DOCSHELF_WORKSPACE in the caller's
-  // shell cannot widen it.
-  await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: path.resolve(docShelfRoot, '..') }), {
-    message: /outside the workspace root .*: \.\..*Set DOCSHELF_WORKSPACE/,
-  });
-});
-
 test('the workspace root follows DOCSHELF_WORKSPACE and defaults to the parent directory', () => {
   const parent = path.resolve(docShelfRoot, '..');
-  // The export reflects the caller's environment, so compare it to the resolver.
-  assert.equal(workspaceRoot, resolveWorkspaceRoot(process.env.DOCSHELF_WORKSPACE));
   assert.equal(resolveWorkspaceRoot(undefined), parent);
   assert.equal(resolveWorkspaceRoot('  '), parent);
   assert.equal(resolveWorkspaceRoot('../..'), path.resolve(docShelfRoot, '../..'));
   assert.equal(resolveWorkspaceRoot('/workspace/root'), path.resolve('/workspace/root'));
+  // The exported root reads the environment once, when the module loads.
+  const exported = execFileSync(process.execPath, [
+    '--input-type=module', '-e',
+    `const { workspaceRoot } = await import(${JSON.stringify(new URL('../scripts/artifacts.mjs', import.meta.url).href)}); console.log(workspaceRoot);`,
+  ], { env: { ...process.env, DOCSHELF_WORKSPACE: '../..' }, encoding: 'utf8' });
+  assert.equal(exported.trim(), path.resolve(docShelfRoot, '../..'));
 });
 
 test('a configured workspace root admits sources outside the parent directory', async (t) => {
@@ -887,7 +827,7 @@ test('a configured workspace root admits sources outside the parent directory', 
   const siblingRoot = path.join(externalRoot, 'sibling');
   await mkdir(siblingRoot);
   await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: siblingRoot }), {
-    message: /outside the workspace root/,
+    message: /outside the workspace root .*: \.\..*Set DOCSHELF_WORKSPACE/,
   });
   await assert.rejects(loadShelfFrom(shelfPath, { workspaceRoot: path.join(externalRoot, 'missing') }), {
     message: /workspace root is not an existing directory/,

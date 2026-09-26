@@ -65,10 +65,7 @@ but use different rendering and file-access boundaries.
   a deleted source or overwrite a detected conflict without review. Recovery
   reduces data-loss risk; the checks are not an atomic lock against other
   applications writing at exactly the same time.
-- Recovery records contain private baseline and draft text under the installed
-  plugin's `recovery/` directory. They remain until removed by the user and must
-  not be published. HTML, remote documents, and assets are read-only. The plugin
-  also stores settings and can create an empty shelf at the user's request.
+- Recovery records contain private baseline and draft text under the installed plugin's `recovery/` directory. They remain until removed by the user and must not be published. HTML, remote documents, and assets are read-only. The plugin also stores settings and writes the shelf file when the user adds or removes entries, creating it on the first addition.
 - Local HTML runs in a sandboxed webview with Node disabled and a nonpersistent
   session separate from Obsidian. Changing the report's route or source identity
   creates a new partition; same-report reloads keep their browser storage.

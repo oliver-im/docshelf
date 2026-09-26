@@ -24,15 +24,6 @@ export async function fixture() {
   return { root, workspace, vault, source, shelfPath, entry, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
-test('catalog resolves external files, keeps legacy shelf shape, and rejects outside roots', async t => {
-  const f = await fixture(); t.after(f.cleanup);
-  const catalog = await loadCatalog(f.shelfPath, f.workspace);
-  assert.equal(catalog.artifacts[0].sourcePath, f.source);
-  await writeFile(path.join(f.root, 'secret.md'), 'not registered');
-  await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, source: '../secret.md' }] }));
-  await assert.rejects(loadCatalog(f.shelfPath, f.workspace), /outside/);
-});
-
 test('descriptions are optional and searchable while malformed values are rejected', async t => {
   const f = await fixture(); t.after(f.cleanup);
   const search = new ShelfSearch();

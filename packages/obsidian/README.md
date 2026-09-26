@@ -229,12 +229,7 @@ being reachable and allowing the public page to load.
 
 ## File access and network disclosure
 
-DocShelf reads explicitly registered files outside the vault so project-owned
-documents can stay in their original folders. Local Markdown editing writes to
-the registered original file after recovery and conflict checks. HTML, remote
-sources, and assets are read-only. The plugin also writes settings, private
-recovery records, and, when you click **Create empty shelf file**, a new shelf
-JSON file; it will not overwrite an existing shelf file.
+DocShelf reads explicitly registered files outside the vault so project-owned documents can stay in their original folders. Local Markdown editing writes to the registered original file after recovery and conflict checks. HTML, remote sources, and assets are read-only. The plugin also writes settings, private recovery records, and the shelf file when you add or remove entries; the first addition creates the shelf file if it does not exist.
 
 Interactive HTML runs in a separate, nonpersistent Electron webview session
 with Node disabled, context isolation, sandboxing, and web security. It loads
