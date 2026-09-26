@@ -9,7 +9,7 @@ import {
  * Child process used by the watcher-lock tests. It takes a lock the way `scripts/watch.mjs`
  * does: releases it from an 'exit' handler and routes signals through installShutdownSignals.
  *
- *   node lock-child.mjs <hold|exit|signals|sync-hold> <runtimeRoot> [--gate] [--timeoutMs=N]
+ *   node lock-child.mjs <hold|signals|sync-hold> <runtimeRoot> [--gate] [--timeoutMs=N]
  *                       [--absorbMs=N] [--shutdownMs=N] [--hang]
  *
  * `hold` and `sync-hold` keep the lock until a line arrives on stdin (or stdin closes).
@@ -23,8 +23,8 @@ const options = Object.fromEntries(
   }),
 );
 
-if (!['hold', 'exit', 'signals', 'sync-hold'].includes(mode) || !runtimeRoot) {
-  console.error('usage: node lock-child.mjs <hold|exit|signals|sync-hold> <runtimeRoot> [options]');
+if (!['hold', 'signals', 'sync-hold'].includes(mode) || !runtimeRoot) {
+  console.error('usage: node lock-child.mjs <hold|signals|sync-hold> <runtimeRoot> [options]');
   process.exit(2);
 }
 
@@ -86,8 +86,6 @@ if (mode === 'hold' || mode === 'sync-hold') {
   await nextStdinLine();
   lock.release();
   console.log('released');
-  stopReadingStdin();
-} else if (mode === 'exit') {
   stopReadingStdin();
 } else if (mode === 'signals') {
   stopReadingStdin();
