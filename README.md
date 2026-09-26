@@ -33,7 +33,7 @@ Read Markdown, search across your local documents, and link to exact source line
 
 Bring project documents into Obsidian without copying them into your vault. Edit local Markdown in the native editor, with changes saved to the original file, with conflict checks and recovery.
 
-![DocShelf in Obsidian, showing project documents and a selected Markdown source line in the native editor](public/docshelf-obsidian.png)
+![DocShelf in Obsidian with source lines 13–15 selected, followed by a terminal prompt referencing those lines](public/docshelf-feedback.png)
 
 ## Browse HTML in either app
 
