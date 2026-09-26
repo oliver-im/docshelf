@@ -73,6 +73,9 @@ test('folder discovery rejects escapes and skips symlinks, including cycles', as
   await symlink(path.join(f.base, 'docs/one.md'), path.join(f.base, 'docs/alias.md'));
   assert.equal((await expandShelf(f.config, f.base, f.roots)).artifacts.length, 2);
   await assert.rejects(expandShelf({ ...f.config, directories: [{ id: 'escape', source: '..', project: 'Escape' }] }, f.base, f.roots), /outside/);
+  // A missing folder stays registered only while its nearest existing ancestor is inside the workspace.
+  const missing = { id: 'missing', source: `../${path.basename(f.base)}-missing/docs`, project: 'Missing' };
+  await assert.rejects(expandShelf({ ...f.config, directories: [missing] }, f.base, f.roots, { allowUnavailable: true }), /outside/);
   await assert.rejects(expandShelf({ ...f.config, version: 1 }, f.base, f.roots), /version 2/);
 });
 
@@ -121,6 +124,16 @@ test('web expands relative directory registrations and retains missing folders',
   assert.equal(missing.artifacts.length, 0);
   assert.equal(missing.directories.length, 1);
   assert.match(missing.warnings[0], /unavailable/);
+});
+
+test('absolute folder sources stay Obsidian-only; the web loader and shelf actions reject them', async t => {
+  const f = await fixture(t);
+  f.config.directories[0].source = path.join(f.base, 'docs');
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  assert.equal((await expandShelf(f.config, f.base, f.roots)).artifacts.length, 2);
+  await assert.rejects(loadShelfFrom(f.shelfPath, { workspaceRoot: f.base }), /relative paths/);
+  const handler = createRegistrationHandler({ root: f.base, getShelfPath: async () => f.shelfPath, getRoots: async () => ({ workspace: f.base, checkout: f.base }) });
+  await assert.rejects(handler({ action: 'remove-preview', project: 'Project' }), /relative paths/);
 });
 
 test('documents nest under the outermost folder of their own project, as on disk', async t => {
@@ -325,6 +338,22 @@ test('removing discovered files blocks stale native saves and accepts literal fi
   assert.equal(await readFile(path.join(f.base, artifact.source), 'utf8'), '# Literal filename');
   const saved = JSON.parse(await readFile(f.shelfPath, 'utf8'));
   assert.equal((await expandShelf(saved, f.base, f.roots)).artifacts.length, 2);
+});
+
+test('native saves follow the current shelf when an explicit route or a folder scope changes', async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.base, 'docs/nested/notes.md'), '# Notes\n');
+  await writeFile(path.join(f.base, 'loose.md'), '# Loose\n');
+  f.config.artifacts.push({ source: 'docs/one.md', route: 'one.html', title: 'One', project: 'Pinned' });
+  await writeFile(f.shelfPath, JSON.stringify(f.config));
+  const opened = (await expandShelf(f.config, f.base, f.roots)).artifacts.map(entry => ({ ...entry, sourcePath: path.join(f.base, entry.source) }));
+  const explicit = opened.find(entry => entry.route === 'one.html');
+  const nested = opened.find(entry => entry.source === 'docs/nested/notes.md');
+  for (const artifact of [explicit, nested]) assert.doesNotThrow(() => assertRegisteredSource(f.shelfPath, artifact, f.roots));
+  // Views opened before the change must not save to a file the shelf no longer lists.
+  await writeFile(f.shelfPath, JSON.stringify({ ...f.config, artifacts: [{ ...f.config.artifacts[0], source: 'loose.md' }], directories: [{ ...f.config.directories[0], recursive: false }] }));
+  assert.throws(() => assertRegisteredSource(f.shelfPath, explicit, f.roots), /no longer registered/);
+  assert.throws(() => assertRegisteredSource(f.shelfPath, nested, f.roots), /no longer included/);
 });
 
 test('removing a project drops its folders and documents while other projects keep theirs', async t => {
