@@ -721,7 +721,7 @@ test('bundled README images resolve locally and beneath a Pages deployment prefi
       { version: 1, artifacts: [artifact] }, { basePath },
     );
     const images = findElements(parse(html), 'img');
-    for (const filename of ['docshelf-web-markdown.jpg', 'docshelf-obsidian.png', 'docshelf-html-comparison.svg']) {
+    for (const filename of ['docshelf-web-markdown.jpg', 'docshelf-feedback.png', 'docshelf-html-comparison.svg']) {
       const screenshot = images.find((node) => attr(node, 'src') === `${basePath}${filename}`);
       assert.ok(screenshot, `${filename} must resolve beneath ${basePath}`);
       assert.ok(attr(screenshot, 'alt'));
