@@ -170,6 +170,7 @@ const blankFrameUrl = 'about:blank';
   import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
   import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
+  import { markRead, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
 
   interface Artifact {
     route: string;
@@ -178,6 +179,7 @@ const blankFrameUrl = 'about:blank';
     folders?: string[];
     title: string;
     revision: string;
+    sourceId?: string;
     embedUrl?: string;
     source?: string;
     sourceType?: 'claude' | 'github-markdown';
@@ -214,6 +216,9 @@ const blankFrameUrl = 'about:blank';
   const revisionPollInterval = 3_000;
   const importedArtifactsStorageKey = 'docshelf:imported-artifacts';
   const legacyClaudeArtifactsStorageKey = 'docshelf:claude-artifacts';
+  const readStateStorageKey = 'docshelf:read-state';
+  const localAdditionStorageKey = 'docshelf:local-addition';
+  const localAdditionLifetime = 10 * 60_000;
 
   const viewer = document.querySelector<HTMLElement>('[data-docshelf-viewer]');
 
@@ -311,6 +316,10 @@ const blankFrameUrl = 'about:blank';
     )
       .map((link) => ({ link, route: artifactRouteFromLink(link) }))
       .filter((entry): entry is { link: HTMLAnchorElement; route: string } => Boolean(entry.route));
+    // Only shelf documents can be unread; browser imports were added by this reader.
+    const shelfSources = artifacts.flatMap((artifact) => (artifact.sourceId ? [artifact.sourceId] : []));
+    let readState = loadReadState(shelfSources);
+    let unread = readState ? unreadSources(readState, shelfSources) : new Set<string>();
 
     let currentArtifact: Artifact | undefined;
     let currentSelection: ArtifactSelection | undefined;
@@ -328,6 +337,13 @@ const blankFrameUrl = 'about:blank';
     });
 
     initializeImportDialog();
+    showUnread();
+    window.addEventListener('storage', (event) => {
+      if (event.key !== readStateStorageKey || !readState) return;
+      readState = reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources);
+      unread = unreadSources(readState, shelfSources);
+      showUnread();
+    });
 
     for (const frame of frames) {
       frame.addEventListener('load', () => {
@@ -548,6 +564,10 @@ const blankFrameUrl = 'about:blank';
             if (!response.ok) throw new Error(result.error || 'Could not add the selected paths.');
             if (attempt !== importAttempt || !dialog.open) return;
             if (committing) {
+              if (result.documentsAdded > 0) {
+                // Documents this reader just added should not arrive unread after the rebuild reloads the page.
+                writeStoredValue(localAdditionStorageKey, { before: shelfSources, expires: Date.now() + localAdditionLifetime });
+              }
               closeDialog();
             } else {
               localRevision = result.revision;
@@ -798,6 +818,7 @@ const blankFrameUrl = 'about:blank';
       currentSelection = selection;
       document.title = `${artifact.title} | DocShelf`;
       hideArtifactError();
+      markArtifactRead(artifact);
 
       if (changed || forceRefresh) void displayArtifact(artifact, selection);
 
@@ -820,6 +841,33 @@ const blankFrameUrl = 'about:blank';
           '',
           artifactViewerUrl(selection),
         );
+      }
+    }
+
+    function markArtifactRead(artifact: Artifact) {
+      if (!readState || !artifact.sourceId || !unread.has(artifact.sourceId)) return;
+      // Start from the stored state so reads in other tabs are kept.
+      readState = markRead(
+        reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources),
+        [artifact.sourceId],
+      );
+      writeStoredValue(readStateStorageKey, readState);
+      unread = unreadSources(readState, shelfSources);
+      showUnread();
+    }
+
+    /** Mark unread documents, and the project and folder groups that contain them. */
+    function showUnread() {
+      for (const { link, route } of sidebarLinks) {
+        const sourceId = artifacts.find((artifact) => artifact.route === route)?.sourceId;
+        setUnreadMarker(link, link, Boolean(sourceId && unread.has(sourceId)), 'Unread');
+      }
+      for (const group of document.querySelectorAll<HTMLDetailsElement>('#starlight__sidebar details')) {
+        const summary = group.querySelector<HTMLElement>(':scope > summary');
+        const label = summary?.querySelector<HTMLElement>('.group-label');
+        if (summary && label) {
+          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread]')), 'Contains unread documents');
+        }
       }
     }
 
@@ -1191,6 +1239,66 @@ const blankFrameUrl = 'about:blank';
       return artifacts;
     } catch {
       return [];
+    }
+  }
+
+  /** Stored read state brought up to date with the shelf, or null when this browser cannot keep it. */
+  function loadReadState(current: string[]): ReadState | null {
+    const stored = readStoredValue(readStateStorageKey);
+    let state = reconcileReadState(stored, current);
+    const addition = readStoredValue(localAdditionStorageKey) as { before?: unknown; expires?: unknown } | null;
+    if (addition !== null) {
+      const valid = Array.isArray(addition?.before) && typeof addition.expires === 'number' && addition.expires > Date.now();
+      const before = new Set(valid ? (addition.before as unknown[]) : []);
+      const added = current.filter((id) => !before.has(id));
+      // Until the watcher publishes the addition, the shelf has nothing new to mark read.
+      if (valid && added.length) state = markRead(state, added);
+      if (!valid || added.length) removeStoredValue(localAdditionStorageKey);
+    }
+    // Leave unchanged state alone so a concurrent read in another tab is not overwritten.
+    if (JSON.stringify(stored) === JSON.stringify(state)) return state;
+    return writeStoredValue(readStateStorageKey, state) ? state : null;
+  }
+
+  function setUnreadMarker(target: HTMLElement, container: HTMLElement, isUnread: boolean, description: string) {
+    target.toggleAttribute('data-docshelf-unread', isUnread);
+    const marker = container.querySelector(':scope > .docshelf-unread-dot');
+    if (!isUnread) {
+      marker?.remove();
+      return;
+    }
+    if (marker) return;
+    const dot = document.createElement('span');
+    dot.className = 'docshelf-unread-dot';
+    const text = document.createElement('span');
+    text.className = 'sr-only';
+    text.textContent = description;
+    dot.append(text);
+    container.append(dot);
+  }
+
+  function readStoredValue(key: string): unknown {
+    try {
+      return JSON.parse(window.localStorage.getItem(key) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStoredValue(key: string, value: unknown) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function removeStoredValue(key: string) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // An expired addition is ignored on the next load.
     }
   }
 
@@ -1681,6 +1789,21 @@ const blankFrameUrl = 'about:blank';
     border: 0;
     font-size: var(--sl-text-xs);
     font-weight: 400;
+  }
+
+  /* Unread documents read like unread mail until opened. */
+  :global(#starlight__sidebar a[data-docshelf-unread]) {
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  :global(#starlight__sidebar .docshelf-unread-dot) {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--sl-color-text-accent);
+    vertical-align: middle;
   }
 
   :global(#starlight__sidebar a[data-docshelf-current]) {

@@ -102,7 +102,8 @@ export class ShelfView extends ItemView {
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
-    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath()]);
+    const unread = artifacts.filter(artifact => this.plugin.isUnread(artifact)).map(artifact => artifact.route);
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath(), unread]);
     if (key === this.renderedResults) return;
     this.renderedResults = key;
     this.results.empty();
@@ -128,10 +129,12 @@ export class ShelfView extends ItemView {
       const chevron = toggle.createSpan({ cls: 'docshelf-project-chevron', attr: { 'aria-hidden': 'true' } });
       setIcon(chevron, 'chevron-right');
       toggle.createSpan({ text: project, cls: 'docshelf-project-name' });
+      const projectUnread = documents.some(hit => this.plugin.isUnread(hit.artifact));
+      if (projectUnread) toggle.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
       toggle.createSpan({ text: String(documents.length), cls: 'docshelf-project-count', attr: { 'aria-label': `${documents.length} document${documents.length === 1 ? '' : 's'}` } });
       toggle.dataset.project = project;
       toggle.draggable = true;
-      toggle.setAttribute('aria-description', 'Drag to reorder projects. Press Shift+F10 for project order options.');
+      toggle.setAttribute('aria-description', `${projectUnread ? 'Contains unread documents. ' : ''}Drag to reorder projects. Press Shift+F10 for project order options.`);
       toggle.addEventListener('dragstart', event => {
         if (!event.dataTransfer) { event.preventDefault(); return; }
         event.stopPropagation();
@@ -211,10 +214,12 @@ export class ShelfView extends ItemView {
     for (const node of this.orderedFolders(project, parentKey, nodes)) {
       const collapseKey = JSON.stringify([project, node.key]);
       const folder = parent.createDiv({ cls: 'docshelf-folder' });
-      const toggle = folder.createEl('button', { cls: 'docshelf-folder-toggle', attr: { type: 'button', 'aria-expanded': String(!this.collapsedFolders.has(collapseKey)), 'aria-description': 'Drag to reorder folders. Press Shift+F10 for folder actions.' } });
+      const folderUnread = this.containsUnread(node.children);
+      const toggle = folder.createEl('button', { cls: 'docshelf-folder-toggle', attr: { type: 'button', 'aria-expanded': String(!this.collapsedFolders.has(collapseKey)), 'aria-description': `${folderUnread ? 'Contains unread documents. ' : ''}Drag to reorder folders. Press Shift+F10 for folder actions.` } });
       setIcon(toggle.createSpan({ cls: 'docshelf-project-chevron', attr: { 'aria-hidden': 'true' } }), 'chevron-right');
       setIcon(toggle.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), 'folder');
       toggle.createSpan({ text: node.name, cls: 'docshelf-folder-name' });
+      if (folderUnread) toggle.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
       if (node.registered && !node.count) toggle.createSpan({ text: 'No documents', cls: 'docshelf-folder-empty' });
       toggle.dataset.project = project;
       toggle.dataset.folder = node.key;
@@ -238,6 +243,10 @@ export class ShelfView extends ItemView {
     }
     // Folders stay above the documents beside them.
     for (const node of nodes) if (node.type === 'document') this.renderItem(parent, { artifact: node.item, excerpt: '' }, false, folders.get(node.item.route) || []);
+  }
+
+  private containsUnread(nodes: DocumentTreeNode<Artifact>[]): boolean {
+    return nodes.some(node => node.type === 'document' ? this.plugin.isUnread(node.item) : this.containsUnread(node.children));
   }
 
   /** Folder rows under one parent: saved order first, then the rest alphabetically as the tree lists them. */
@@ -515,13 +524,16 @@ export class ShelfView extends ItemView {
     const label = documentLabel(artifact);
     const folder = folders.at(-1)?.key || ROOT_FOLDER;
     const location = [artifact.project, ...folders.length ? [folders.map(folder => folder.name).join('/')] : []].join(' › ');
-    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [label.title, kind, searching ? location : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
+    const unread = this.plugin.isUnread(artifact);
+    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [unread ? 'Unread' : '', label.title, kind, searching ? location : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
     button.toggleClass('docshelf-search-result', searching);
+    button.toggleClass('docshelf-unread', unread);
     button.dataset.route = artifact.route;
     setTooltip(button, [label.title, `${label.name} (${kind})`].filter(Boolean).join('\n'), { placement: 'right' });
     const heading = button.createDiv({ cls: 'docshelf-item-heading' });
     setIcon(heading.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
     heading.createSpan({ text: label.name, cls: 'docshelf-item-title' });
+    if (unread) heading.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
     if (label.title) heading.createSpan({ text: label.title, cls: 'docshelf-item-subtitle' });
     if (searching) {
       if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });

@@ -468,13 +468,15 @@ async function writeGeneratedShelf(shelf, revisionState) {
     version: shelf.version,
     shelfRevision: revisionState.shelfRevision,
     folderGroups: shelfFolderGroups(shelf),
-    artifacts: shelf.artifacts.map(({ project, route, title, description, embedUrl, format }, index) => ({
+    artifacts: shelf.artifacts.map(({ project, source, sourcePath, route, title, description, embedUrl, format }, index) => ({
       project,
       route,
       title,
       description,
       format,
       revision: revisions.get(route),
+      // Browser read state follows the source across route changes without publishing local paths.
+      sourceId: contentRevision(sourcePath || source).slice(0, 16),
       ...(embedUrl ? { embedUrl } : {}),
       ...(folders[index].length ? { folders: folders[index] } : {}),
     })),

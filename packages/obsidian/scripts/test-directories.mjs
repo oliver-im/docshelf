@@ -61,6 +61,11 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const expectedOutline = JSON.stringify([{ 'watched-documents': [{ nested: ['second.md'] }, 'first.md'] }, 'loose-document.md']);
   await poll(async () => JSON.stringify(await outline()) === expectedOutline, 'Folder documents did not nest as they sit on disk.');
   await page.screenshot({ path: '.local/runtime/directories-added.png' });
+  const unreadRows = () => page.evaluate(() => {
+    const group = [...document.querySelectorAll('.docshelf-project')].find(group => group.querySelector('.docshelf-project-name')?.textContent === 'Watched project');
+    return [...group.querySelectorAll('.docshelf-unread-dot')].map(dot => dot.parentElement.querySelector('.docshelf-project-name, .docshelf-folder-name, .docshelf-item-title').textContent);
+  });
+  assert.deepEqual(await unreadRows(), [], 'Documents added through Add must not arrive unread.');
   const folderToggle = page.locator('.docshelf-folder-toggle[data-project="Watched project"]').filter({ has: page.getByText('watched-documents', { exact: true }) });
   const folderId = await folderToggle.getAttribute('data-folder');
   await folderToggle.click();
@@ -112,6 +117,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const live = path.join(directory, 'nested/live.md');
   await writeFile(live, '# Live discovery\ninitialmarker\n');
   await poll(() => page.evaluate(file => app.plugins.getPlugin('docshelf').catalog.artifacts.some(entry => entry.sourcePath === file), live), 'A new nested document was not discovered.');
+  await poll(async () => JSON.stringify(await unreadRows()) === JSON.stringify(['Watched project', 'watched-documents', 'nested', 'live.md']), 'A document arriving in a watched folder was not unread with its folder and project.');
   await page.getByRole('searchbox', { name: 'Search DocShelf' }).fill('Live discovery');
   const fromSearch = path.join(workspace, 'search-context.md');
   await writeFile(fromSearch, '# Search context\n');
@@ -179,8 +185,10 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
     const plugin = app.plugins.getPlugin('docshelf');
     await plugin.openArtifact(plugin.catalog.artifacts.find(entry => entry.sourcePath === file));
   }, live);
+  assert.deepEqual(await unreadRows(), [], 'Opening a document must mark it read.');
   await writeFile(live, '# Live discovery\nupdatedfromoutside\n');
   await poll(() => page.evaluate(() => app.workspace.getLeavesOfType('docshelf-markdown').some(leaf => leaf.view.editor.getValue().includes('updatedfromoutside'))), 'A discovered document did not refresh in the editor.');
+  assert.deepEqual(await unreadRows(), [], 'Editing a read document must not mark it unread.');
   await page.screenshot({ path: '.local/runtime/directories-live.png' });
   // Check removal before the asynchronous catalog watcher can update its cache.
   await page.evaluate(({ file, shelfPath }) => {

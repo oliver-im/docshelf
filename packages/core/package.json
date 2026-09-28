@@ -25,6 +25,10 @@
     "./links": {
       "types": "./types/links.d.ts",
       "default": "./src/links.js"
+    },
+    "./read-state": {
+      "types": "./types/read-state.d.ts",
+      "default": "./src/read-state.js"
     }
   },
   "scripts": {
