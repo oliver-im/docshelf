@@ -221,6 +221,9 @@ export async function testNativeLines({ page, poll, workspace }) {
   await page.keyboard.press('Escape');
   await line(17).click({ button: 'right' });
   await expectReferenceMenu('17-20');
+  // Another right-click on the reference replaces the open menu instead of stacking a second one.
+  await table.locator('td').first().click({ button: 'right' });
+  await expectReferenceMenu('17-20');
   await page.keyboard.press('Escape');
 
   // A range across a list item, blank line, and rendered table is one band.
