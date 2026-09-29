@@ -15,15 +15,25 @@ import { testReportRegressions } from './test-report-regressions.mjs';
 import { testDirectories } from './test-directories.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
+// Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
+// on Linux, and second instances forward URIs through it. A separate home keeps the user's running app reachable.
+if (process.platform === 'win32' || (process.platform !== 'darwin' && process.env.XDG_RUNTIME_DIR)) {
+  throw new Error('The runtime test cannot isolate Obsidian\'s command-line socket here without taking over the running app\'s socket.');
+}
 const executable = process.env.OBSIDIAN_EXECUTABLE || '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
 const root = await mkdtemp(path.join(tmpdir(), 'docshelf-obsidian-'));
 const profile = path.join(root, 'profile');
+const home = path.join(root, 'home');
+const env = { ...process.env, HOME: home };
+// The keychain follows HOME on macOS; a mock keeps the test app from asking to create one or using the user's.
+const isolation = [`--user-data-dir=${profile}`, '--use-mock-keychain'];
 const vault = path.join(root, 'DocShelf runtime vault');
 const workspace = path.join(root, 'workspace');
 const pluginPath = path.join(vault, '.obsidian', 'plugins', 'docshelf');
 const packageMode = process.argv.includes('--package');
 const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
 await mkdir(profile, { recursive: true });
+await mkdir(home);
 await mkdir(pluginPath, { recursive: true });
 await mkdir('.local/runtime', { recursive: true });
 await cp('examples', workspace, { recursive: true });
@@ -55,7 +65,7 @@ await symlink(shelfTarget, shelfPath);
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
 
 const log = createWriteStream('.local/runtime/obsidian.log');
-const child = spawn(executable, [`--user-data-dir=${profile}`, '--remote-debugging-port=0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+const child = spawn(executable, [...isolation, '--remote-debugging-port=0'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 child.stdout.pipe(log); child.stderr.pipe(log);
 let browser;
 let page;
@@ -440,7 +450,7 @@ try {
     const plugin = app.plugins.getPlugin('docshelf');
     await plugin.openArtifact(plugin.catalog.artifacts[0], { start: 1, end: 1 });
   });
-  const dispatch = spawn(executable, [`--user-data-dir=${profile}`, permalink], { stdio: 'ignore' });
+  const dispatch = spawn(executable, [...isolation, permalink], { env, stdio: 'ignore' });
   dispatchProcesses.push(dispatch);
   await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').nativeViews().some(view => view.editor.getCursor('from').line === 6 && view.editor.getCursor('to').line === 8)), 'The URI did not select the source lines in the native editor.');
   dispatch.kill('SIGKILL');

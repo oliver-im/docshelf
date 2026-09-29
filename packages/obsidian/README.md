@@ -274,15 +274,7 @@ npm run build
 npm run test:obsidian
 ```
 
-The runtime test starts a separate Obsidian process with a disposable profile,
-vault, and external fixtures. It covers UI interactions, copied links, actual
-Obsidian URI dispatch, live refresh, HTML isolation, script-free mode, and unload
-cleanup. Screenshots and results are written under ignored `.local/runtime/`.
-It does not install into your existing vault. On another installation, set
-`OBSIDIAN_EXECUTABLE` and `OBSIDIAN_BUNDLE_DIRECTORY`; the runner currently
-defaults to macOS paths. `DOCSHELF_KEEP_TEST_PROFILE=1` keeps the disposable
-profile and fixtures after the run.
-Build first: the runtime runner copies the existing `main.js` into its test vault.
+The runtime test starts a separate Obsidian process with a disposable home directory, profile, vault, external fixtures, and a mock keychain, so it neither replaces a running Obsidian's command-line socket nor uses your keychain. It covers UI interactions, copied links, actual Obsidian URI dispatch, live refresh, HTML isolation, script-free mode, and unload cleanup. Screenshots and results are written under ignored `.local/runtime/`. It does not install into your existing vault. On another installation, set `OBSIDIAN_EXECUTABLE` and `OBSIDIAN_BUNDLE_DIRECTORY`; the runner currently defaults to macOS paths. It refuses to run on Windows, or on Linux with `XDG_RUNTIME_DIR` set, where Obsidian's command-line socket cannot be moved. `DOCSHELF_KEEP_TEST_PROFILE=1` keeps the disposable profile and fixtures after the run. Build first: the runtime runner copies the existing `main.js` into its test vault.
 
 For a packaged release, run `npm run package:obsidian` at the repository root, then `npm run test:package --workspace obsidian-docshelf` and `npm run test:obsidian:package --workspace obsidian-docshelf`. The first verifies archive contents, release assets, embedded licenses, and checksums. The second installs the ZIP in a disposable vault and exercises plugin-file replacement with existing settings and a pending recovery draft. See the [release guide](../../docs/releasing.md#package-the-obsidian-plugin).
 
