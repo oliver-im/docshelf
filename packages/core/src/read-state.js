@@ -1,9 +1,10 @@
 // @ts-check
 
 /**
- * Read state marks a document unread when it first appears on the shelf. It is
- * keyed by stable source identities, so editing a document or changing its
- * route keeps it read. Each app stores it per device, outside the shared shelf.
+ * Read state marks a document unread when it first appears on the shelf, or when
+ * an agent announces that it updated it. It is keyed by stable source identities,
+ * so the reader's own edits and route changes keep it read. Each app stores it
+ * per device, outside the shared shelf.
  *
  * @typedef {{ version: 1, seen: string[] }} ReadState
  */
@@ -37,6 +38,19 @@ export function markRead(state, ids) {
   const seen = new Set(state.seen);
   const added = [...new Set(ids)].filter(id => !seen.has(id));
   return added.length ? { version: 1, seen: [...state.seen, ...added] } : state;
+}
+
+/**
+ * Make documents unread again, as when an agent announces that it updated them.
+ *
+ * @param {ReadState} state
+ * @param {Iterable<string>} ids
+ * @returns {ReadState}
+ */
+export function markUnread(state, ids) {
+  const removed = new Set(ids);
+  const seen = state.seen.filter(id => !removed.has(id));
+  return seen.length === state.seen.length ? state : { version: 1, seen };
 }
 
 /**

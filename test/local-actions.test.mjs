@@ -177,3 +177,30 @@ test('registration uses the same loopback, origin, and session protections as do
   assert.equal((await request(f.headers)).status, 200);
   assert.deepEqual(calls, [{ action: 'preview', sources: ['docs'] }]);
 });
+
+test('announced updates are read-only behind the same loopback and request-header checks', async t => {
+  const calls = [];
+  const f = await fixture(t, { announcements: async position => {
+    calls.push(position);
+    return position.after === 7 ? null : { cursor: { offset: 9, lastId: 'b' }, sources: ['0123456789abcdef'] };
+  } });
+  const events = (query = '', init = {}) => fetch(`${f.origin}/__docshelf/events${query}`, { headers: { 'X-DocShelf-Request': 'document-actions' }, ...init });
+  assert.equal((await events('', { headers: {} })).status, 403);
+  assert.equal((await events('', { method: 'POST' })).status, 405);
+  for (const query of ['?after=-1', '?after=1.5', '?after=abc', '?after=99999999999999999', '?last=a', '?after=1&last=a%20b', '?after=1&path=x']) {
+    assert.equal((await events(query)).status, 400, query);
+  }
+  assert.deepEqual(calls, []);
+  const first = await events();
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await first.json(), { cursor: { offset: 9, lastId: 'b' }, sources: ['0123456789abcdef'] });
+  assert.equal((await events('?after=3&last=a-1')).status, 200);
+  assert.equal((await events('?after=7')).status, 503, 'Before a build is served, the browser keeps its position.');
+  assert.deepEqual(calls, [{ after: undefined, last: undefined }, { after: 3, last: 'a-1' }, { after: 7, last: undefined }]);
+
+  const network = await fixture(t, { listenHost: '0.0.0.0', announcements: async () => ({ cursor: { offset: 0, lastId: null }, sources: [] }) });
+  assert.equal((await fetch(`${network.origin}/__docshelf/events`, { headers: { 'X-DocShelf-Request': 'document-actions' } })).status, 403);
+  const unsupported = await fixture(t);
+  assert.equal((await fetch(`${unsupported.origin}/__docshelf/events`, { headers: { 'X-DocShelf-Request': 'document-actions' } })).status, 404);
+});

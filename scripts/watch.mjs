@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import chokidar from 'chokidar';
 import {
+  artifactSourceId,
   artifactSourcesMatch,
   docShelfRoot,
   defaultShelfPath,
@@ -16,15 +17,18 @@ import {
   loadShelf,
   localShelfPath,
   legacyLocalShelfPath,
+  resolveShelfPath,
   runtimeRoot,
   syncArtifacts,
   workspaceRoot,
 } from './artifacts.mjs';
+import { createAnnouncementReader } from './announcements.mjs';
 import { BuildStatusReporter, buildStatusRoute } from './build-status.mjs';
 import { createLocalActionsHandler } from './local-actions.mjs';
 import { createRegistrationHandler } from './registration.mjs';
 import { browserHost, isAllowedHostHeader } from './server-security.mjs';
 import { siteInputsSignature } from './site-inputs.mjs';
+import { eventLogPath } from '../packages/local/events.mjs';
 import { SourceWatcher } from './source-watcher.mjs';
 import { artifactContentSecurityPolicy } from './html-isolation.mjs';
 import { artifactRevisionFile } from './artifact-html.mjs';
@@ -47,6 +51,15 @@ const handleLocalAction = createLocalActionsHandler({
   loadShelf,
   workspaceRoot,
   registration: createRegistrationHandler(),
+  announcements: createAnnouncementReader({
+    // Registration writes the local shelf when only the tracked template exists, and agents log beside it.
+    logPath: async () => {
+      const shelfPath = await resolveShelfPath({ warn: () => {} });
+      return eventLogPath(shelfPath === defaultShelfPath ? localShelfPath : shelfPath);
+    },
+    sourceIds: () => activeSourceIds,
+    warn: (message) => console.warn(`[events] ${message}`),
+  }),
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -77,6 +90,8 @@ installShutdownSignals(shutdown, {
 let activeBuildRoot = null;
 let activeArtifactRevisions = new Map();
 let activeMarkdownRoutes = new Set();
+/** Canonical sources of the served build's documents, mapped to the IDs its pages use. */
+let activeSourceIds = null;
 let currentBuildProcess = null;
 let activeDrain = null;
 let buildRequested = false;
@@ -225,6 +240,7 @@ async function rebuild(reasons) {
     const previousBuildRoot = activeBuildRoot;
     activeBuildRoot = buildRoot;
     setActiveRevisions(revisionState);
+    activeSourceIds = new Map(shelf.artifacts.map((artifact) => [artifact.sourcePath || artifact.source, artifactSourceId(artifact)]));
     await reportBuildStatus(buildStatus.ready(true));
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     console.log(`[build] Published ${shelf.artifacts.length} artifacts in ${seconds}s.`);

@@ -103,6 +103,8 @@ After creating a report or note, ask your agent:
 
 The skill registers the original file, preserves existing shelf entries, checks the result, and returns links for your configured apps. It can also return a source-line reference for a specific passage.
 
+When an agent later edits a document for you, it can mark the document unread in both apps. A Claude Code hook does this after every edit Claude makes, and other agents can run the same command. See [agent edits and the event log](docs/events.md).
+
 To register documents manually, follow the [web app registration guide](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#register-local-documents) or [Obsidian registration guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#register-documents).
 
 ## Guides

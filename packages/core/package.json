@@ -29,6 +29,10 @@
     "./read-state": {
       "types": "./types/read-state.d.ts",
       "default": "./src/read-state.js"
+    },
+    "./events": {
+      "types": "./types/events.d.ts",
+      "default": "./src/events.js"
     }
   },
   "scripts": {

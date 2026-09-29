@@ -93,3 +93,7 @@ range when requested. URI keys are `vault`, `source`, and `lines`; never `path`,
 which Obsidian consumes before dispatch. Encode spaces as `%20`, not `+`.
 Return local source references as `/absolute/file.md:7-11`. All line links are
 positional; editing can move the passage. State which apps were actually verified.
+
+## Announce later edits
+
+After you edit a document that is already on the shelf, such as in response to the reader's feedback, run `node <checkout>/scripts/event.mjs updated /absolute/file.md --agent <your name>` so both apps show it unread. Add `--summary "<one line>"` when useful, and `--shelf` and `--workspace` for a shelf outside the checkout. Unregistered files are skipped, and a repeated announcement is harmless. See `docs/events.md` in the checkout, including the Claude Code hook that announces edits automatically.

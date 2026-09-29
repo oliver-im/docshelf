@@ -21,7 +21,11 @@ import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
 import { documentTree, type FolderSegment } from '@docshelf/core/directories';
-import { markRead, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
+import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
+import { announcedUpdates } from '@docshelf/core/events';
+import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
+import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
+import { endCursor, eventLogPath, isEventCursor, readEvents } from '../../local/events.mjs';
 import { RemoveModal, type RemovalTarget } from './ui/remove';
 import { shell } from 'electron';
 
@@ -37,6 +41,8 @@ export default class DocShelfPlugin extends Plugin {
   shelfMissing = false;
   recovery!: RecoveryStore;
   private watcher: FSWatcher | null = null;
+  private eventWatcher: FSWatcher | null = null;
+  private eventLog = '';
   private watchSignature = '';
   private listeners = new Set<() => void>();
   private timer: number | null = null;
@@ -56,6 +62,8 @@ export default class DocShelfPlugin extends Plugin {
   private unread = new Set<string>();
   /** Sources on the shelf before an addition in progress; the documents it adds are already known to the reader. */
   private additionBaseline: Set<string> | null = null;
+  private announcementsPending: Promise<void> | null = null;
+  private announcementsRequested = false;
 
   async onload(): Promise<void> {
     addIcon(DOCSHELF_ICON, DOCSHELF_ICON_SVG);
@@ -124,6 +132,8 @@ export default class DocShelfPlugin extends Plugin {
     this.timer = null;
     void this.watcher?.close();
     this.watcher = null;
+    void this.eventWatcher?.close();
+    this.eventWatcher = null;
     void this.server.close();
     this.listeners.clear();
     this.remoteCache.clear();
@@ -215,6 +225,8 @@ export default class DocShelfPlugin extends Plugin {
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
       this.updateReadState(catalog);
+      this.watchAnnouncements(catalog.shelfPath);
+      void this.readAnnouncements();
       this.shelfMissing = false;
       this.server.setCatalog(catalog, settings.runHtmlScripts);
       await this.search.replace(catalog.artifacts, contents, () => !this.disposed && settings === this.settings);
@@ -322,6 +334,70 @@ export default class DocShelfPlugin extends Plugin {
   private saveReadState(key: string, state: ReadState): void {
     // Without storage, read state lasts until Obsidian restarts.
     try { this.app.saveLocalStorage(key, state); } catch { /* Keep the in-memory state. */ }
+  }
+
+  /** Announcements change read state only, so the log has its own watcher, which also follows it before it exists. */
+  private watchAnnouncements(shelfPath: string): void {
+    const log = eventLogPath(shelfPath);
+    if (this.disposed || this.eventWatcher && this.eventLog === log) return;
+    void this.eventWatcher?.close();
+    this.eventLog = log;
+    const watcher = watch(log, { ignoreInitial: true, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 } });
+    this.eventWatcher = watcher;
+    watcher.on('all', () => { if (!this.disposed && this.eventWatcher === watcher) void this.readAnnouncements(); });
+    watcher.on('error', error => { this.error = `Event log watcher: ${message(error)}`; this.emit(); });
+  }
+
+  /** Apply agents' update announcements from the shelf's event log. See docs/events.md. */
+  readAnnouncements(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    this.announcementsRequested = true;
+    if (!this.announcementsPending) this.announcementsPending = Promise.resolve().then(async () => {
+      try {
+        while (this.announcementsRequested && !this.disposed) { this.announcementsRequested = false; await this.readAnnouncementsNow(); }
+      } catch (error) {
+        this.error = `Event log: ${message(error)}`;
+        this.emit();
+      } finally { this.announcementsPending = null; }
+    });
+    return this.announcementsPending;
+  }
+
+  private async readAnnouncementsNow(): Promise<void> {
+    const shelfPath = this.catalog?.shelfPath;
+    if (!shelfPath || !this.readState) return;
+    const key = `docshelf-event-cursor:${shelfPath}`;
+    const stored: unknown = this.app.loadLocalStorage(key);
+    const log = eventLogPath(shelfPath);
+    // Without a position, start at the end so earlier announcements are not replayed.
+    const { events, cursor, warnings } = isEventCursor(stored) ? await readEvents(log, stored) : { events: [], cursor: await endCursor(log), warnings: [] };
+    for (const warning of warnings) console.warn(`DocShelf event log: ${warning}`);
+    const catalog = this.catalog;
+    if (this.disposed || catalog?.shelfPath !== shelfPath || !this.readState) return;
+    // Documents on screen in a focused window stay read; the reader sees them refresh.
+    const shown = this.shownDocuments();
+    const updated = new Set<string>();
+    for (const source of announcedUpdates(events)) {
+      const normalized = parseClaudeArtifactUrl(source)?.publicUrl || parseGitHubMarkdownUrl(source)?.sourceUrl || source;
+      const artifact = path.isAbsolute(normalized) || /^https:/i.test(normalized) ? findSource(catalog, normalized) : undefined;
+      if (artifact && !shown.has(sourceIdentity(artifact))) updated.add(sourceIdentity(artifact));
+    }
+    if (updated.size) {
+      this.readState.state = markUnread(this.readState.state, updated);
+      this.saveReadState(this.readState.key, this.readState.state);
+      this.unread = unreadSources(this.readState.state, catalog.artifacts.map(sourceIdentity));
+      this.emit();
+    }
+    try { this.app.saveLocalStorage(key, cursor); } catch { /* Announcements may apply again; marking unread is repeatable. */ }
+  }
+
+  private shownDocuments(): Set<string> {
+    const shown = new Set<string>();
+    for (const leaf of [...this.app.workspace.getLeavesOfType(NATIVE_MARKDOWN_VIEW), ...this.app.workspace.getLeavesOfType(DOCUMENT_VIEW)]) {
+      const view = leaf.view as DocumentView | NativeMarkdownView;
+      if (view.artifact && view.containerEl.isShown() && view.containerEl.doc.hasFocus()) shown.add(sourceIdentity(view.artifact));
+    }
+    return shown;
   }
 
   async openShelf(): Promise<void> {

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
 
 export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const baseline = JSON.parse(await readFile(shelfPath, 'utf8'));
@@ -189,6 +194,34 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await writeFile(live, '# Live discovery\nupdatedfromoutside\n');
   await poll(() => page.evaluate(() => app.workspace.getLeavesOfType('docshelf-markdown').some(leaf => leaf.view.editor.getValue().includes('updatedfromoutside'))), 'A discovered document did not refresh in the editor.');
   assert.deepEqual(await unreadRows(), [], 'Editing a read document must not mark it unread.');
+  // Agents announce their edits through the real command, which appends to the log beside the shelf.
+  const announce = file => run(process.execPath, [fileURLToPath(new URL('../../../scripts/event.mjs', import.meta.url)), 'updated', file, '--shelf', shelfPath, '--workspace', workspace, '--strict']);
+  const announcementsRead = () => page.evaluate(log => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return app.loadLocalStorage(`docshelf-event-cursor:${plugin.catalog.shelfPath}`)?.offset === require('node:fs').statSync(log).size;
+  }, path.join(path.dirname(shelfPath), 'shelf.local.events.jsonl'));
+  const second = path.join(directory, 'nested/second.md');
+  await announce(second);
+  await poll(async () => JSON.stringify(await unreadRows()) === JSON.stringify(['Watched project', 'watched-documents', 'nested', 'second.md']), 'An announced update did not mark the document unread.');
+  // Stub only window focus, which the test cannot control, around the document on screen.
+  await page.evaluate(() => { document.hasFocus = () => true; });
+  await announce(live);
+  await poll(announcementsRead, 'The announcement for the focused document was not read.');
+  assert.deepEqual(await unreadRows(), ['Watched project', 'watched-documents', 'nested', 'second.md'], 'The document on screen in a focused window must stay read.');
+  await page.evaluate(() => { document.hasFocus = () => false; });
+  await writeFile(live, '# Live discovery\nupdatedfromoutside\nupdatedbyagent\n');
+  await announce(live);
+  await poll(async () => (await unreadRows()).includes('live.md'), 'A displayed document did not become unread while its window lacked focus.');
+  // Refreshing the document on screen with the agent's edit is not reading it.
+  await poll(() => page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().some(view => view.artifact?.sourcePath === file && view.editor.getValue().includes('updatedbyagent')), live), 'The announced edit did not refresh the open document.');
+  assert.ok((await unreadRows()).includes('live.md'), 'Refreshing the displayed document must keep an announced update unread.');
+  await page.evaluate(() => { delete document.hasFocus; });
+  for (const file of [second, live]) await page.evaluate(async file => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    await plugin.openArtifact(plugin.catalog.artifacts.find(entry => entry.sourcePath === file));
+  }, file);
+  assert.deepEqual(await unreadRows(), [], 'Opening announced documents must mark them read.');
+  await page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file).leaf.detach(), second);
   await page.screenshot({ path: '.local/runtime/directories-live.png' });
   // Check removal before the asynchronous catalog watcher can update its cache.
   await page.evaluate(({ file, shelfPath }) => {

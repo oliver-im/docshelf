@@ -51,6 +51,7 @@ const kinds = {
   watcher: { fileName: 'watch.lock', label: 'DocShelf watcher', wait: false },
   sync: { fileName: 'sync.lock', label: 'DocShelf artifact sync', wait: true },
   registration: { fileName: 'add.lock', label: 'DocShelf registration', wait: true },
+  events: { fileName: 'events.lock', label: 'DocShelf event log', wait: true },
 };
 
 /** @param {string} runtimeRoot */
@@ -106,7 +107,7 @@ export function inspectWatcherLock(runtimeRoot) {
  */
 
 /**
- * @param {'watcher' | 'sync' | 'registration'} kind
+ * @param {'watcher' | 'sync' | 'registration' | 'events'} kind
  * @param {string} lockPath
  * @param {{ timeoutMs?: number, onWait?: (owner: LockOwner) => void, signal?: AbortSignal }} options
  *   `signal` cancels a pending wait; the rejection carries the code DOCSHELF_LOCK_ABORTED.
@@ -598,7 +599,7 @@ function launchdServiceName() {
   return name;
 }
 
-/** @param {'watcher' | 'sync' | 'registration'} kind @param {string} lockPath @param {LockInspection} inspection */
+/** @param {'watcher' | 'sync' | 'registration' | 'events'} kind @param {string} lockPath @param {LockInspection} inspection */
 function throwIfUnusable(kind, lockPath, inspection) {
   const { label } = kinds[kind];
   switch (inspection.state) {
@@ -625,7 +626,7 @@ function throwIfUnusable(kind, lockPath, inspection) {
   }
 }
 
-/** @param {'watcher' | 'sync' | 'registration'} kind @param {string} lockPath @param {LockInspection} inspection */
+/** @param {'watcher' | 'sync' | 'registration' | 'events'} kind @param {string} lockPath @param {LockInspection} inspection */
 function heldError(kind, lockPath, inspection) {
   const { label } = kinds[kind];
   const owner = inspection.owner;
@@ -648,7 +649,7 @@ function heldError(kind, lockPath, inspection) {
 }
 
 /**
- * @param {'watcher' | 'sync' | 'registration'} kind
+ * @param {'watcher' | 'sync' | 'registration' | 'events'} kind
  * @param {string} lockPath
  * @param {number} timeoutMs
  * @param {LockOwner | null} owner
@@ -662,7 +663,7 @@ function timeoutError(kind, lockPath, timeoutMs, owner) {
   );
 }
 
-/** @param {'watcher' | 'sync' | 'registration'} kind @param {string} lockPath @param {AbortSignal} signal */
+/** @param {'watcher' | 'sync' | 'registration' | 'events'} kind @param {string} lockPath @param {AbortSignal} signal */
 function abortError(kind, lockPath, signal) {
   return lockError(
     'DOCSHELF_LOCK_ABORTED',
@@ -774,4 +775,10 @@ function lockError(code, message, extra = {}) {
 /** @param {string} shelfPath */
 export function acquireRegistrationLock(shelfPath) {
   return acquireLock('registration', path.join(path.dirname(shelfPath), `.${path.basename(shelfPath)}.add.lock`), { timeoutMs: 10000 });
+}
+
+/** Serializes appends to a shelf's event log, so concurrent writers never interleave lines.
+ * @param {string} shelfPath */
+export function acquireEventsLock(shelfPath) {
+  return acquireLock('events', path.join(path.dirname(shelfPath), `.${path.basename(shelfPath)}.events.lock`), { timeoutMs: 10000 });
 }

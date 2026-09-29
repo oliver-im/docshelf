@@ -417,6 +417,30 @@ async function commitRegistration(prepared, changedMessage) {
   }
 }
 
+/** The canonical path of a local file the shelf lists, or null. Folder discovery rules are applied
+ * to this one path instead of scanning every folder, because agents check each file they edit.
+ * A folder skipped for exceeding a scan limit still counts; the apps ignore events for documents they do not list. */
+export async function findRegisteredFile({ shelfPath, base = path.dirname(shelfPath), roots, file }) {
+  const { config } = await readRegistration(shelfPath, roots);
+  const canonical = await realpath(file).catch(error => { if (unavailable(error)) return null; throw error; });
+  if (!canonical || !roots.some(root => within(root, canonical))) return null;
+  const local = source => typeof source === 'string' && !(/^[a-z][a-z\d+.-]*:/i.test(source) && !path.isAbsolute(source)) && !source.startsWith('//');
+  for (const entry of config.artifacts) {
+    if (local(entry?.source) && regularDocument(entry.source) && await realpath(path.resolve(base, entry.source)).catch(() => null) === canonical) return canonical;
+  }
+  if (!regularDocument(canonical)) return null;
+  for (const directory of config.directories) {
+    const root = await realpath(path.resolve(base, directory.source)).catch(() => null);
+    if (!root || !roots.some(allowed => within(allowed, root)) || !within(root, canonical)) continue;
+    const relative = portable(path.relative(root, canonical));
+    const depth = relative.split('/').length - 1;
+    if (!relative || excludedPath(relative, directory.exclude) || !directory.recursive && depth > 0 || depth > 32) continue;
+    const info = await stat(canonical);
+    if (info.isFile() && info.size <= 8 * 1024 * 1024) return canonical;
+  }
+  return null;
+}
+
 /** Revalidate membership synchronously immediately before native editor reads/writes. */
 export function assertRegisteredSource(shelfPath, artifact, roots) {
   const canonical = realpathSync(shelfPath);
