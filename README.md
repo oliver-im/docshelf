@@ -103,6 +103,8 @@ After creating a report or note, ask your agent:
 
 The skill registers the original file, preserves existing shelf entries, checks the result, and returns links for your configured apps. It can also return a source-line reference for a specific passage.
 
+When an agent later edits a document for you, it can mark the document unread in both apps. A Claude Code hook does this after every edit Claude makes, and other agents can run the same command. See [agent edits and the event log](docs/events.md).
+
 To register documents manually, follow the [web app registration guide](https://github.com/oliver-im/docshelf/blob/main/docs/usage.md#register-local-documents) or [Obsidian registration guide](https://github.com/oliver-im/docshelf/blob/main/packages/obsidian/README.md#register-documents).
 
 ## Guides
@@ -118,5 +120,5 @@ To register documents manually, follow the [web app registration guide](https://
 
 MIT. Themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.3.0/docshelf-0.3.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.3.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.4.0/docshelf-0.4.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.4.0

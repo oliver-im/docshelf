@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -39,6 +39,29 @@ test('mixed shelves sync and pass the build hook without emitting Claude files',
   assert.equal(await readFile(path.join(fixture, 'local.html'), 'utf8'), source);
   const repeated = await implementation.syncArtifacts(shelf);
   assert.deepEqual(repeated, revisions);
+});
+
+test('generated documents keep an opaque source identity when their route changes', async (t) => {
+  const { fixture, implementation } = await isolatedArtifacts(t);
+  await writeFile(path.join(fixture, 'local.md'), '# Local');
+  await writeFile(path.join(fixture, 'other.md'), '# Other');
+  const shelfPath = path.join(fixture, 'shelf.json');
+  const generate = async (artifacts) => {
+    await writeFile(shelfPath, JSON.stringify({ version: 1, artifacts }));
+    await implementation.syncArtifacts(await implementation.loadShelfFrom(shelfPath));
+    return readFile(implementation.generatedShelfPath, 'utf8');
+  };
+  const sourceIds = (generated) => JSON.parse(generated).artifacts.map((artifact) => artifact.sourceId);
+  const generated = await generate([
+    { project: 'Notes', source: 'local.md', route: 'local.html', title: 'Local' },
+    { project: 'Notes', source: 'other.md', route: 'other.html', title: 'Other' },
+  ]);
+  const [local, other] = sourceIds(generated);
+  assert.ok(local && other && local !== other);
+  // Hosted shelves publish this file, so the identity must not reveal where sources live.
+  assert.equal(generated.includes(await realpath(fixture)), false);
+  const moved = await generate([{ project: 'Notes', source: 'local.md', route: 'moved/local.html', title: 'Local' }]);
+  assert.deepEqual(sourceIds(moved), [local]);
 });
 
 for (const replacement of ['file', 'directory']) {

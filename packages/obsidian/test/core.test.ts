@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, unlink, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { documentLabel, loadCatalog } from '../src/core/catalog';
+import { documentLabel, loadCatalog, sourceIdentity } from '../src/core/catalog';
 import { readBoundedFile } from '../src/core/files';
 import { createPermalink, parseProtocol, parseRange, checkRange } from '../src/core/protocol';
 import { renderMarkdown, sourceLines } from '../src/core/markdown';
@@ -96,9 +96,21 @@ test('shelf rejects traversal, duplicate routes/sources, and invalid remote host
   }
   await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [f.entry, f.entry] }));
   await assert.rejects(loadCatalog(f.shelfPath, f.workspace), /Duplicate/);
+  await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [f.entry, { ...f.entry, route: 'example/other.html' }] }));
+  await assert.rejects(loadCatalog(f.shelfPath, f.workspace), /Duplicate source/);
   for (const url of ['https://github.com.evil.test/a/b/blob/main/x.md', 'https://github.com/a/b/blob/main/x.html', 'https://user@github.com/a/b/blob/main/x.md', 'https://raw.githubusercontent.com/a/b/main/x.md?token=x']) assert.equal(parseGitHubMarkdownUrl(url), null);
   assert.equal(parseClaudeArtifactUrl('https://claude.ai/chat/test'), null);
   assert.ok(parseGitHubMarkdownUrl('https://github.com/owner/repo/blob/main/README.md'));
+});
+
+test('read state follows a source across route changes and symlinked spellings', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const canonical = await realpath(f.source);
+  assert.equal(sourceIdentity((await loadCatalog(f.shelfPath, f.workspace)).artifacts[0]), canonical);
+  const alias = path.join(f.workspace, 'alias');
+  await symlink(f.workspace, alias, 'dir');
+  await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, source: path.join(alias, path.basename(f.source)), route: 'moved/guide.html' }] }));
+  assert.equal(sourceIdentity((await loadCatalog(f.shelfPath, f.workspace)).artifacts[0]), canonical);
 });
 
 test('links use source and round trip Unicode, spaces and line ranges', async t => {

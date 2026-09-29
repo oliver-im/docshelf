@@ -9,6 +9,7 @@ const runFile = promisify(execFile);
 const capabilitiesPath = '/__docshelf/local-actions';
 const revealPath = '/__docshelf/reveal';
 const registerPath = '/__docshelf/register';
+const eventsPath = '/__docshelf/events';
 
 /** Local OS actions are available only through the loopback watcher, never static output. */
 export function createLocalActionsHandler({
@@ -18,12 +19,13 @@ export function createLocalActionsHandler({
   platform = process.platform,
   revealFile = (file) => runFile('/usr/bin/open', ['-R', file], { timeout: 5000 }),
   registration,
+  announcements,
 }) {
   const token = randomBytes(32).toString('hex');
   let revealing = false;
 
   return async function handleLocalAction(request, response, pathname) {
-    if (pathname !== capabilitiesPath && pathname !== revealPath && pathname !== registerPath) return false;
+    if (pathname !== capabilitiesPath && pathname !== revealPath && pathname !== registerPath && pathname !== eventsPath) return false;
 
     const reply = (status, body) => {
       response.writeHead(status, {
@@ -48,6 +50,26 @@ export function createLocalActionsHandler({
     if (pathname === capabilitiesPath) {
       if (request.method !== 'GET') return reply(405, { error: 'Use GET for document capabilities.' });
       return reply(200, { revealInFinder: platform === 'darwin', ...(platform === 'darwin' || registration ? { token } : {}), ...(registration ? { add: true, remove: true } : {}) });
+    }
+
+    // Read-only: announced updates arrive as opaque source IDs after a log position.
+    if (pathname === eventsPath) {
+      if (request.method !== 'GET') return reply(405, { error: 'Use GET for announced updates.' });
+      if (!announcements) return reply(404, { error: 'Announced updates are unavailable on this server.' });
+      const query = new URL(request.url || '/', 'http://shelf.localhost').searchParams;
+      const after = query.get('after');
+      const last = query.get('last');
+      if (
+        [...query.keys()].some((key) => key !== 'after' && key !== 'last') ||
+        (after !== null && (!/^\d{1,16}$/.test(after) || !Number.isSafeInteger(Number(after)))) ||
+        (last !== null && (after === null || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(last)))
+      ) return reply(400, { error: 'Send a position in the event log.' });
+      try {
+        const result = await announcements({ after: after === null ? undefined : Number(after), last: last ?? undefined });
+        return result ? reply(200, result) : reply(503, { error: 'DocShelf is building.' });
+      } catch {
+        return reply(500, { error: 'Could not read announced updates.' });
+      }
     }
 
     if (request.method !== 'POST') return reply(405, { error: 'Use POST for document actions.' });

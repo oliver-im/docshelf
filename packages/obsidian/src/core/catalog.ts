@@ -83,13 +83,10 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
     const claude = parseClaudeArtifactUrl(entry.source);
     const github = parseGitHubMarkdownUrl(entry.source);
     let artifact: Artifact;
-    let identity: string;
     if (claude) {
       artifact = { ...entry, id, source: claude.publicUrl, kind: 'claude' };
-      identity = artifact.source;
     } else if (github) {
       artifact = { ...entry, id, source: github.sourceUrl, kind: 'github', rawUrl: github.rawUrl, linkBaseUrl: github.linkBaseUrl };
-      identity = github.rawUrl;
     } else {
       if ((!path.isAbsolute(entry.source) && /^[a-z][a-z\d+.-]*:/i.test(entry.source)) || /^https?:/i.test(entry.source) || entry.source.startsWith('//') || entry.source.startsWith('\\\\')) {
         throw new Error(`Artifact ${index + 1}: only public GitHub Markdown and published Claude Artifact URLs are accepted.`);
@@ -101,8 +98,8 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
       const directoryId = typeof input.directoryId === 'string' ? input.directoryId : undefined;
       const canonicalPath = await registeredFile(sourcePath, discoveryRoot ? [discoveryRoot] : roots, options);
       artifact = { ...entry, id, sourcePath, canonicalPath, kind: ['.md', '.markdown'].includes(extension) ? 'markdown' : 'html', ...(discoveryRoot ? { discoveryRoot, directoryId } : {}) };
-      identity = canonicalPath || sourcePath;
     }
+    const identity = sourceIdentity(artifact);
     if (sources.has(identity)) throw new Error(`Duplicate source: ${entry.source}`);
     sources.add(identity);
     if (input.assets !== undefined) {
@@ -119,6 +116,13 @@ export async function loadCatalog(shelfPath: string, configuredRoot?: string, op
     artifacts.push(artifact);
   }
   return { shelfPath: path.resolve(shelfPath), roots, artifacts, directories: expanded.directories, warnings: expanded.warnings };
+}
+
+/** The document a registration points to, unchanged by its route or by an equivalent spelling of its source. */
+export function sourceIdentity(artifact: Artifact): string {
+  if (artifact.kind === 'claude') return artifact.source;
+  if (artifact.kind === 'github') return artifact.rawUrl!;
+  return artifact.canonicalPath || artifact.sourcePath!;
 }
 
 export function findSource(catalog: Catalog, source: string): Artifact | undefined {

@@ -18,5 +18,8 @@ worktrees/
 # Atomic shelf saves and registration locks may contain private local paths.
 .*.json.*.tmp
 .*.json.add.lock*/
+# Agents' announcements beside each shelf name local documents.
+*.events.jsonl
+.*.json.events.lock*/
 shelf.local.json.*.tmp
 shelf.local.json.add.lock/

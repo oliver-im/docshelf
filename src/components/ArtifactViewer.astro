@@ -170,6 +170,7 @@ const blankFrameUrl = 'about:blank';
   import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
   import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
+  import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
 
   interface Artifact {
     route: string;
@@ -178,6 +179,7 @@ const blankFrameUrl = 'about:blank';
     folders?: string[];
     title: string;
     revision: string;
+    sourceId?: string;
     embedUrl?: string;
     source?: string;
     sourceType?: 'claude' | 'github-markdown';
@@ -206,6 +208,16 @@ const blankFrameUrl = 'about:blank';
     error: { message: string; details: string | null } | null;
   }
 
+  interface EventCursor {
+    offset: number;
+    lastId: string | null;
+  }
+
+  interface Announcements {
+    cursor: EventCursor;
+    sources: string[];
+  }
+
   const basePath = import.meta.env.BASE_URL;
   const artifactRootPath = `${basePath}artifacts/`;
   const revisionStateUrl = `${artifactRootPath}.docshelf-revisions.json`;
@@ -214,6 +226,10 @@ const blankFrameUrl = 'about:blank';
   const revisionPollInterval = 3_000;
   const importedArtifactsStorageKey = 'docshelf:imported-artifacts';
   const legacyClaudeArtifactsStorageKey = 'docshelf:claude-artifacts';
+  const readStateStorageKey = 'docshelf:read-state';
+  const localAdditionStorageKey = 'docshelf:local-addition';
+  const localAdditionLifetime = 10 * 60_000;
+  const eventCursorStorageKey = 'docshelf:event-cursor';
 
   const viewer = document.querySelector<HTMLElement>('[data-docshelf-viewer]');
 
@@ -311,11 +327,17 @@ const blankFrameUrl = 'about:blank';
     )
       .map((link) => ({ link, route: artifactRouteFromLink(link) }))
       .filter((entry): entry is { link: HTMLAnchorElement; route: string } => Boolean(entry.route));
+    // Only shelf documents can be unread; browser imports were added by this reader.
+    const shelfSources = artifacts.flatMap((artifact) => (artifact.sourceId ? [artifact.sourceId] : []));
+    let readState = loadReadState(shelfSources);
+    let unread = readState ? unreadSources(readState, shelfSources) : new Set<string>();
 
     let currentArtifact: Artifact | undefined;
     let currentSelection: ArtifactSelection | undefined;
     let navigationId = 0;
     let checkingRevisions = false;
+    let checkingAnnouncements = false;
+    let announcementsAvailable = root.dataset.docshelfLiveUpdates === 'true';
     const bridgedDocuments = new WeakSet<Document>();
     const pendingRefreshes = new Set<string>();
     const documentActions = createDocumentActions({
@@ -328,6 +350,17 @@ const blankFrameUrl = 'about:blank';
     });
 
     initializeImportDialog();
+    showUnread();
+    window.addEventListener('storage', (event) => {
+      if (event.key !== readStateStorageKey || !readState) return;
+      const shown = currentArtifact?.sourceId;
+      const shownWasRead = Boolean(shown && !unread.has(shown));
+      readState = reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources);
+      unread = unreadSources(readState, shelfSources);
+      showUnread();
+      // Another tab applied an announced update to the document this focused tab shows, where the reader sees it refresh.
+      if (currentArtifact && shownWasRead && readerIsLooking()) markArtifactRead(currentArtifact);
+    });
 
     for (const frame of frames) {
       frame.addEventListener('load', () => {
@@ -414,12 +447,16 @@ const blankFrameUrl = 'about:blank';
     new MutationObserver(() => frames.forEach(sendFrameTheme)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     frames.forEach(sendFrameTheme);
     if (root.dataset.docshelfLiveUpdates === 'true') {
-      window.addEventListener('focus', () => void checkForArtifactUpdates());
+      const checkForUpdates = () => {
+        void checkForAnnouncedUpdates();
+        void checkForArtifactUpdates();
+      };
+      window.addEventListener('focus', checkForUpdates);
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+        if (document.visibilityState === 'visible') checkForUpdates();
       });
       window.setInterval(() => {
-        if (document.visibilityState === 'visible') void checkForArtifactUpdates();
+        if (document.visibilityState === 'visible') checkForUpdates();
       }, revisionPollInterval);
     }
 
@@ -548,6 +585,10 @@ const blankFrameUrl = 'about:blank';
             if (!response.ok) throw new Error(result.error || 'Could not add the selected paths.');
             if (attempt !== importAttempt || !dialog.open) return;
             if (committing) {
+              if (result.documentsAdded > 0) {
+                // Documents this reader just added should not arrive unread after the rebuild reloads the page.
+                writeStoredValue(localAdditionStorageKey, { before: shelfSources, expires: Date.now() + localAdditionLifetime });
+              }
               closeDialog();
             } else {
               localRevision = result.revision;
@@ -798,6 +839,8 @@ const blankFrameUrl = 'about:blank';
       currentSelection = selection;
       document.title = `${artifact.title} | DocShelf`;
       hideArtifactError();
+      // Refreshing the document already shown is not reading it, so an announced update stays unread.
+      if (routeChanged || !forceRefresh) markArtifactRead(artifact);
 
       if (changed || forceRefresh) void displayArtifact(artifact, selection);
 
@@ -820,6 +863,80 @@ const blankFrameUrl = 'about:blank';
           '',
           artifactViewerUrl(selection),
         );
+      }
+    }
+
+    function markArtifactRead(artifact: Artifact) {
+      if (!readState || !artifact.sourceId || !unread.has(artifact.sourceId)) return;
+      // Start from the stored state so reads in other tabs are kept.
+      readState = markRead(
+        reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources),
+        [artifact.sourceId],
+      );
+      writeStoredValue(readStateStorageKey, readState);
+      unread = unreadSources(readState, shelfSources);
+      showUnread();
+    }
+
+    /** Make documents unread when an agent announces that it updated them. See docs/events.md. */
+    async function checkForAnnouncedUpdates() {
+      if (!announcementsAvailable || !readState || checkingAnnouncements) return;
+      checkingAnnouncements = true;
+      try {
+        const sent = readStoredValue(eventCursorStorageKey);
+        const position = new URLSearchParams();
+        if (validEventCursor(sent)) {
+          position.set('after', String(sent.offset));
+          if (sent.lastId !== null) position.set('last', sent.lastId);
+        }
+        const response = await fetch(`${basePath}__docshelf/events?${position}`, {
+          cache: 'no-store',
+          headers: { 'X-DocShelf-Request': 'document-actions' },
+        });
+        // Static hosting and older watchers have no event log.
+        if ([403, 404, 405].includes(response.status)) {
+          announcementsAvailable = false;
+          return;
+        }
+        if (!response.ok) return;
+        const result = (await response.json()) as unknown;
+        if (!validAnnouncements(result)) return;
+        // Another tab read the same announcements first and has applied them.
+        if (JSON.stringify(readStoredValue(eventCursorStorageKey)) !== JSON.stringify(sent)) return;
+        // The document the reader is looking at stays read; they see it refresh.
+        const viewing = readerIsLooking() ? currentArtifact?.sourceId : undefined;
+        const updated = result.sources.filter((id) => id !== viewing && shelfSources.includes(id));
+        if (updated.length) {
+          readState = markUnread(
+            reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources),
+            updated,
+          );
+          const stored = writeStoredValue(readStateStorageKey, readState);
+          unread = unreadSources(readState, shelfSources);
+          showUnread();
+          // Keep the position until the unread state is stored, so a later check or another tab applies it again.
+          if (!stored) return;
+        }
+        writeStoredValue(eventCursorStorageKey, result.cursor);
+      } catch {
+        // Keep the position and try again on the next check.
+      } finally {
+        checkingAnnouncements = false;
+      }
+    }
+
+    /** Mark unread documents, and the project and folder groups that contain them. */
+    function showUnread() {
+      for (const { link, route } of sidebarLinks) {
+        const sourceId = artifacts.find((artifact) => artifact.route === route)?.sourceId;
+        setUnreadMarker(link, link, Boolean(sourceId && unread.has(sourceId)), 'Unread');
+      }
+      for (const group of document.querySelectorAll<HTMLDetailsElement>('#starlight__sidebar details')) {
+        const summary = group.querySelector<HTMLElement>(':scope > summary');
+        const label = summary?.querySelector<HTMLElement>('.group-label');
+        if (summary && label) {
+          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread]')), 'Contains unread documents');
+        }
       }
     }
 
@@ -1191,6 +1308,83 @@ const blankFrameUrl = 'about:blank';
       return artifacts;
     } catch {
       return [];
+    }
+  }
+
+  /** Stored read state brought up to date with the shelf, or null when this browser cannot keep it. */
+  function loadReadState(current: string[]): ReadState | null {
+    const stored = readStoredValue(readStateStorageKey);
+    let state = reconcileReadState(stored, current);
+    const addition = readStoredValue(localAdditionStorageKey) as { before?: unknown; expires?: unknown } | null;
+    if (addition !== null) {
+      const valid = Array.isArray(addition?.before) && typeof addition.expires === 'number' && addition.expires > Date.now();
+      const before = new Set(valid ? (addition.before as unknown[]) : []);
+      const added = current.filter((id) => !before.has(id));
+      // Until the watcher publishes the addition, the shelf has nothing new to mark read.
+      if (valid && added.length) state = markRead(state, added);
+      if (!valid || added.length) removeStoredValue(localAdditionStorageKey);
+    }
+    // Leave unchanged state alone so a concurrent read in another tab is not overwritten.
+    if (JSON.stringify(stored) === JSON.stringify(state)) return state;
+    return writeStoredValue(readStateStorageKey, state) ? state : null;
+  }
+
+  /** Whether the selected document is on screen in a focused tab. */
+  function readerIsLooking() {
+    return document.visibilityState === 'visible' && document.hasFocus();
+  }
+
+  function validEventCursor(value: unknown): value is EventCursor {
+    if (!value || typeof value !== 'object') return false;
+    const { offset, lastId } = value as { offset?: unknown; lastId?: unknown };
+    return Number.isSafeInteger(offset) && (offset as number) >= 0 && (lastId === null || typeof lastId === 'string');
+  }
+
+  function validAnnouncements(value: unknown): value is Announcements {
+    if (!value || typeof value !== 'object') return false;
+    const { cursor, sources } = value as { cursor?: unknown; sources?: unknown };
+    return validEventCursor(cursor) && Array.isArray(sources) && sources.every((id) => typeof id === 'string');
+  }
+
+  function setUnreadMarker(target: HTMLElement, container: HTMLElement, isUnread: boolean, description: string) {
+    target.toggleAttribute('data-docshelf-unread', isUnread);
+    const marker = container.querySelector(':scope > .docshelf-unread-dot');
+    if (!isUnread) {
+      marker?.remove();
+      return;
+    }
+    if (marker) return;
+    const dot = document.createElement('span');
+    dot.className = 'docshelf-unread-dot';
+    const text = document.createElement('span');
+    text.className = 'sr-only';
+    text.textContent = description;
+    dot.append(text);
+    container.append(dot);
+  }
+
+  function readStoredValue(key: string): unknown {
+    try {
+      return JSON.parse(window.localStorage.getItem(key) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStoredValue(key: string, value: unknown) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function removeStoredValue(key: string) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // An expired addition is ignored on the next load.
     }
   }
 
@@ -1681,6 +1875,21 @@ const blankFrameUrl = 'about:blank';
     border: 0;
     font-size: var(--sl-text-xs);
     font-weight: 400;
+  }
+
+  /* Unread documents read like unread mail until opened. */
+  :global(#starlight__sidebar a[data-docshelf-unread]) {
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  :global(#starlight__sidebar .docshelf-unread-dot) {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--sl-color-text-accent);
+    vertical-align: middle;
   }
 
   :global(#starlight__sidebar a[data-docshelf-current]) {
