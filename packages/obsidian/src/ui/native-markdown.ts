@@ -14,6 +14,9 @@ import { applyExternalText, nativeSourceControls, setSourceReference, sourceRefe
 
 export const NATIVE_MARKDOWN_VIEW = 'docshelf-markdown';
 
+/** The open source-reference menu, in any view. */
+let referenceMenu: Menu | null = null;
+
 export const nativeMarkdownExtension = [
   nativeSourceControls(owner => owner instanceof NativeMarkdownView, owner => (owner as NativeMarkdownView).onSourceReferenceChanged()),
   EditorState.changeFilter.of(transaction => {
@@ -164,12 +167,16 @@ export class NativeMarkdownView extends MarkdownView {
     const range = sourceReferenceAt(this, event);
     if (!range) return false;
     event.preventDefault(); event.stopPropagation();
+    // Stopping the event also hides it from an open menu's close-on-right-click handler, so replace that menu here.
+    referenceMenu?.hide();
     const menu = new Menu()
       .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
       .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
       .addItem(item => item.setTitle('Reveal source').setIcon('folder-open').onClick(() => {
         if (this.artifact) void this.plugin.revealArtifact(this.artifact);
       }));
+    referenceMenu = menu;
+    menu.onHide(() => { if (referenceMenu === menu) referenceMenu = null; });
     menu.showAtMouseEvent(event);
     return true;
   }
