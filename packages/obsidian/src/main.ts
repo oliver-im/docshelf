@@ -331,9 +331,9 @@ export default class DocShelfPlugin extends Plugin {
     this.emit();
   }
 
-  private saveReadState(key: string, state: ReadState): void {
+  private saveReadState(key: string, state: ReadState): boolean {
     // Without storage, read state lasts until Obsidian restarts.
-    try { this.app.saveLocalStorage(key, state); } catch { /* Keep the in-memory state. */ }
+    try { this.app.saveLocalStorage(key, state); return true; } catch { /* Keep the in-memory state. */ return false; }
   }
 
   /** Announcements change read state only, so the log has its own watcher, which also follows it before it exists. */
@@ -384,9 +384,11 @@ export default class DocShelfPlugin extends Plugin {
     }
     if (updated.size) {
       this.readState.state = markUnread(this.readState.state, updated);
-      this.saveReadState(this.readState.key, this.readState.state);
+      const stored = this.saveReadState(this.readState.key, this.readState.state);
       this.unread = unreadSources(this.readState.state, catalog.artifacts.map(sourceIdentity));
       this.emit();
+      // Keep the position until the unread state is stored, so the announcements apply again after a restart.
+      if (!stored) return;
     }
     try { this.app.saveLocalStorage(key, cursor); } catch { /* Announcements may apply again; marking unread is repeatable. */ }
   }

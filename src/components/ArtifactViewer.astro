@@ -911,9 +911,11 @@ const blankFrameUrl = 'about:blank';
             reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources),
             updated,
           );
-          writeStoredValue(readStateStorageKey, readState);
+          const stored = writeStoredValue(readStateStorageKey, readState);
           unread = unreadSources(readState, shelfSources);
           showUnread();
+          // Keep the position until the unread state is stored, so a later check or another tab applies it again.
+          if (!stored) return;
         }
         writeStoredValue(eventCursorStorageKey, result.cursor);
       } catch {
