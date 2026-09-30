@@ -2,6 +2,7 @@ import { constants, closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, o
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { within } from './files';
+import { outsideWorkspace } from '../../../local/shelf.mjs';
 import { MAX_DOCUMENT_BYTES } from './types';
 
 export interface FileSnapshot { canonicalPath: string; bytes: Buffer }
@@ -19,7 +20,7 @@ export interface Recovery {
 
 function checkedPath(file: string, roots: string[]): string {
   const canonical = realpathSync(file);
-  if (!roots.some(root => within(root, canonical))) throw new Error('File is outside the configured workspace.');
+  if (!roots.some(root => within(root, canonical))) throw outsideWorkspace(file, canonical, roots);
   return canonical;
 }
 

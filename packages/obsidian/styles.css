@@ -1,7 +1,6 @@
 .docshelf-shelf { padding: 14px; }
 .docshelf-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .docshelf-toolbar button { min-height: 32px; cursor: pointer; }
-.docshelf-toolbar button[aria-pressed="true"] { background: var(--interactive-accent); color: var(--text-on-accent); }
 .docshelf-search { width: 100%; min-height: 36px; }
 .docshelf-status { color: var(--text-muted); font-size: var(--font-ui-small); margin: 12px 0; }
 .docshelf-status:empty { margin: 0; }
@@ -65,15 +64,17 @@ button.docshelf-search-result { margin-bottom: 4px; padding: 8px 6px; }
 button.docshelf-empty-link { height: auto; padding: 4px 8px; color: var(--text-muted); font-size: var(--font-ui-small); background: transparent; border: 0; box-shadow: none; }
 button.docshelf-empty-link:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
 .docshelf-empty-shelf p.docshelf-empty-note { margin-top: 4px; color: var(--text-faint); font-size: var(--font-ui-smaller); overflow-wrap: anywhere; }
-.docshelf-document { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.docshelf-document-header { flex: 0 0 auto; padding: 18px 24px 12px; border-bottom: 1px solid var(--background-modifier-border); }
-.docshelf-document-header h1 { font-size: 22px; line-height: 1.3; margin: 6px 0; }
-.docshelf-eyebrow { color: var(--text-muted); font-size: var(--font-ui-small); }
-.docshelf-source-path { color: var(--text-faint); font-size: var(--font-ui-smaller); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 14px; }
-.docshelf-selection-status { color: var(--text-muted); font-size: var(--font-ui-smaller); min-height: 18px; margin-top: 12px; }
-.docshelf-selection-status.docshelf-error { color: var(--text-error); }
+/* Reports and source rows fill the pane like the native Markdown view; only
+   messages keep the host's usual view padding. */
+.view-content.docshelf-document { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.docshelf-document-notice { padding: var(--size-4-3) var(--size-4-3) var(--size-4-8); }
 .docshelf-document-body { overflow: auto; flex: 1 1 auto; min-height: 0; position: relative; }
-.docshelf-webview { width: 100%; height: 100%; display: flex; border: 0; background: var(--background-primary); }
+/* The aria-label names the page for assistive technology; the view header already shows it, so skip Obsidian's tooltip. */
+.docshelf-webview { width: 100%; height: 100%; display: flex; border: 0; background: var(--background-primary); --no-tooltip: true; }
+.docshelf-report-layer { position: absolute; inset: 0; outline: none; }
+/* Set while a report's button is down and briefly after; see ReportPointer. */
+body.docshelf-report-pointer * { pointer-events: none !important; }
+body.docshelf-report-pointer webview.docshelf-webview { pointer-events: auto !important; }
 .docshelf-reading { max-width: 920px; padding: 24px 28px 60px 10px; margin: 0 auto; line-height: 1.6; overflow-wrap: anywhere; }
 .docshelf-reading-block { --docshelf-gutter-width: 48px; container-type: inline-size; display: grid; grid-template-columns: var(--docshelf-gutter-width) minmax(0, 1fr); gap: 14px; position: relative; }
 .docshelf-reading-gutter { display: flex; flex-direction: column; align-items: stretch; padding: 0; border-right: 1px solid var(--background-modifier-border); }
@@ -94,7 +95,7 @@ button.docshelf-line-button.is-selected { color: var(--text-on-accent); backgrou
 .docshelf-source-row.is-selected { background: var(--text-highlight-bg); }
 .docshelf-source-pager { position: sticky; top: 0; z-index: 1; padding: 10px 14px; background: var(--background-primary); border-bottom: 1px solid var(--background-modifier-border); font-size: var(--font-ui-small); }
 .docshelf-shelf :focus-visible, .docshelf-document :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
-@media (max-width: 600px) { .docshelf-document-header { padding: 14px; } .docshelf-reading { padding: 18px 12px 40px 0; } .docshelf-reading-block { --docshelf-gutter-width: 38px; gap: 8px; } }
+@media (max-width: 600px) { .docshelf-reading { padding: 18px 12px 40px 0; } .docshelf-reading-block { --docshelf-gutter-width: 38px; gap: 8px; } }
 .view-content.docshelf-native { display: flex; flex-direction: column; padding: 0; }
 .docshelf-native .inline-title { display: none; }
 /* Override the host's inline display state while source access is unavailable. */

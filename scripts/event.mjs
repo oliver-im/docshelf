@@ -8,6 +8,7 @@
 // interrupts the agent.
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,8 +50,8 @@ async function announce(file) {
   if (!shelfPath) return skipped(file, 'there is no local shelf in this checkout');
   const shelfDirectory = path.dirname(shelfPath);
   // Match each app's containment: the shelf's directory and the workspace root, which the web app reads from
-  // DOCSHELF_WORKSPACE relative to its checkout and Obsidian from its settings, defaulting to the parent directory.
-  const configured = values.workspace ? path.resolve(values.workspace) : !values.shelf && process.env.DOCSHELF_WORKSPACE?.trim() ? path.resolve(checkout, process.env.DOCSHELF_WORKSPACE.trim()) : path.dirname(shelfDirectory);
+  // DOCSHELF_WORKSPACE relative to its checkout and Obsidian from its settings, defaulting to the home directory.
+  const configured = values.workspace ? path.resolve(values.workspace) : !values.shelf && process.env.DOCSHELF_WORKSPACE?.trim() ? path.resolve(checkout, process.env.DOCSHELF_WORKSPACE.trim()) : homedir();
   const roots = [...new Set(await Promise.all([realpath(shelfDirectory), realpath(configured)]))];
   const source = await findRegisteredFile({ shelfPath, roots, file });
   if (!source) return skipped(file, `it is not a document on ${shelfPath}`);

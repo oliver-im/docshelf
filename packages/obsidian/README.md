@@ -83,10 +83,7 @@ every registered file to be available.
   Supported extensions are `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`,
   `.svg`, `.ico`, `.css`, `.js`, `.mjs`, `.json`, `.csv`, `.txt`, `.woff`,
   `.woff2`, `.ttf`, and `.otf`.
-- Sources and assets must resolve inside **Workspace root** or the shelf file's
-  directory. The default workspace is the parent of that directory. Set it
-  explicitly when your projects are elsewhere, using an absolute path or one
-  relative to the shelf directory. Symlinks are checked on reads.
+- Sources and assets must resolve inside **Workspace root** or the shelf file's directory. The default workspace is your home folder, so you can add documents from anywhere in it. To keep the shelf to certain projects, set a narrower folder, using an absolute path or one relative to the shelf directory. Symlinks are checked on reads, and a refused path is named with the allowed folders.
 - Local documents are limited to 8 MB, individual assets to 16 MB, and shelf
   JSON to 2 MB. A shelf supports 2,000 documents and 500 assets per document.
 
@@ -130,6 +127,10 @@ Local Markdown range links open the native editor with the requested lines
 selected. GitHub Markdown retains the read-only viewer with individual line
 controls; HTML range links open its read-only Source view. These are positional
 links; later edits may move the passage. Out-of-bounds ranges are reported.
+
+Select text in a local HTML report to reference its source. DocShelf highlights the blocks the selection spans, such as paragraphs, list items, headings, or table cells, with a faint tint and a bar along their left edge, and the footer shows their source lines with **Clear selection**. A copy button beside the first highlighted line copies the source reference and leaves the selection in place. A double- or triple-click that slips into the space below a block stops at that block instead of selecting the next one. The header's quote and link icons then copy that range, and switching to Source view selects the same lines. Right-click a block, or inside the selection, for the same **Copy DocShelf link**, **Copy source reference**, and **Reveal source** menu as Markdown, with **Copy** first when text is selected. This menu always uses Obsidian's own style, even with native menus on. Content that report scripts create falls back to the nearest element written in the file. This works with report scripts disabled, but not for published Claude Artifacts, which DocShelf does not serve.
+
+In an HTML report, the code icon in the document header switches to Source view and the book icon returns to the report. Read-only views show a compact footer only while lines are selected, report scripts are disabled, or a document cannot load.
 
 Rendered tables show their actual source range, such as
 **17–20**, in the gutter. Clicking it references that whole block. Wrapped text
@@ -291,11 +292,17 @@ The shared registration skill lives at the repository root in
 [`.agents/skills/docshelf/`](../../.agents/skills/docshelf/SKILL.md). It can return
 web app and Obsidian links from the same shelf; see [shared setup and differences](../../docs/unification.md).
 
+### Try a change in your vault
+
+Write your vault's path to `packages/obsidian/.local/dev-vault`, which Git ignores, or set `DOCSHELF_DEV_VAULT`. Then run `npm run install:local`. It rebuilds, replaces `main.js`, `manifest.json`, and `styles.css` in that vault's existing DocShelf installation, and reloads the plugin in the running Obsidian through its command line interface (**Settings → General → Advanced → Command line interface**). Settings and recovery drafts stay in place. It refuses a vault without DocShelf installed, and it skips the reload unless Obsidian already has the vault open, because the command line interface would open it.
+
+The installer stages the new build and backups before replacing any installed file. A failed replacement restores files already replaced; if restoration also fails, the error names the directory holding the original files for manual recovery. The three-file update is not atomic across a process crash.
+
 ## License
 
 MIT. URL and line-range helpers are shared with the web app through `@docshelf/core`. Each build embeds the plugin's MIT license and the full license and notice texts of bundled dependencies in `main.js`. Packaging also includes separate `LICENSE` and `THIRD_PARTY_NOTICES.txt` files. These notices accompany both the ZIP and the standard three-file Obsidian installation.
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.4.1/docshelf-0.4.1.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.4.1
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.5.0/docshelf-0.5.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.5.0

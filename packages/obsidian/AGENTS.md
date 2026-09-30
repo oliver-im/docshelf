@@ -28,3 +28,4 @@ This desktop plugin opens explicitly registered local Markdown in Obsidian's nat
 - After building, use `npm run test:obsidian --workspace obsidian-docshelf` from
   the root for runtime behavior when Obsidian is available. Runtime tests use a
   disposable profile and vault, never the user's vault.
+- `npm run install:local` is the only command that writes to the developer's vault. It replaces an existing DocShelf installation there and reloads it; see the root guidance.

@@ -37,9 +37,15 @@ export function shelfConfig(value) {
   return { ...value, directories: parseDirectories(value.directories) };
 }
 
+/** Names the path, its target when a symlink moved it, and where it may be. */
+export function outsideWorkspace(file, canonical, roots) {
+  const shown = path.resolve(file) === canonical ? canonical : `${file} (${canonical})`;
+  return new Error(`${shown} is outside the workspace: ${roots.join(', ')}.`);
+}
+
 export async function checkedPath(file, roots) {
   const canonical = await realpath(file);
-  if (!roots.some(root => within(root, canonical))) throw new Error('Path is outside the configured workspace.');
+  if (!roots.some(root => within(root, canonical))) throw outsideWorkspace(file, canonical, roots);
   return canonical;
 }
 

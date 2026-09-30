@@ -12,6 +12,7 @@ import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
 import { testNativeModes } from './test-native-modes.mjs';
 import { testReportRegressions } from './test-report-regressions.mjs';
+import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
@@ -472,8 +473,151 @@ try {
     await plugin.openArtifact(plugin.catalog.artifacts[1]);
   });
   await page.locator('webview.docshelf-webview').waitFor();
+  assert.equal(await page.locator('.view-header-title:visible').last().textContent(), 'Release report');
+  const reportStatus = page.locator('.docshelf-document .docshelf-editor-status');
+  await page.locator('.view-action[aria-label="Switch to source view"]:visible').click();
+  await page.locator('.docshelf-source-row:visible [data-line="3"]').click();
+  assert.equal(await reportStatus.locator('.docshelf-reference-label').textContent(), 'Source line 3');
+  await page.screenshot({ path: '.local/runtime/report-source.png' });
+  await reportStatus.getByRole('button', { name: 'Clear selection' }).click();
+  assert.equal(await reportStatus.isHidden(), true);
+  await page.locator('.view-action[aria-label="Switch to report view"]:visible').click();
+  await page.locator('webview.docshelf-webview').waitFor();
   const guest = script => page.evaluate(script => document.querySelector('webview.docshelf-webview').executeJavaScript(script), script);
   await poll(() => guest('!!document.querySelector("#run-check")'), 'The interactive HTML report did not load.');
+  // The reference menu must not depend on native menus, which macOS uses by default.
+  const nativeMenus = await page.evaluate(() => { const value = app.vault.getConfig('nativeMenus'); app.vault.setConfig('nativeMenus', true); return value; });
+  // Obsidian's own webview menu would open beside the reference menu.
+  const defaultMenuOff = () => page.evaluate(() => require('@electron/remote').webContents.fromId(document.querySelector('webview.docshelf-webview').getWebContentsId()).noContextMenu);
+  assert.equal(await defaultMenuOff(), true);
+  // Report scripts may be disabled, so inspect the report from an isolated world.
+  const inReportWorld = async code => JSON.parse(await page.evaluate(code => {
+    const webview = document.querySelector('webview.docshelf-webview');
+    return require('@electron/remote').webContents.fromId(webview.getWebContentsId()).executeJavaScriptInIsolatedWorld(1002, [{ code }]);
+  }, `JSON.stringify((() => { ${code} })())`));
+  const reportPoint = async (selector, offset = 8) => {
+    const [x, y] = await inReportWorld(`const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [box.left + ${offset}, box.top + box.height / 2];`);
+    const frame = await page.locator('webview.docshelf-webview').boundingBox();
+    return [frame.x + x, frame.y + y];
+  };
+  // The highlight tints its blocks with an inset shadow; the fixture has none of its own.
+  const highlighted = () => inReportWorld(`return ['h1', '.intro', 'section'].filter(selector => getComputedStyle(document.querySelector(selector)).boxShadow.includes('inset'));`);
+  const copied = async () => (await page.evaluate(() => require('electron').clipboard.readText())).split('/').at(-1);
+  const reportLabel = () => reportStatus.locator('.docshelf-reference-label').textContent();
+  // Collapsing the report's selection clears its reference.
+  const resetReport = async () => {
+    await inReportWorld('getSelection().removeAllRanges(); return null;');
+    await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 0 && (await highlighted()).length === 0, 'The report reference did not clear.');
+  };
+  const selectReport = async (from, to, label) => {
+    const [x1, y1] = await reportPoint(from);
+    const [x2, y2] = await reportPoint(to);
+    await page.mouse.move(x1, y1);
+    await page.mouse.down();
+    await page.mouse.move(x2, y2, { steps: 6 });
+    await page.mouse.up();
+    await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 1 && await reportLabel() === label, `The report selection did not show ${label}.`);
+  };
+  const reportMenuItem = page.locator('.menu .menu-item').filter({ hasText: 'Copy source reference' });
+  const copyReportReference = async (selector, offset, screenshot) => {
+    const [x, y] = await reportPoint(selector, offset);
+    await page.mouse.click(x, y, { button: 'right' });
+    await reportMenuItem.waitFor();
+    const shown = { label: await reportLabel(), highlighted: await highlighted() };
+    if (screenshot) await page.screenshot({ path: screenshot });
+    await reportMenuItem.click();
+    return { ...shown, copied: await copied() };
+  };
+  assert.deepEqual(await copyReportReference('h1', 8, '.local/runtime/report-reference.png'), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
+  await resetReport();
+  const [menuX, menuY] = await reportPoint('.intro');
+  await page.mouse.click(menuX, menuY, { button: 'right' });
+  await reportMenuItem.waitFor();
+  await page.mouse.click(menuX, menuY);
+  await poll(async () => await page.locator('.menu, .docshelf-report-layer').count() === 0, 'A click inside the report left its reference menu open.');
+  await resetReport();
+  // A left-drag selection drives the highlight, footer, header copy actions, and Source view.
+  await selectReport('h1', '.intro', 'Source lines 13–14');
+  assert.deepEqual(await highlighted(), ['h1', '.intro']);
+  await page.screenshot({ path: '.local/runtime/report-selection.png' });
+  // A copy button stays beside the first selected line wherever the pointer
+  // goes, and copies the reference without changing the selection.
+  const copyButton = () => inReportWorld("const button = document.querySelector('docshelf-copy'); if (!button) return null; const box = button.getBoundingClientRect(); return [box.left, box.top, box.width, box.height];");
+  await page.mouse.move(10, 10);
+  const [copyLeft, copyTop, copyWidth, copyHeight] = await copyButton();
+  const [headingLeft, headingGlyphTop, headingGlyphBottom] = await inReportWorld("const heading = document.querySelector('h1'); const range = document.createRange(); range.setStart(heading.firstChild, 0); range.setEnd(heading.firstChild, 1); const glyph = range.getBoundingClientRect(); return [heading.getBoundingClientRect().left, glyph.top, glyph.bottom];");
+  assert.ok(copyLeft + copyWidth <= headingLeft, 'The copy button must sit left of the selection.');
+  assert.ok(copyTop + copyHeight / 2 >= headingGlyphTop && copyTop + copyHeight / 2 <= headingGlyphBottom, 'The copy button must sit beside the first selected line.');
+  const copyFrame = await page.locator('webview.docshelf-webview').boundingBox();
+  await page.evaluate(() => require('electron').clipboard.writeText(''));
+  await page.mouse.click(copyFrame.x + copyLeft + copyWidth / 2, copyFrame.y + copyTop + copyHeight / 2);
+  await poll(async () => await copied() === 'report.html:13-14', 'The copy button did not copy the selected report lines.');
+  assert.equal(await reportLabel(), 'Source lines 13–14');
+  assert.match(await inReportWorld('return getSelection().toString();'), /^Ready for a closer look\./);
+  // Copy notices can cover the header actions, so dispatch their clicks.
+  await page.locator('.view-action[aria-label="Copy source reference"]:visible').dispatchEvent('click');
+  await poll(async () => await copied() === 'report.html:13-14', 'The header action did not copy the selected report lines.');
+  // The menu replaces Obsidian's, so it also copies selected text.
+  const [copyX, copyY] = await reportPoint('h1', 40);
+  await page.mouse.click(copyX, copyY, { button: 'right' });
+  await page.locator('.menu .menu-item').filter({ hasText: /^Copy$/ }).click();
+  await poll(async () => /^Ready for a closer look\./.test(await page.evaluate(() => require('electron').clipboard.readText())), 'The report menu did not copy the selected text.');
+  const copiedHtml = await page.evaluate(() => require('electron').clipboard.readHTML());
+  assert.match(copiedHtml, /<h1[^>]*>Ready for a closer look\.<\/h1>/);
+  assert.doesNotMatch(copiedHtml, /data-docshelf-lines/);
+  assert.deepEqual(await copyReportReference('h1', 40), { label: 'Source lines 13–14', highlighted: ['h1', '.intro'], copied: 'report.html:13-14' });
+  await page.locator('.view-action[aria-label="Switch to source view"]:visible').dispatchEvent('click');
+  assert.deepEqual(await page.locator('.docshelf-source-row.is-selected:visible [data-line]').evaluateAll(buttons => buttons.map(button => button.dataset.line)), ['13', '14']);
+  await page.locator('.view-action[aria-label="Switch to report view"]:visible').dispatchEvent('click');
+  await poll(() => guest('!!document.querySelector("#run-check")'), 'The report did not return from Source view.');
+  await selectReport('h1', '.intro', 'Source lines 13–14');
+  await reportStatus.getByRole('button', { name: 'Clear selection' }).click();
+  await poll(async () => await reportStatus.isHidden() && (await highlighted()).length === 0 && await inReportWorld('return getSelection().isCollapsed;') && await copyButton() === null, 'Clear selection left the report reference in place.');
+  // A triple-click that drifts into the space below the heading selects the
+  // next paragraph too, unless the report ends it where the pointer stopped.
+  const [tripleX, tripleY] = await reportPoint('h1', 40);
+  const headingBottom = await inReportWorld("return document.querySelector('h1').getBoundingClientRect().bottom;");
+  await page.mouse.click(tripleX, tripleY);
+  await page.mouse.click(tripleX, tripleY, { clickCount: 2 });
+  await page.mouse.down({ clickCount: 3 });
+  await page.mouse.move(tripleX, (await page.locator('webview.docshelf-webview').boundingBox()).y + headingBottom + 4, { steps: 3 });
+  await page.mouse.up({ clickCount: 3 });
+  assert.match(await inReportWorld('return getSelection().toString();'), /^Ready for a closer look\.\s*$/);
+  await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 1 && await reportLabel() === 'Source line 13' && (await highlighted()).join() === 'h1', 'A drifting triple-click did not cite only the heading.');
+  await resetReport();
+  // A drag that leaves the report must not reach the rest of the window, and
+  // the report must see its release there, or it keeps selecting.
+  await inReportWorld("window.releases = 0; document.addEventListener('mouseup', () => window.releases++, true); return null;");
+  const shelfRow = await page.locator('.docshelf-item:visible').first().boundingBox();
+  const [dragX, dragY] = await reportPoint('h1');
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down();
+  await page.mouse.move(shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2, { steps: 8 });
+  assert.equal(await page.locator('.docshelf-item:hover').count(), 0);
+  await page.mouse.up();
+  await page.mouse.move(shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2 + 1);
+  await poll(async () => await inReportWorld('return window.releases;') === 1, 'The report did not see a release outside it after an immediate pointer move.');
+  await poll(async () => await page.locator('.docshelf-item:hover').count() === 1, 'The window ignored the pointer after a report drag.');
+  await resetReport();
+  // Electron also gives Obsidian each release inside the report, at the
+  // report's coordinates, which here fall on that shelf row. CDP input does
+  // not, so send the same event. Obsidian must end up hovering the report.
+  const rowCenter = [shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2];
+  const reportFrame = await page.locator('webview.docshelf-webview').boundingBox();
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down();
+  await page.mouse.move(reportFrame.x + rowCenter[0], reportFrame.y + rowCenter[1], { steps: 6 });
+  await page.mouse.up();
+  await page.evaluate(([x, y]) => window.electronWindow.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 }), rowCenter);
+  await poll(async () => await page.locator('webview.docshelf-webview:hover').count() === 1, 'Obsidian did not return to the report after its release.');
+  assert.equal(await page.locator('.docshelf-item:hover').count(), 0);
+  await resetReport();
+  // Electron reports right-clicks unscaled by Obsidian's zoom.
+  await page.evaluate(() => require('electron').webFrame.setZoomFactor(1.25));
+  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
+  await page.evaluate(() => require('electron').webFrame.setZoomFactor(1));
+  await resetReport();
+  await page.evaluate(value => app.vault.setConfig('nativeMenus', value), nativeMenus);
   assert.deepEqual(await guest('({node:typeof require, process:typeof process, image:document.querySelector("img").naturalWidth, background:getComputedStyle(document.documentElement).backgroundColor})'), { node: 'undefined', process: 'undefined', image: 36, background: 'rgb(16, 24, 32)' });
   await guest('document.querySelector("#run-check").click()');
   assert.equal(await guest('document.querySelector("#checks").textContent'), '1');
@@ -489,6 +633,10 @@ try {
   assert.deepEqual(probes, { file: 'blocked', app: 'blocked', unregistered: 'blocked', parent: 'undefined' });
   await page.screenshot({ path: '.local/runtime/report.png' });
   console.log('HTML scripts, relative CSS/image, and local-file isolation checks passed.');
+  await testReportReferences({ page, poll, guest, reportStatus, selectReport, reportPoint, copied });
+  // The focused reference checks reload the report; restore the interaction
+  // state that the following preservation checks expect.
+  await guest('document.querySelector("#run-check").click()');
   await testReportRegressions({ page, poll, workspace, shelfPath, shelf, guest });
 
   await guest('document.querySelector("a").click()');
@@ -560,6 +708,14 @@ try {
     return view && !view.isLoading() && view.getURL().startsWith('http://127.0.0.1:');
   }), 'Script-free report did not load.');
   await assert.rejects(guest('document.querySelector("#run-check").click()'));
+  await page.evaluate(() => app.vault.setConfig('nativeMenus', true));
+  assert.equal(await defaultMenuOff(), true);
+  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
+  await resetReport();
+  await selectReport('h1', '.intro', 'Source lines 13–14');
+  assert.match(await reportStatus.textContent(), /^Report scripts are disabled/);
+  await resetReport();
+  await page.evaluate(value => app.vault.setConfig('nativeMenus', value), nativeMenus);
   console.log('Script-free HTML mode passed.');
 
   await testDirectories({ page, poll, workspace, shelfPath });

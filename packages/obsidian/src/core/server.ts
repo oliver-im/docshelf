@@ -6,6 +6,9 @@ import { ASSET_TYPES } from './catalog';
 import { readBoundedFile } from './files';
 import { MAX_ASSET_BYTES, MAX_DOCUMENT_BYTES, artifactRoots, type Artifact, type Catalog } from './types';
 
+/** Served report elements carry the source lines they came from as "start-end". */
+export const SOURCE_LINES_ATTRIBUTE = 'data-docshelf-lines';
+
 export class DocumentServer {
   private server: Server | null = null;
   private token = randomBytes(32).toString('hex');
@@ -108,8 +111,9 @@ export class DocumentServer {
   }
 
   private rewriteHtml(source: string, artifact: Artifact, catalog: Catalog): string {
-    const document = parse(source);
-    const visit = (node: DefaultTreeAdapterTypes.Node) => {
+    const document = parse(source, { sourceCodeLocationInfo: true });
+    const span = sourceLineSpans(source);
+    const visit = (node: DefaultTreeAdapterTypes.Node, inBody: boolean) => {
       if ('childNodes' in node) {
         node.childNodes = node.childNodes.filter(child => !('tagName' in child) || child.tagName !== 'base' && !(child.tagName === 'meta' && child.attrs.some(attr => attr.name === 'http-equiv' && attr.value.toLowerCase() === 'refresh')));
       }
@@ -128,11 +132,35 @@ export class DocumentServer {
           } catch { /* An invalid authored link stays unavailable. */ }
         }
       }
-      if ('childNodes' in node) for (const child of node.childNodes) visit(child);
+      if ('tagName' in node) {
+        // Report reference menus cite these spans; authored values cannot redirect them.
+        node.attrs = node.attrs.filter(attr => attr.name !== SOURCE_LINES_ATTRIBUTE);
+        const location = node.sourceCodeLocation;
+        if (inBody && location) node.attrs.push({ name: SOURCE_LINES_ATTRIBUTE, value: span(location.startOffset, location.endOffset) });
+      }
+      if ('childNodes' in node) for (const child of node.childNodes) visit(child, inBody || 'tagName' in node && node.tagName === 'body');
     };
-    visit(document);
+    visit(document, false);
     return serialize(document);
   }
+}
+
+// Lines are numbered like Source view. The end skips trailing whitespace, so an
+// element with an implied end tag ends on its last content line rather than on
+// the line where the next tag starts.
+function sourceLineSpans(source: string): (startOffset: number, endOffset: number) => string {
+  const starts = [0];
+  for (const match of source.matchAll(/\r\n?|\n/g)) starts.push(match.index + match[0].length);
+  const line = (offset: number) => {
+    let low = 0, high = starts.length - 1;
+    while (low < high) { const middle = (low + high + 1) >> 1; if (starts[middle] <= offset) low = middle; else high = middle - 1; }
+    return low + 1;
+  };
+  return (startOffset, endOffset) => {
+    let end = endOffset;
+    while (end > startOffset + 1 && /\s/.test(source[end - 1])) end--;
+    return `${line(startOffset)}-${line(end - 1)}`;
+  };
 }
 
 export function reportCsp(scripts: boolean): string {

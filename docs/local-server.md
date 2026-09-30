@@ -106,20 +106,13 @@ to other machines. In loopback mode, DocShelf accepts only loopback and
 `*.localhost` Host headers to prevent unrelated domains from reading the local
 shelf through DNS rebinding.
 
-`DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered
-sources must resolve inside. It defaults to the checkout's parent directory.
-Files inside the checkout itself, such as the README that `npm run setup`
-registers, are accepted whatever the root is. Give an absolute path or one
-relative to the checkout, and set it for every command that reads the shelf,
-including `npm run dev`, `npm run build`, and `npm run watch`:
+`DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered sources must resolve inside. It defaults to your home directory. Files inside the checkout itself, such as the README that `npm run setup` registers, are accepted whatever the root is. Give an absolute path or one relative to the checkout, and set it for every command that reads the shelf, including `npm run dev`, `npm run build`, and `npm run watch`. For example, this limits sources to the checkout's parent directory:
 
 ```sh
-DOCSHELF_WORKSPACE=../.. npm run watch
+DOCSHELF_WORKSPACE=.. npm run watch
 ```
 
-`npm run setup` records the value in the login service. A wider root lets
-DocShelf read and serve registered files from a larger area; unregistered files
-are still never served.
+`npm run setup` records the value in the login service. A narrower root limits which registered files DocShelf reads and serves; unregistered files are never served either way.
 
 The watcher is portable to environments where Node.js and file symlinks are
 available. Stop it with Ctrl+C. Stop an installed login service before starting

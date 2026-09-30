@@ -799,18 +799,22 @@ test('shelf loading rejects duplicate routes', async (t) => {
   await assert.rejects(loadShelfFrom(shelfPath), { message: /duplicates route/ });
 });
 
-test('the workspace root follows DOCSHELF_WORKSPACE and defaults to the parent directory', () => {
-  const parent = path.resolve(docShelfRoot, '..');
-  assert.equal(resolveWorkspaceRoot(undefined), parent);
-  assert.equal(resolveWorkspaceRoot('  '), parent);
+test('the workspace root follows DOCSHELF_WORKSPACE and defaults to the home directory', (t) => {
+  const home = path.resolve('/docshelf-test-home');
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; });
+  assert.equal(resolveWorkspaceRoot(undefined), home);
+  assert.equal(resolveWorkspaceRoot('  '), home);
   assert.equal(resolveWorkspaceRoot('../..'), path.resolve(docShelfRoot, '../..'));
   assert.equal(resolveWorkspaceRoot('/workspace/root'), path.resolve('/workspace/root'));
   // The exported root reads the environment once, when the module loads.
-  const exported = execFileSync(process.execPath, [
+  const exported = value => execFileSync(process.execPath, [
     '--input-type=module', '-e',
     `const { workspaceRoot } = await import(${JSON.stringify(new URL('../scripts/artifacts.mjs', import.meta.url).href)}); console.log(workspaceRoot);`,
-  ], { env: { ...process.env, DOCSHELF_WORKSPACE: '../..' }, encoding: 'utf8' });
-  assert.equal(exported.trim(), path.resolve(docShelfRoot, '../..'));
+  ], { env: { ...process.env, HOME: home, DOCSHELF_WORKSPACE: value }, encoding: 'utf8' }).trim();
+  assert.equal(exported('../..'), path.resolve(docShelfRoot, '../..'));
+  assert.equal(exported(''), home);
 });
 
 test('a configured workspace root admits sources outside the parent directory', async (t) => {

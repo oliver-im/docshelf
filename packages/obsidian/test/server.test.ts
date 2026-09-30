@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { loadCatalog } from '../src/core/catalog';
+import { parse, type DefaultTreeAdapterTypes } from 'parse5';
 import { DocumentServer } from '../src/core/server';
 
 test('loopback server serves only registered documents/assets and rejects request attacks', async t => {
@@ -62,4 +63,35 @@ test('loopback server serves only registered documents/assets and rejects reques
   assert.match((await fetch(url)).headers.get('content-security-policy')!, /script-src 'none'/);
   server.setCatalog(null);
   assert.equal((await fetch(url)).status, 404);
+});
+
+test('served report elements carry the source lines Source view shows', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'docshelf-lines-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, 'report.html'), [
+    '<!doctype html>',
+    '<title>Report</title>',
+    '<h1 data-docshelf-lines="1-99">Heading</h1>',
+    '<p>First',
+    'paragraph',
+    '<p>Second <strong>bold</strong>\r',
+    '<ul>',
+    '  <li>one',
+    '  <li>two',
+    '</ul>',
+  ].join('\n'));
+  await writeFile(path.join(root, 'shelf.json'), JSON.stringify({ version: 1, artifacts: [{ project: 'Demo', title: 'Report', source: 'report.html', route: 'demo/report.html' }] }));
+  const catalog = await loadCatalog(path.join(root, 'shelf.json'), root);
+  const server = new DocumentServer();
+  t.after(() => server.close());
+  server.setCatalog(catalog); await server.start();
+  const spans: string[] = [];
+  const visit = (node: DefaultTreeAdapterTypes.Node) => {
+    const value = 'attrs' in node ? node.attrs.find(attr => attr.name === 'data-docshelf-lines')?.value : undefined;
+    if (value) spans.push(`${(node as DefaultTreeAdapterTypes.Element).tagName} ${value}`);
+    if ('childNodes' in node) node.childNodes.forEach(visit);
+  };
+  visit(parse(await (await fetch(server.documentUrl(catalog.artifacts[0]))).text()));
+  // Implied end tags end on their last content line; head elements are not rendered.
+  assert.deepEqual(spans, ['h1 3-3', 'p 4-5', 'p 6-6', 'strong 6-6', 'ul 7-10', 'li 8-8', 'li 9-9']);
 });

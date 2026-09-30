@@ -47,7 +47,7 @@ node scripts/event.mjs updated --from-hook claude-code
 ```
 
 - **Shelf:** the checkout's `shelf.local.json` (or a legacy `artifacts.local.json`), or `--shelf`. Without a local shelf, nothing is announced.
-- **Workspace:** without `--shelf`, the web app's rule applies: `DOCSHELF_WORKSPACE` relative to the checkout, defaulting to the checkout's parent directory. With `--shelf`, Obsidian's default applies: the parent of the shelf's directory. `--workspace` overrides both. The shelf's own directory is always allowed.
+- **Workspace:** `--workspace` when given. Otherwise the home directory, which both apps use by default, unless the command runs without `--shelf` and `DOCSHELF_WORKSPACE` is set; that applies relative to the checkout, as in the web app. The shelf's own directory is always allowed.
 - **Which files count:** a file registered explicitly, or discovered in a registered folder under the [discovery rules](folders.md#recursive-discovery): not excluded, hidden, inside a skipped folder, or larger than 8 MB. The command resolves symlinks and records the canonical path. Other files are skipped quietly with exit status 0; `--strict` reports them with exit status 1. A folder skipped for exceeding a scan limit still counts here, and the apps ignore announcements for documents they do not list.
 - **Hook mode:** `--from-hook <agent>` reads the edited path from the hook's JSON input (`tool_input.file_path`, resolved against `cwd`), records the agent's name, prints nothing, and always exits with status 0.
 
