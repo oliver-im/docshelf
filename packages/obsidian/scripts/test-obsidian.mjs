@@ -499,13 +499,14 @@ try {
     const frame = await page.locator('webview.docshelf-webview').boundingBox();
     return [frame.x + x, frame.y + y];
   };
-  const outlined = () => inReportWorld(`return ['h1', '.intro', 'section'].filter(selector => getComputedStyle(document.querySelector(selector)).outlineStyle === 'solid');`);
+  // The highlight tints its blocks with an inset shadow; the fixture has none of its own.
+  const highlighted = () => inReportWorld(`return ['h1', '.intro', 'section'].filter(selector => getComputedStyle(document.querySelector(selector)).boxShadow.includes('inset'));`);
   const copied = async () => (await page.evaluate(() => require('electron').clipboard.readText())).split('/').at(-1);
   const reportLabel = () => reportStatus.locator('.docshelf-reference-label').textContent();
   // Collapsing the report's selection clears its reference.
   const resetReport = async () => {
     await inReportWorld('getSelection().removeAllRanges(); return null;');
-    await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 0 && (await outlined()).length === 0, 'The report reference did not clear.');
+    await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 0 && (await highlighted()).length === 0, 'The report reference did not clear.');
   };
   const selectReport = async (from, to, label) => {
     const [x1, y1] = await reportPoint(from);
@@ -521,12 +522,12 @@ try {
     const [x, y] = await reportPoint(selector, offset);
     await page.mouse.click(x, y, { button: 'right' });
     await reportMenuItem.waitFor();
-    const shown = { label: await reportLabel(), outlined: await outlined() };
+    const shown = { label: await reportLabel(), highlighted: await highlighted() };
     if (screenshot) await page.screenshot({ path: screenshot });
     await reportMenuItem.click();
     return { ...shown, copied: await copied() };
   };
-  assert.deepEqual(await copyReportReference('h1', 8, '.local/runtime/report-reference.png'), { label: 'Source line 13', outlined: ['h1'], copied: 'report.html:13' });
+  assert.deepEqual(await copyReportReference('h1', 8, '.local/runtime/report-reference.png'), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
   await resetReport();
   const [menuX, menuY] = await reportPoint('.intro');
   await page.mouse.click(menuX, menuY, { button: 'right' });
@@ -536,8 +537,22 @@ try {
   await resetReport();
   // A left-drag selection drives the highlight, footer, header copy actions, and Source view.
   await selectReport('h1', '.intro', 'Source lines 13–14');
-  assert.deepEqual(await outlined(), ['h1', '.intro']);
+  assert.deepEqual(await highlighted(), ['h1', '.intro']);
   await page.screenshot({ path: '.local/runtime/report-selection.png' });
+  // A copy button stays beside the first selected line wherever the pointer
+  // goes, and copies the reference without changing the selection.
+  const copyButton = () => inReportWorld("const button = document.querySelector('docshelf-copy'); if (!button) return null; const box = button.getBoundingClientRect(); return [box.left, box.top, box.width, box.height];");
+  await page.mouse.move(10, 10);
+  const [copyLeft, copyTop, copyWidth, copyHeight] = await copyButton();
+  const [headingLeft, headingGlyphTop, headingGlyphBottom] = await inReportWorld("const heading = document.querySelector('h1'); const range = document.createRange(); range.setStart(heading.firstChild, 0); range.setEnd(heading.firstChild, 1); const glyph = range.getBoundingClientRect(); return [heading.getBoundingClientRect().left, glyph.top, glyph.bottom];");
+  assert.ok(copyLeft + copyWidth <= headingLeft, 'The copy button must sit left of the selection.');
+  assert.ok(copyTop + copyHeight / 2 >= headingGlyphTop && copyTop + copyHeight / 2 <= headingGlyphBottom, 'The copy button must sit beside the first selected line.');
+  const copyFrame = await page.locator('webview.docshelf-webview').boundingBox();
+  await page.evaluate(() => require('electron').clipboard.writeText(''));
+  await page.mouse.click(copyFrame.x + copyLeft + copyWidth / 2, copyFrame.y + copyTop + copyHeight / 2);
+  await poll(async () => await copied() === 'report.html:13-14', 'The copy button did not copy the selected report lines.');
+  assert.equal(await reportLabel(), 'Source lines 13–14');
+  assert.match(await inReportWorld('return getSelection().toString();'), /^Ready for a closer look\./);
   // Copy notices can cover the header actions, so dispatch their clicks.
   await page.locator('.view-action[aria-label="Copy source reference"]:visible').dispatchEvent('click');
   await poll(async () => await copied() === 'report.html:13-14', 'The header action did not copy the selected report lines.');
@@ -549,14 +564,14 @@ try {
   const copiedHtml = await page.evaluate(() => require('electron').clipboard.readHTML());
   assert.match(copiedHtml, /<h1[^>]*>Ready for a closer look\.<\/h1>/);
   assert.doesNotMatch(copiedHtml, /data-docshelf-lines/);
-  assert.deepEqual(await copyReportReference('h1', 40), { label: 'Source lines 13–14', outlined: ['h1', '.intro'], copied: 'report.html:13-14' });
+  assert.deepEqual(await copyReportReference('h1', 40), { label: 'Source lines 13–14', highlighted: ['h1', '.intro'], copied: 'report.html:13-14' });
   await page.locator('.view-action[aria-label="Switch to source view"]:visible').dispatchEvent('click');
   assert.deepEqual(await page.locator('.docshelf-source-row.is-selected:visible [data-line]').evaluateAll(buttons => buttons.map(button => button.dataset.line)), ['13', '14']);
   await page.locator('.view-action[aria-label="Switch to report view"]:visible').dispatchEvent('click');
   await poll(() => guest('!!document.querySelector("#run-check")'), 'The report did not return from Source view.');
   await selectReport('h1', '.intro', 'Source lines 13–14');
   await reportStatus.getByRole('button', { name: 'Clear selection' }).click();
-  await poll(async () => await reportStatus.isHidden() && (await outlined()).length === 0 && await inReportWorld('return getSelection().isCollapsed;'), 'Clear selection left the report reference in place.');
+  await poll(async () => await reportStatus.isHidden() && (await highlighted()).length === 0 && await inReportWorld('return getSelection().isCollapsed;') && await copyButton() === null, 'Clear selection left the report reference in place.');
   // A triple-click that drifts into the space below the heading selects the
   // next paragraph too, unless the report ends it where the pointer stopped.
   const [tripleX, tripleY] = await reportPoint('h1', 40);
@@ -567,7 +582,7 @@ try {
   await page.mouse.move(tripleX, (await page.locator('webview.docshelf-webview').boundingBox()).y + headingBottom + 4, { steps: 3 });
   await page.mouse.up({ clickCount: 3 });
   assert.match(await inReportWorld('return getSelection().toString();'), /^Ready for a closer look\.\s*$/);
-  await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 1 && await reportLabel() === 'Source line 13' && (await outlined()).join() === 'h1', 'A drifting triple-click did not cite only the heading.');
+  await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 1 && await reportLabel() === 'Source line 13' && (await highlighted()).join() === 'h1', 'A drifting triple-click did not cite only the heading.');
   await resetReport();
   // A drag that leaves the report must not reach the rest of the window, and
   // the report must see its release there, or it keeps selecting.
@@ -598,7 +613,7 @@ try {
   await resetReport();
   // Electron reports right-clicks unscaled by Obsidian's zoom.
   await page.evaluate(() => require('electron').webFrame.setZoomFactor(1.25));
-  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', outlined: ['h1'], copied: 'report.html:13' });
+  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
   await page.evaluate(() => require('electron').webFrame.setZoomFactor(1));
   await resetReport();
   await page.evaluate(value => app.vault.setConfig('nativeMenus', value), nativeMenus);
@@ -690,7 +705,7 @@ try {
   await assert.rejects(guest('document.querySelector("#run-check").click()'));
   await page.evaluate(() => app.vault.setConfig('nativeMenus', true));
   assert.equal(await defaultMenuOff(), true);
-  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', outlined: ['h1'], copied: 'report.html:13' });
+  assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', highlighted: ['h1'], copied: 'report.html:13' });
   await resetReport();
   await selectReport('h1', '.intro', 'Source lines 13–14');
   assert.match(await reportStatus.textContent(), /^Report scripts are disabled/);

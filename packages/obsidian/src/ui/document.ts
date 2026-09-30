@@ -280,6 +280,7 @@ export class DocumentView extends ItemView {
         const { message } = event as Event & { message: string };
         if (message === this.selectionToken) void this.checkSelection(webview);
         else if (message === `${this.selectionToken}:down`) pointer.down();
+        else if (message === `${this.selectionToken}:copy`) { const range = this.reportSelection?.range; if (range) void this.copyReference(range); }
         const up = message.startsWith(`${this.selectionToken}:up:`) && /^(-?\d{1,6}),(-?\d{1,6})$/.exec(message.slice(this.selectionToken.length + 4));
         if (up) pointer.up(Number(up[1]), Number(up[2]));
       });
@@ -399,21 +400,24 @@ export class DocumentView extends ItemView {
     this.highlightKey = '';
     const guest = reportGuest(webview);
     if (!guest) return;
+    const accent = this.themeColor('--interactive-accent', 'rgb(127, 109, 242)');
     try {
       if (previous) await guest.removeInsertedCSS(previous);
+      if (generation !== this.highlightGeneration) return;
+      await inReport(guest, placeCopyScript(spans, accent, this.themeColor('--text-on-accent', 'rgb(255, 255, 255)')));
       if (!spans.length || generation !== this.highlightGeneration) return;
-      const key = await guest.insertCSS(highlightCss(spans, this.accentColor()));
+      const key = await guest.insertCSS(highlightCss(spans, accent));
       if (generation === this.highlightGeneration && webview === this.reportWebview) this.highlightKey = key;
       else await guest.removeInsertedCSS(key);
     } catch { /* The report navigated or closed. */ }
   }
 
-  private accentColor(): string {
+  private themeColor(variable: string, fallback: string): string {
     const probe = this.contentEl.createDiv();
-    probe.setCssStyles({ color: 'var(--interactive-accent)' });
+    probe.setCssStyles({ color: `var(${variable})` });
     const color = this.contentEl.win.getComputedStyle(probe).color;
     probe.remove();
-    return /^rgba?\([\d.,\s%]+\)$/.test(color) ? color : 'rgb(127, 109, 242)';
+    return /^rgba?\([\d.,\s%]+\)$/.test(color) ? color : fallback;
   }
 
   private readReference(found: unknown): ReportReference | null {
@@ -501,8 +505,8 @@ function reportGuest(webview: Webview): ReportGuest | null {
 }
 
 // Scripts run in an isolated world, which works with report scripts disabled
-// and which report scripts cannot alter. They only read the report and return
-// JSON that the host validates.
+// and which report scripts cannot alter. Apart from the copy button beside a
+// highlight, they only read the report and return JSON that the host validates.
 async function inReport(guest: ReportGuest, script: string): Promise<unknown> {
   return JSON.parse(String(await guest.executeJavaScriptInIsolatedWorld(REFERENCE_WORLD, [{ code: `JSON.stringify((() => { ${REPORT_LIBRARY} ${script} })())` }])));
 }
@@ -578,19 +582,67 @@ function reportWatchScript(token: string): string {
     if (!window.docshelfWatching) {
       const token = ${JSON.stringify(token)};
       document.addEventListener('selectionchange', () => console.debug(token));
+      // The copy button beside a highlighted reference. It is part of the report
+      // so that it scrolls with it, and its closed shadow root keeps the
+      // report's styles and scripts away from its contents.
+      const copyHost = document.createElement('docshelf-copy');
+      copyHost.setAttribute('style', 'all: initial !important; position: absolute !important; z-index: 2147483647 !important; display: block !important;');
+      const copyButton = document.createElement('button');
+      copyButton.type = 'button';
+      copyButton.title = 'Copy source reference';
+      copyButton.setAttribute('aria-label', 'Copy source reference');
+      const svg = 'http://www.w3.org/2000/svg';
+      const icon = document.createElementNS(svg, 'svg');
+      for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })) icon.setAttribute(key, value);
+      const rect = document.createElementNS(svg, 'rect');
+      for (const [key, value] of Object.entries({ width: '14', height: '14', x: '8', y: '8', rx: '2' })) rect.setAttribute(key, value);
+      const path = document.createElementNS(svg, 'path');
+      path.setAttribute('d', 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2');
+      icon.append(rect, path);
+      copyButton.append(icon);
+      const copyStyle = document.createElement('style');
+      copyStyle.textContent = 'button { all: initial; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; cursor: pointer; background: var(--accent); color: var(--on-accent); } button:hover { filter: brightness(1.12); } button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } svg { width: 13px; height: 13px; }';
+      copyHost.attachShadow({ mode: 'closed' }).append(copyStyle, copyButton);
+      // Pressing it must not move the report's selection or focus.
+      copyButton.addEventListener('mousedown', event => event.preventDefault());
+      copyButton.addEventListener('click', event => { if (event.isTrusted) console.debug(token + ':copy'); });
+      let copied = [];
+      // Beside the first line, and while that scrolls away, at the top of the
+      // view for as long as the reference is on screen.
+      const placeCopy = () => {
+        const first = copied[0], last = copied.at(-1);
+        if (!first || !first.isConnected || !last.isConnected) { copyHost.remove(); return; }
+        const box = first.getBoundingClientRect(), end = last.getBoundingClientRect(), style = getComputedStyle(first);
+        const size = 22;
+        const line = Math.min(parseFloat(style.lineHeight) || 1.2 * parseFloat(style.fontSize) || size, box.height);
+        const top = Math.min(Math.max(box.top + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.paddingTop) || 0) + (line - size) / 2, 8), end.bottom - size);
+        copyHost.style.setProperty('left', Math.max(box.left - size - 8, 2) + scrollX + 'px', 'important');
+        copyHost.style.setProperty('top', top + scrollY + 'px', 'important');
+        if (!copyHost.isConnected) document.documentElement.append(copyHost);
+      };
+      window.docshelfPlaceCopy = (spans, accent, onAccent) => {
+        const elements = spans.length ? [...document.querySelectorAll(spans.map(span => '[' + name + '="' + span + '"]').join(', '))] : [];
+        copied = elements.filter(element => !elements.some(other => other !== element && other.contains(element)));
+        copyButton.style.setProperty('--accent', accent);
+        copyButton.style.setProperty('--on-accent', onAccent);
+        placeCopy();
+      };
+      addEventListener('scroll', placeCopy, { capture: true, passive: true });
+      addEventListener('resize', placeCopy);
       // Trusted primary-button presses and releases, for ReportPointer.
-      addEventListener('pointerdown', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':down'); }, true);
-      addEventListener('pointerup', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':up:' + Math.round(event.clientX) + ',' + Math.round(event.clientY)); }, true);
+      const reportPress = event => event.isTrusted && event.button === 0 && event.target !== copyHost;
+      addEventListener('pointerdown', event => { if (reportPress(event)) console.debug(token + ':down'); }, true);
+      addEventListener('pointerup', event => { if (reportPress(event)) console.debug(token + ':up:' + Math.round(event.clientX) + ',' + Math.round(event.clientY)); }, true);
       // A double- or triple-click that moves slightly selects whole words or
       // paragraphs up to the pointer, and the space below a block counts as
       // the next one. End such a selection in the last block the pointer
       // reached instead. The selection is final by the release, and the
       // report's sandbox blocks timers here.
       let clicks = 0;
-      addEventListener('mousedown', event => { if (event.isTrusted && event.button === 0) clicks = event.detail; }, true);
+      addEventListener('mousedown', event => { if (reportPress(event)) clicks = event.detail; }, true);
       addEventListener('mouseup', event => {
         const x = event.clientX, y = event.clientY;
-        if (event.isTrusted && event.button === 0 && clicks > 1 && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) endAbove(y);
+        if (reportPress(event) && clicks > 1 && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) endAbove(y);
       }, true);
       const endAbove = y => {
         const selection = getSelection();
@@ -647,7 +699,14 @@ const REPORT_CLEAR_SCRIPT = `
   return null;
 `;
 
+// A faint tint, as in Markdown views, and a thin bar along the left edge.
 function highlightCss(spans: string[], color: string): string {
   const targets = spans.map(span => `[${SOURCE_LINES_ATTRIBUTE}="${span}"]`).join(', ');
-  return `:is(${targets}):not(:is(${targets}) *) { outline: 2px solid ${color} !important; outline-offset: 2px !important; box-shadow: inset 0 0 0 100vmax color-mix(in srgb, ${color} 14%, transparent) !important; }`;
+  return `:is(${targets}):not(:is(${targets}) *) { box-shadow: -3px 0 0 0 color-mix(in srgb, ${color} 80%, transparent), inset 0 0 0 100vmax color-mix(in srgb, ${color} 12%, transparent) !important; }`;
+}
+
+// Shows the copy button beside the outermost elements of these spans, or
+// removes it when there are none.
+function placeCopyScript(spans: string[], accent: string, onAccent: string): string {
+  return `if (window.docshelfPlaceCopy) window.docshelfPlaceCopy(${JSON.stringify(spans)}, ${JSON.stringify(accent)}, ${JSON.stringify(onAccent)}); return null;`;
 }
