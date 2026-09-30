@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from 'chokidar';
 import { stat, lstat, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { loadCatalog, findSource, sourceIdentity } from './core/catalog';
+import { loadCatalog, findSource, sourceIdentity, workspaceDirectory } from './core/catalog';
 import { canonicalFile, readBoundedFile } from './core/files';
 import { DocumentServer } from './core/server';
 import { ShelfSearch } from './core/search';
@@ -474,7 +474,7 @@ export default class DocShelfPlugin extends Plugin {
       const shelfPath = this.shelfPath();
       const base = path.dirname(shelfPath);
       const workspaceRoot = this.settings.workspaceRoot;
-      const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
+      const roots = await Promise.all([realpath(base), realpath(workspaceDirectory(base, workspaceRoot))]);
       const options = { shelfPath, roots, sources, project };
       const prepared = await prepareAddition(options);
       if (this.disposed) return;
@@ -504,7 +504,7 @@ export default class DocShelfPlugin extends Plugin {
     const shelfPath = this.shelfPath();
     const base = path.dirname(shelfPath);
     const workspaceRoot = this.settings.workspaceRoot;
-    const roots = await Promise.all([realpath(base), realpath(workspaceRoot ? path.resolve(base, workspaceRoot) : path.dirname(base))]);
+    const roots = await Promise.all([realpath(base), realpath(workspaceDirectory(base, workspaceRoot))]);
     const commit = (remove: () => Promise<unknown>) => async () => {
       if (this.disposed || this.shelfPath() !== shelfPath || this.settings.workspaceRoot !== workspaceRoot) throw new Error('The shelf settings changed. Close this dialog and try again.');
       await remove();

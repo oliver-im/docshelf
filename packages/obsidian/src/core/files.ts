@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { open, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { outsideWorkspace } from '../../../local/shelf.mjs';
 
 export function within(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -9,7 +10,7 @@ export function within(root: string, candidate: string): boolean {
 
 export async function canonicalFile(file: string, roots: string[]): Promise<string> {
   const resolved = await realpath(file);
-  if (!roots.some(root => within(root, resolved))) throw new Error('File is outside the configured workspace.');
+  if (!roots.some(root => within(root, resolved))) throw outsideWorkspace(file, resolved, roots);
   if (!(await stat(resolved)).isFile()) throw new Error('Source is not a regular file.');
   return resolved;
 }

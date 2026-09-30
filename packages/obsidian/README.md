@@ -83,10 +83,7 @@ every registered file to be available.
   Supported extensions are `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`,
   `.svg`, `.ico`, `.css`, `.js`, `.mjs`, `.json`, `.csv`, `.txt`, `.woff`,
   `.woff2`, `.ttf`, and `.otf`.
-- Sources and assets must resolve inside **Workspace root** or the shelf file's
-  directory. The default workspace is the parent of that directory. Set it
-  explicitly when your projects are elsewhere, using an absolute path or one
-  relative to the shelf directory. Symlinks are checked on reads.
+- Sources and assets must resolve inside **Workspace root** or the shelf file's directory. The default workspace is your home folder, so you can add documents from anywhere in it. To keep the shelf to certain projects, set a narrower folder, using an absolute path or one relative to the shelf directory. Symlinks are checked on reads, and a refused path is named with the allowed folders.
 - Local documents are limited to 8 MB, individual assets to 16 MB, and shelf
   JSON to 2 MB. A shelf supports 2,000 documents and 500 assets per document.
 

@@ -100,7 +100,7 @@ test('readers take complete lines only, skip invalid ones, and never replay a re
 
 test('the event command announces shelf documents by canonical path and skips other files quietly', async (t) => {
   const root = await realpath(await temporaryDirectory(t, tmpdir(), 'docshelf-announce-'));
-  // An isolated checkout, so the default shelf and workspace resolve without touching the real one.
+  // An isolated checkout and home folder, so the default shelf and workspace resolve without touching the real ones.
   const checkout = path.join(root, 'docshelf');
   for (const entry of ['scripts/event.mjs', 'packages/local']) await cp(path.join(docShelfRoot, entry), path.join(checkout, entry), { recursive: true });
   await symlink(path.join(docShelfRoot, 'node_modules'), path.join(checkout, 'node_modules'), 'dir');
@@ -126,7 +126,7 @@ test('the event command announces shelf documents by canonical path and skips ot
   const log = eventLogPath(shelfPath);
   const logged = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const command = (args, { input, env } = {}) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(checkout, 'scripts/event.mjs'), ...args], { cwd: root, env: { ...process.env, DOCSHELF_WORKSPACE: '', ...env } });
+    const child = spawn(process.execPath, [path.join(checkout, 'scripts/event.mjs'), ...args], { cwd: root, env: { ...process.env, DOCSHELF_WORKSPACE: '', HOME: root, ...env } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });

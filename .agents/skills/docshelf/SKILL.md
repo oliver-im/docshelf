@@ -39,12 +39,7 @@ the shelf file; for a shared shelf this file must be at the web checkout root.
 Reread before writing if the shelf changed concurrently. Never edit the source,
 commit local registrations, or edit generated files.
 
-Local `.md`, `.markdown`, `.html`, and `.htm` files and exact published Claude
-Artifact URLs work in both apps. Preserve each app's configured containment
-boundary; do not widen it to admit an unrelated file. The web root is controlled
-by `DOCSHELF_WORKSPACE`; Obsidian's saved `workspaceRoot` is relative to the shelf
-directory. Defaults are the parent of that directory. The checkout/shelf directory
-is also allowed. Resolve symlinks before checking containment.
+Local `.md`, `.markdown`, `.html`, and `.htm` files and exact published Claude Artifact URLs work in both apps. Preserve each app's configured containment boundary; do not widen it to admit an unrelated file. The web root is controlled by `DOCSHELF_WORKSPACE`; Obsidian's saved `workspaceRoot` is relative to the shelf directory. Both default to the user's home directory. The checkout/shelf directory is also allowed. Resolve symlinks before checking containment.
 
 For shared shelves, keep the web-compatible relative source and lowercase route
 shape. Obsidian-only shelves also accept absolute paths and public GitHub Markdown

@@ -33,11 +33,7 @@ want it, and add entries for files that already exist:
 
 - `source` is relative to the DocShelf checkout and must end in `.html`, `.htm`,
   `.md`, or `.markdown`.
-- The source must resolve inside the workspace root: DocShelf's parent
-  directory, unless `DOCSHELF_WORKSPACE` names another directory, absolute or
-  relative to the checkout. Files inside the checkout itself are also allowed.
-  Set that variable for every DocShelf command when using a custom workspace;
-  `npm run setup` records it in the login service.
+- The source must resolve inside the workspace root: your home directory, unless `DOCSHELF_WORKSPACE` names another directory, absolute or relative to the checkout. Files inside the checkout itself are also allowed. Set that variable for every DocShelf command when using a custom workspace; `npm run setup` records it in the login service.
 - `route` is a unique, lowercase path ending in `.html`, even for Markdown.
   Keep routes stable so bookmarks keep working.
 - `project` labels the sidebar groups; documents from registered folders nest by subfolder, as described in [folder tree](folders.md#folder-tree). Rows show the source filename; Claude Artifacts show `title`, and Obsidian adds a distinct `title` after the filename.

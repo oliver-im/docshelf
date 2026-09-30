@@ -24,11 +24,7 @@ but use different rendering and file-access boundaries.
 ### DocShelf Web and its local server
 
 - Registered local HTML may run scripts, but only inside an opaque sandbox (`allow-scripts allow-forms allow-downloads allow-popups`, without `allow-same-origin`). The viewer frames it with that sandbox, and the loopback watcher and development server also send it as a `Content-Security-Policy` header, including for direct artifact URLs. Sandboxed HTML cannot read DocShelf's storage or DOM or use its local actions; navigation and theme changes pass through narrowly scoped messages. Static hosts that cannot send headers rely on the frame sandbox alone.
-- Local sources must remain within the workspace root, the parent directory of
-  DocShelf unless `DOCSHELF_WORKSPACE` names another directory, or within the
-  DocShelf checkout itself. The web app must never modify those sources.
-  Snapshot reads and revision checks revalidate the registered path, canonical
-  target, containment, and opened file identity, including after symlink changes.
+- Local sources must remain within the workspace root, the user's home directory unless `DOCSHELF_WORKSPACE` names another directory, or within the DocShelf checkout itself. The web app must never modify those sources. Snapshot reads and revision checks revalidate the registered path, canonical target, containment, and opened file identity, including after symlink changes.
 - Browser-imported Markdown is limited to public HTTPS `.md` and `.markdown`
   file URLs on `github.com` and `raw.githubusercontent.com`. DocShelf fetches
   the raw file without credentials, enforces a 2 MB limit, omits raw HTML,
@@ -54,11 +50,7 @@ but use different rendering and file-access boundaries.
 
 ### DocShelf for Obsidian
 
-- Local sources and listed assets must resolve within the configured
-  **Workspace root** or the shelf file's directory. The workspace defaults to
-  the parent of the shelf directory; the plugin does not read the web app's
-  `DOCSHELF_WORKSPACE`. Reads recheck canonical containment and enforce size
-  limits. Only registered documents and explicitly listed assets are served.
+- Local sources and listed assets must resolve within the configured **Workspace root** or the shelf file's directory. The workspace defaults to the user's home directory; the plugin does not read the web app's `DOCSHELF_WORKSPACE`. Reads recheck canonical containment and enforce size limits. Only registered documents and explicitly listed assets are served.
 - Local Markdown opens in Obsidian's native editor and saves to the original.
   Before writing, the plugin persists recovery and rechecks registration,
   canonical target, file identity, and baseline contents. It does not recreate

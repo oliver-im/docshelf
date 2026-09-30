@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { homedir } from 'node:os';
 import { realpath, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { canonicalFile, readBoundedFile } from './files';
@@ -56,10 +57,15 @@ async function registeredFile(file: string, roots: string[], options: CatalogOpt
   }
 }
 
+// Local sources must stay inside the shelf's directory or this workspace root,
+// which defaults to the home directory.
+export function workspaceDirectory(shelfDirectory: string, configuredRoot?: string): string {
+  return configuredRoot ? path.resolve(shelfDirectory, configuredRoot) : homedir();
+}
+
 export async function loadCatalog(shelfPath: string, configuredRoot?: string, options: CatalogOptions = {}): Promise<Catalog> {
   const shelfDirectory = path.dirname(path.resolve(shelfPath));
-  const workspace = configuredRoot ? path.resolve(shelfDirectory, configuredRoot) : path.dirname(shelfDirectory);
-  const roots = [...new Set(await Promise.all([realpath(shelfDirectory), realpath(workspace)]))];
+  const roots = [...new Set(await Promise.all([realpath(shelfDirectory), realpath(workspaceDirectory(shelfDirectory, configuredRoot))]))];
   for (const root of roots) if (!(await stat(root)).isDirectory()) throw new Error('Workspace must be a directory.');
   const bytes = await readBoundedFile(shelfPath, roots, MAX_REMOTE_BYTES);
   let parsed: unknown;

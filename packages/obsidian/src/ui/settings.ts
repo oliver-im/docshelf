@@ -12,8 +12,8 @@ function settingsRows(plugin: DocShelfPlugin, draft: Settings, saved?: (settings
   return [
     { name: 'Shelf file', desc: 'Absolute path, or a path relative to this vault. Source paths are resolved relative to this file.',
       render: setting => { setting.addText(text => text.setValue(draft.shelfPath).setPlaceholder('shelf.local.json').onChange(value => { draft.shelfPath = value.trim(); })); } },
-    { name: 'Workspace root', desc: 'Sources and assets must stay inside this folder or the shelf’s folder. Defaults to the parent of the shelf’s folder.',
-      render: setting => { setting.addText(text => text.setValue(draft.workspaceRoot).setPlaceholder('Default workspace').onChange(value => { draft.workspaceRoot = value.trim(); })); } },
+    { name: 'Workspace root', desc: 'Sources and assets must stay inside this folder or the shelf’s folder. Defaults to your home folder.',
+      render: setting => { setting.addText(text => text.setValue(draft.workspaceRoot).setPlaceholder('Home folder').onChange(value => { draft.workspaceRoot = value.trim(); })); } },
     { name: 'Vault ID for links', desc: 'Optional. Use the ID from the vault switcher when multiple vaults have the same name. Otherwise links use this vault’s name.',
       render: setting => { setting.addText(text => text.setValue(draft.vaultId).setPlaceholder('Use vault name').onChange(value => { draft.vaultId = value.trim(); })); } },
     { name: 'Run HTML scripts', desc: 'Enable interactive reports in the isolated viewer. Reports may load HTTPS resources and contact remote services.',

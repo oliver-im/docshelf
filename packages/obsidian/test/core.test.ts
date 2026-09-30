@@ -57,6 +57,25 @@ test('every source read revalidates a replaced symlink and enforces the byte lim
   await assert.rejects(readBoundedFile(link, roots, 100), /outside/);
 });
 
+test('without a workspace root, sources anywhere in the home folder load and others are refused by name', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const home = path.join(f.root, 'home');
+  const shelfDirectory = path.join(home, 'projects', 'docshelf');
+  await mkdir(shelfDirectory, { recursive: true }); await mkdir(path.join(home, 'notes'));
+  const source = path.join(home, 'notes', 'plan.md');
+  await writeFile(source, '# Plan\n');
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; });
+  const shelfPath = path.join(shelfDirectory, 'shelf.local.json');
+  // The shelf folder's parent, the old default, does not contain this source.
+  await writeFile(shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, source: '../../notes/plan.md' }] }));
+  assert.equal((await loadCatalog(shelfPath)).artifacts[0].canonicalPath, await realpath(source));
+  await writeFile(shelfPath, JSON.stringify({ version: 1, artifacts: [f.entry] }));
+  const realHome = await realpath(home);
+  await assert.rejects(loadCatalog(shelfPath), (error: Error) => error.message.includes(f.source) && error.message.includes(`is outside the workspace`) && error.message.includes(realHome));
+});
+
 test('runtime catalogs retain unavailable files while validation and reads stay strict', async t => {
   const f = await fixture(); t.after(f.cleanup);
   const missingSource = path.join(f.workspace, 'missing.md');

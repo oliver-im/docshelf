@@ -77,6 +77,10 @@ test('folder discovery rejects escapes and skips symlinks, including cycles', as
   const missing = { id: 'missing', source: `../${path.basename(f.base)}-missing/docs`, project: 'Missing' };
   await assert.rejects(expandShelf({ ...f.config, directories: [missing] }, f.base, f.roots, { allowUnavailable: true }), /outside/);
   await assert.rejects(expandShelf({ ...f.config, version: 1 }, f.base, f.roots), /version 2/);
+  // A refused addition names the chosen path, where its symlink leads, and the allowed folders.
+  const outside = await realpath(await temporaryDirectory(t, tmpdir(), 'docshelf-outside-'));
+  await symlink(outside, path.join(f.base, 'elsewhere'));
+  await assert.rejects(prepareAddition({ ...f, sources: ['elsewhere'] }), error => [path.join(f.base, 'elsewhere'), outside, 'is outside the workspace', f.base].every(part => error.message.includes(part)));
 });
 
 test('oversized discovered documents do not hide the rest of a watched folder', async t => {

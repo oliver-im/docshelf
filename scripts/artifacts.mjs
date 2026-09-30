@@ -12,6 +12,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -51,7 +52,7 @@ const shelfConfigurations = new WeakMap();
 
 /**
  * The workspace root bounds which local files DocShelf reads and serves, along
- * with the checkout itself. It is the checkout's parent directory unless
+ * with the checkout itself. It is the user's home directory unless
  * DOCSHELF_WORKSPACE names another directory, given as an absolute path or
  * relative to the checkout.
  *
@@ -59,7 +60,7 @@ const shelfConfigurations = new WeakMap();
  */
 export function resolveWorkspaceRoot(configured) {
   const value = typeof configured === 'string' ? configured.trim() : '';
-  return value ? path.resolve(docShelfRoot, value) : path.resolve(docShelfRoot, '..');
+  return value ? path.resolve(docShelfRoot, value) : homedir();
 }
 
 /**
