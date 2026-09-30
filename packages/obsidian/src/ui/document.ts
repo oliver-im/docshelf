@@ -17,6 +17,9 @@ export const DOCUMENT_VIEW = 'docshelf-document';
 interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
 interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown>; getWebContentsId(): number }
 
+type ReportGuest = NonNullable<ReturnType<typeof webContents.fromId>>;
+interface ReportReference { range: LineRange; spans: string[] }
+
 declare global {
   interface HTMLElementTagNameMap { webview: Webview }
 }
@@ -31,6 +34,15 @@ export class DocumentView extends ItemView {
   private modeAction?: HTMLElement;
   private revealAction?: HTMLElement;
   private referenceMenu: Menu | null = null;
+  // A local report's text selection, which the header copy actions cite.
+  private reportWebview: Webview | null = null;
+  private reportSelection: ReportReference | null = null;
+  private selectionCheck: Promise<void> | null = null;
+  private selectionPending = false;
+  private selectionToken = `docshelf-selection-${randomBytes(16).toString('hex')}`;
+  private highlightKey = '';
+  private highlightGeneration = 0;
+  private endReportDrag: (() => void) | null = null;
   private unsubscribe?: () => void;
   private generation = 0;
   private closed = false;
@@ -78,6 +90,10 @@ export class DocumentView extends ItemView {
   async onClose(): Promise<void> { this.closed = true; this.generation++; this.unsubscribe?.(); this.clearContent(); }
 
   private clearContent(): void {
+    this.endReportDrag?.();
+    this.reportWebview = null;
+    this.reportSelection = null;
+    this.highlightKey = '';
     this.contentEl.empty();
     this.releaseReportNavigation?.();
     this.releaseReportNavigation = undefined;
@@ -151,7 +167,7 @@ export class DocumentView extends ItemView {
       const url = new URL(this.plugin.server.documentUrl(artifact));
       url.hash = this.hash;
       this.renderWebview(url.href, false);
-      if (!this.plugin.settings.runHtmlScripts) this.status.setText('Report scripts are disabled');
+      this.showRangeStatus(null);
     } else {
       const selection = new LineSelection(this.range, range => { this.range = range; this.updateRangeStatus(selection); this.saveState(); });
       if (this.mode === 'source' || lines.length > 20_000) this.renderSource(lines, selection);
@@ -170,6 +186,7 @@ export class DocumentView extends ItemView {
     if (!this.artifact) return;
     this.mode = mode;
     if (mode === 'reading' && this.artifact.kind === 'html') this.range = null;
+    if (mode === 'source' && this.reportSelection) this.range = this.reportSelection.range;
     this.page = this.range ? Math.floor((this.range.start - 1) / 400) : 0;
     this.render();
     this.saveState();
@@ -245,6 +262,23 @@ export class DocumentView extends ItemView {
       this.releaseReportNavigation = () => requests.onBeforeRequest(filter, null);
     }
     if (!remote) {
+      this.reportWebview = webview;
+      // Selection changes inside the report log this view's token from the
+      // isolated world; report scripts can neither see nor forge it.
+      webview.addEventListener('dom-ready', () => {
+        const guest = reportGuest(webview);
+        if (!guest) return;
+        // Obsidian's own menu for right-clicks in webviews would open beside the
+        // reference menu. Obsidian's Web viewer opts out the same way.
+        try { guest.noContextMenu = true; } catch { return; }
+        void inReport(guest, reportWatchScript(this.selectionToken)).catch(() => null);
+      });
+      webview.addEventListener('console-message', (event: Event) => {
+        const { message } = event as Event & { message: string };
+        if (message === this.selectionToken) void this.checkSelection(webview);
+        else if (message === `${this.selectionToken}:down`) this.startReportDrag(webview);
+        else if (message === `${this.selectionToken}:up`) this.endReportDrag?.();
+      });
       // Electron reports right-clicks inside the report. One that reaches this
       // element instead, before a new report accepts input, opens the same menu.
       webview.addEventListener('context-menu', (event: Event) => {
@@ -263,41 +297,72 @@ export class DocumentView extends ItemView {
     this.body.appendChild(webview);
   }
 
-  // Finds the lines under a point given in this document's CSS pixels. The
-  // lookup runs in an isolated world, which works even when report scripts are
-  // disabled and cannot be altered by them; its result is checked before use.
+  // A drag that starts in the report loses the pointer when it leaves the
+  // report. Until the button is released, keep the rest of the window from
+  // reacting to it, and hand a release outside back to the report, which would
+  // otherwise keep selecting as the pointer moves.
+  private startReportDrag(webview: Webview): void {
+    this.endReportDrag?.();
+    const doc = webview.ownerDocument;
+    const win = doc.defaultView;
+    if (!win || webview !== this.reportWebview) return;
+    const release = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const bounds = webview.getBoundingClientRect();
+      const zoom = webFrame.getZoomFactor();
+      try { reportGuest(webview)?.sendInputEvent({ type: 'mouseUp', x: Math.round((event.clientX - bounds.left) * zoom), y: Math.round((event.clientY - bounds.top) * zoom), button: 'left', clickCount: 1 }); } catch { /* The report closed. */ }
+      end();
+    };
+    // A move without the button means the release happened elsewhere.
+    const move = (event: MouseEvent) => { if (!(event.buttons & 1)) end(); };
+    const end = () => {
+      doc.body.removeClass('docshelf-report-dragging');
+      win.removeEventListener('mouseup', release, true);
+      win.removeEventListener('mousemove', move, true);
+      win.removeEventListener('blur', end);
+      if (this.endReportDrag === end) this.endReportDrag = null;
+    };
+    doc.body.addClass('docshelf-report-dragging');
+    win.addEventListener('mouseup', release, true);
+    win.addEventListener('mousemove', move, true);
+    win.addEventListener('blur', end);
+    this.endReportDrag = end;
+  }
+
+  // Opens the reference menu for a point in this document's CSS pixels.
   private async showReportMenu(webview: Webview, x: number, y: number): Promise<void> {
     const artifact = this.artifact;
     if (!artifact || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const bounds = webview.getBoundingClientRect();
-    let found: unknown = null;
-    let scale = 1;
+    let found: { text?: unknown; reference?: unknown } | null = null;
     try {
-      const guest = webContents.fromId(webview.getWebContentsId());
+      const guest = reportGuest(webview);
       if (guest) {
-        scale = webFrame.getZoomFactor() / guest.getZoomFactor();
-        const script = reportReferenceScript(Math.round((x - bounds.left) * scale), Math.round((y - bounds.top) * scale));
-        found = JSON.parse(String(await guest.executeJavaScriptInIsolatedWorld(REFERENCE_WORLD, [{ code: script }])));
+        const scale = webFrame.getZoomFactor() / guest.getZoomFactor();
+        found = await inReport(guest, reportPointScript(Math.round((x - bounds.left) * scale), Math.round((y - bounds.top) * scale))) as { text?: unknown; reference?: unknown } | null;
       }
     } catch { /* Cite the whole report. */ }
     if (this.closed || !webview.isConnected || artifact !== this.artifact) return;
-    const { range, box } = this.reportReference(found, scale);
+    const reference = this.readReference(found?.reference);
+    const range = reference?.range || null;
     // Right-clicks inside the report never reach an open menu's close handler.
     this.referenceMenu?.hide();
-    const status = [...this.status.childNodes];
-    const problem = this.status.hasClass('docshelf-editor-problem');
-    if (range) {
-      this.status.empty();
-      this.status.removeClass('docshelf-editor-problem');
-      this.status.createSpan({ text: range.start === range.end ? `Source line ${range.start}` : `Source lines ${range.start}–${range.end}`, cls: 'docshelf-reference-label' });
-    }
+    this.showRangeStatus(range);
+    void this.highlightReport(webview, reference?.spans || []);
     // Clicks and keys inside the report never reach the host, so cover and focus
     // it while the menu is open: the menu closes on a click there or on Escape,
     // and a right-click moves it.
     const layer = this.body.createDiv({ cls: 'docshelf-report-layer', attr: { tabindex: '-1' } });
     layer.addEventListener('contextmenu', event => { event.preventDefault(); void this.showReportMenu(webview, event.clientX, event.clientY); });
-    if (box) layer.createDiv({ cls: 'docshelf-report-highlight' }).setCssStyles({ left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
-    const menu = new Menu()
+    // Obsidian's own menu closes on clicks and keys that reach the layer. A
+    // native menu that macOS never shows, such as a second one for the same
+    // right-click, never reports closing and would leave the layer in place.
+    const menu = new Menu().setUseNativeMenu(false);
+    // This replaces Obsidian's menu, which offered Copy for selected text.
+    if (found?.text === true) {
+      menu.addItem(item => item.setTitle('Copy').setIcon('copy').onClick(() => { void this.copyReportText(webview); })).addSeparator();
+    }
+    menu
       .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
       .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
       .addItem(item => item.setTitle('Reveal source').setIcon('folder-open').onClick(() => { void this.plugin.revealArtifact(artifact); }));
@@ -308,41 +373,117 @@ export class DocumentView extends ItemView {
       if (focused) webview.focus();
       if (this.referenceMenu !== menu) return;
       this.referenceMenu = null;
-      if (range) { this.status.replaceChildren(...status); this.status.toggleClass('docshelf-editor-problem', problem); }
+      this.showReportSelection(webview);
     });
     menu.showAtPosition({ x, y }, webview.ownerDocument);
     layer.focus();
   }
 
-  private reportReference(found: unknown, scale: number): { range: LineRange | null; box: { left: number; top: number; width: number; height: number } | null } {
-    const value = (found || {}) as { lines?: unknown; box?: unknown };
+  // Copies the report's selected text, with its markup for rich pastes.
+  private async copyReportText(webview: Webview): Promise<void> {
+    const guest = reportGuest(webview);
+    const found = guest ? await inReport(guest, REPORT_COPY_SCRIPT).catch(() => null) : null;
+    const { text, html } = (found || {}) as { text?: unknown; html?: unknown };
+    if (typeof text !== 'string' || typeof html !== 'string') return;
+    try { await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'text/html': new Blob([html], { type: 'text/html' }) })]); }
+    catch { new Notice('Could not access the clipboard.'); }
+  }
+
+  // Reads the report's selection again, repeating if it changed meanwhile.
+  private async checkSelection(webview: Webview): Promise<void> {
+    if (this.selectionCheck) { this.selectionPending = true; return this.selectionCheck; }
+    const check = (async () => {
+      do {
+        this.selectionPending = false;
+        const guest = reportGuest(webview);
+        const found = guest ? await inReport(guest, REPORT_SELECTION_SCRIPT).catch(() => 'same') : 'same';
+        if (this.closed || webview !== this.reportWebview) return;
+        if (found === 'same') continue;
+        this.reportSelection = this.readReference(found);
+        if (!this.referenceMenu) this.showReportSelection(webview);
+      } while (this.selectionPending);
+    })();
+    this.selectionCheck = check;
+    try { await check; } finally { this.selectionCheck = null; }
+  }
+
+  private showReportSelection(webview: Webview): void {
+    this.showRangeStatus(this.reportSelection?.range || null, () => { void this.clearReportSelection(webview); });
+    void this.highlightReport(webview, this.reportSelection?.spans || []);
+  }
+
+  private async clearReportSelection(webview: Webview): Promise<void> {
+    this.reportSelection = null;
+    this.showReportSelection(webview);
+    const guest = reportGuest(webview);
+    if (guest) await inReport(guest, REPORT_CLEAR_SCRIPT).catch(() => null);
+  }
+
+  // The highlight is a stylesheet on the tagged spans, so it scrolls with the
+  // report without changing its document.
+  private async highlightReport(webview: Webview, spans: string[]): Promise<void> {
+    const generation = ++this.highlightGeneration;
+    const previous = this.highlightKey;
+    this.highlightKey = '';
+    const guest = reportGuest(webview);
+    if (!guest) return;
+    try {
+      if (previous) await guest.removeInsertedCSS(previous);
+      if (!spans.length || generation !== this.highlightGeneration) return;
+      const key = await guest.insertCSS(highlightCss(spans, this.accentColor()));
+      if (generation === this.highlightGeneration && webview === this.reportWebview) this.highlightKey = key;
+      else await guest.removeInsertedCSS(key);
+    } catch { /* The report navigated or closed. */ }
+  }
+
+  private accentColor(): string {
+    const probe = this.contentEl.createDiv();
+    probe.setCssStyles({ color: 'var(--interactive-accent)' });
+    const color = this.contentEl.win.getComputedStyle(probe).color;
+    probe.remove();
+    return /^rgba?\([\d.,\s%]+\)$/.test(color) ? color : 'rgb(127, 109, 242)';
+  }
+
+  private readReference(found: unknown): ReportReference | null {
+    const value = (found || {}) as { lines?: unknown; spans?: unknown };
     const [start, end] = Array.isArray(value.lines) ? value.lines as unknown[] : [];
-    if (!Number.isInteger(start) || !Number.isInteger(end) || (start as number) < 1 || (end as number) < (start as number) || (end as number) > sourceLines(this.source).length) return { range: null, box: null };
+    if (!Number.isInteger(start) || !Number.isInteger(end) || (start as number) < 1 || (end as number) < (start as number) || (end as number) > sourceLines(this.source).length) return null;
     const range = { start: start as number, end: end as number };
-    const numbers = Array.isArray(value.box) && value.box.length === 4 && value.box.every(Number.isFinite) && scale > 0 ? (value.box as number[]).map(number => number / scale) : null;
-    if (!numbers) return { range, box: null };
-    // Keep the outline inside the visible report so it cannot add scrollbars.
-    const left = Math.max(0, numbers[0]), top = Math.max(0, numbers[1]);
-    const right = Math.min(this.body.clientWidth, numbers[0] + numbers[2]), bottom = Math.min(this.body.clientHeight, numbers[1] + numbers[3]);
-    return { range, box: right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null };
+    const spans = (Array.isArray(value.spans) ? value.spans as unknown[] : []).filter((span): span is string => {
+      const match = typeof span === 'string' ? /^(\d{1,7})-(\d{1,7})$/.exec(span) : null;
+      return !!match && Number(match[1]) >= range.start && Number(match[2]) <= range.end;
+    });
+    return { range, spans: spans.slice(0, MAX_HIGHLIGHT_SPANS) };
+  }
+
+  private showRangeStatus(range: LineRange | null, clear?: () => void): void {
+    this.status.empty();
+    this.status.removeClass('docshelf-editor-problem');
+    if (this.mode === 'reading' && this.artifact?.kind === 'html' && !this.plugin.settings.runHtmlScripts) this.status.createSpan({ text: 'Report scripts are disabled' });
+    if (!range) return;
+    this.status.createSpan({ text: range.start === range.end ? `Source line ${range.start}` : `Source lines ${range.start}–${range.end}`, cls: 'docshelf-reference-label' });
+    if (clear) this.status.createEl('button', { text: 'Clear selection' }).onclick = clear;
+  }
+
+  private async currentRange(): Promise<LineRange | null> {
+    if (this.mode !== 'reading' || this.artifact?.kind !== 'html') return this.range;
+    if (this.reportWebview) await this.checkSelection(this.reportWebview);
+    return this.reportSelection?.range || null;
   }
 
   private updateRangeStatus(selection: LineSelection): void {
-    this.status.empty();
-    this.status.removeClass('docshelf-editor-problem');
-    if (!this.range) return;
-    const { start, end } = this.range;
-    this.status.createSpan({ text: start === end ? `Source line ${start}` : `Source lines ${start}–${end}`, cls: 'docshelf-reference-label' });
-    this.status.createEl('button', { text: 'Clear selection' }).onclick = () => selection.clear();
+    this.showRangeStatus(this.range, () => selection.clear());
   }
   private saveState(): void { this.app.workspace.requestSaveLayout(); }
 
-  async copyLink(range: LineRange | null = this.range): Promise<void> {
+  async copyLink(range?: LineRange | null): Promise<void> {
+    if (range === undefined) range = await this.currentRange();
     if (!this.artifact) return;
     try { await navigator.clipboard.writeText(createPermalink(this.plugin.vaultIdentity(), this.artifact, range)); new Notice('DocShelf link copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
   }
-  async copyReference(range: LineRange | null = this.range): Promise<void> {
+  async copyReference(range?: LineRange | null): Promise<void> {
+    if (range === undefined) range = await this.currentRange();
     if (!this.artifact) return;
     try { await navigator.clipboard.writeText(createAgentReference(this.artifact, range)); new Notice('Source reference copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
@@ -381,39 +522,129 @@ export class DocumentView extends ItemView {
 
 // Electron reserves world 0 for the page and 999 for preload scripts.
 const REFERENCE_WORLD = 1001;
+const MAX_HIGHLIGHT_SPANS = 500;
 
-// Runs in the report page and only reads it. A right-click inside a selection
-// spans the blocks it touches; otherwise it cites the nearest block-level
-// element the server tagged, falling back to a tagged inline element.
-function reportReferenceScript(x: number, y: number): string {
-  return `JSON.stringify((() => {
-    const name = ${JSON.stringify(SOURCE_LINES_ATTRIBUTE)};
-    const block = node => {
-      let inline = null;
-      for (let element = node && node.nodeType === 1 ? node : node && node.parentElement; element; element = element.parentElement) {
-        if (!element.hasAttribute(name)) continue;
-        if (!['inline', 'contents'].includes(getComputedStyle(element).display)) return element;
-        inline = inline || element;
-      }
-      return inline;
-    };
-    const lines = element => element.getAttribute(name).split('-').map(Number);
-    // A macOS right-click on text selects the word under it, so a selection
-    // within one block cites that block like a plain right-click.
+function reportGuest(webview: Webview): ReportGuest | null {
+  try { return webContents.fromId(webview.getWebContentsId()) || null; } catch { return null; }
+}
+
+// Scripts run in an isolated world, which works with report scripts disabled
+// and which report scripts cannot alter. They only read the report and return
+// JSON that the host validates.
+async function inReport(guest: ReportGuest, script: string): Promise<unknown> {
+  return JSON.parse(String(await guest.executeJavaScriptInIsolatedWorld(REFERENCE_WORLD, [{ code: `JSON.stringify((() => { ${REPORT_LIBRARY} ${script} })())` }])));
+}
+
+// A reference cites the lines from its first block to its last. It highlights
+// the outermost block-level elements within those lines, or inline ones when a
+// range has no blocks.
+const REPORT_LIBRARY = `
+  const name = ${JSON.stringify(SOURCE_LINES_ATTRIBUTE)};
+  const spanOf = element => element.getAttribute(name).split('-').map(Number);
+  const inline = element => ['inline', 'contents'].includes(getComputedStyle(element).display);
+  const block = node => {
+    let fallback = null;
+    for (let element = node && node.nodeType === 1 ? node : node && node.parentElement; element; element = element.parentElement) {
+      if (!element.hasAttribute(name)) continue;
+      if (!inline(element)) return element;
+      fallback = fallback || element;
+    }
+    return fallback;
+  };
+  const within = ([start, end], blocks) => {
+    const chosen = [];
+    for (const element of document.querySelectorAll('[' + name + ']')) {
+      const [a, b] = spanOf(element);
+      if (a < start || b > end || chosen.at(-1)?.contains(element) || blocks && inline(element)) continue;
+      chosen.push(element);
+    }
+    return chosen;
+  };
+  const reference = (first, last) => {
+    const [a, b] = spanOf(first), [c, d] = spanOf(last);
+    const lines = [Math.min(a, c), Math.max(b, d)];
+    const elements = within(lines, true);
+    return { lines, spans: [...new Set((elements.length ? elements : within(lines, false)).map(element => element.getAttribute(name)))].slice(0, ${MAX_HIGHLIGHT_SPANS}) };
+  };
+  // The first and last text a selection actually covers: a triple-click ends
+  // at the start of the next block, which it does not select.
+  const selected = () => {
     const selection = getSelection();
     const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
-    let element = null;
-    if (range && [...range.getClientRects()].some(r => ${x} >= r.left && ${x} <= r.right && ${y} >= r.top && ${y} <= r.bottom)) {
-      const first = block(range.startContainer), last = block(range.endContainer);
-      if (first && first === last) element = first;
-      else if (first && last) {
-        const [a, b] = lines(first), [c, d] = lines(last);
-        return { lines: [Math.min(a, c), Math.max(b, d)], box: null };
-      }
+    if (!range) return null;
+    let first = null, last = null;
+    const root = range.commonAncestorContainer;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = root.nodeType === 3 ? root : walker.nextNode(); node; node = node === root ? null : walker.nextNode()) {
+      if (!node.data.trim() || !range.intersectsNode(node)) continue;
+      if (node === range.startContainer && range.startOffset >= node.data.length || node === range.endContainer && range.endOffset === 0) continue;
+      first = first || node;
+      last = node;
     }
-    element = element || block(document.elementFromPoint(${x}, ${y}));
-    if (!element) return null;
-    const box = element.getBoundingClientRect();
-    return { lines: lines(element), box: [box.left, box.top, box.width, box.height] };
-  })())`;
+    first = block(first || range.startContainer);
+    last = block(last || range.endContainer);
+    return first && last ? { range, first, last } : null;
+  };
+`;
+
+// Also reports whether there is selected text to copy.
+function reportPointScript(x: number, y: number): string {
+  return `
+    const text = getSelection().toString().trim() !== '';
+    const selection = selected();
+    if (selection && [...selection.range.getClientRects()].some(r => ${x} >= r.left && ${x} <= r.right && ${y} >= r.top && ${y} <= r.bottom)) return { text, reference: reference(selection.first, selection.last) };
+    const element = block(document.elementFromPoint(${x}, ${y}));
+    return { text, reference: element && reference(element, element) };
+  `;
+}
+
+function reportWatchScript(token: string): string {
+  return `
+    if (!window.docshelfWatching) {
+      const token = ${JSON.stringify(token)};
+      document.addEventListener('selectionchange', () => console.debug(token));
+      addEventListener('pointerdown', event => { if (event.button === 0) console.debug(token + ':down'); }, true);
+      addEventListener('pointerup', event => { if (event.button === 0) console.debug(token + ':up'); }, true);
+    }
+    window.docshelfWatching = true;
+    return null;
+  `;
+}
+
+// Returns "same" while the selection's boundaries or lines are unchanged, so
+// frequent checks stay cheap. The state lives in the isolated world, which
+// report scripts cannot read or write.
+const REPORT_SELECTION_SCRIPT = `
+  const state = window.docshelfSelection || (window.docshelfSelection = { bounds: [], key: '' });
+  const current = getSelection();
+  const range = current && current.rangeCount ? current.getRangeAt(0) : null;
+  const bounds = range && !range.collapsed ? [range.startContainer, range.startOffset, range.endContainer, range.endOffset] : [];
+  if (bounds.length === state.bounds.length && bounds.every((value, index) => value === state.bounds[index])) return 'same';
+  state.bounds = bounds;
+  const selection = selected();
+  const lines = selection && [Math.min(spanOf(selection.first)[0], spanOf(selection.last)[0]), Math.max(spanOf(selection.first)[1], spanOf(selection.last)[1])];
+  const key = lines ? lines.join('-') : '';
+  if (key === state.key) return 'same';
+  state.key = key;
+  return selection && reference(selection.first, selection.last);
+`;
+
+const REPORT_COPY_SCRIPT = `
+  const selection = getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const holder = document.createElement('div');
+  holder.append(selection.getRangeAt(0).cloneContents());
+  for (const element of holder.querySelectorAll('[' + name + ']')) element.removeAttribute(name);
+  return { text: selection.toString(), html: holder.innerHTML };
+`;
+
+const REPORT_CLEAR_SCRIPT = `
+  getSelection().removeAllRanges();
+  window.docshelfSelection = { bounds: [], key: '' };
+  return null;
+`;
+
+function highlightCss(spans: string[], color: string): string {
+  const targets = spans.map(span => `[${SOURCE_LINES_ATTRIBUTE}="${span}"]`).join(', ');
+  return `:is(${targets}):not(:is(${targets}) *) { outline: 2px solid ${color} !important; outline-offset: 2px !important; box-shadow: inset 0 0 0 100vmax color-mix(in srgb, ${color} 14%, transparent) !important; }`;
 }
