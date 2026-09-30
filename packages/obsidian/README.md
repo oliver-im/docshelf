@@ -295,6 +295,10 @@ The shared registration skill lives at the repository root in
 [`.agents/skills/docshelf/`](../../.agents/skills/docshelf/SKILL.md). It can return
 web app and Obsidian links from the same shelf; see [shared setup and differences](../../docs/unification.md).
 
+### Try a change in your vault
+
+Write your vault's path to `packages/obsidian/.local/dev-vault`, which Git ignores, or set `DOCSHELF_DEV_VAULT`. Then run `npm run install:local`. It rebuilds, replaces `main.js`, `manifest.json`, and `styles.css` in that vault's existing DocShelf installation, and reloads the plugin in the running Obsidian through its command line interface (**Settings → General → Advanced → Command line interface**). Settings and recovery drafts stay in place. It refuses a vault without DocShelf installed, and it skips the reload unless Obsidian already has the vault open, because the command line interface would open it.
+
 ## License
 
 MIT. URL and line-range helpers are shared with the web app through `@docshelf/core`. Each build embeds the plugin's MIT license and the full license and notice texts of bundled dependencies in `main.js`. Packaging also includes separate `LICENSE` and `THIRD_PARTY_NOTICES.txt` files. These notices accompany both the ZIP and the standard three-file Obsidian installation.
