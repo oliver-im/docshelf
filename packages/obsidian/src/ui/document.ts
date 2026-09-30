@@ -1,4 +1,4 @@
-import { ItemView, Notice, setIcon, setTooltip, type WorkspaceLeaf, type ViewStateResult } from 'obsidian';
+import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf, type ViewStateResult } from 'obsidian';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type DocShelfPlugin from '../main';
@@ -7,13 +7,15 @@ import { message } from '../core/types';
 import { parseLineFragment } from '@docshelf/core/line-permalinks';
 import { checkRange, createAgentReference, createPermalink, parseRange } from '../core/protocol';
 import { sourceLines } from '../core/markdown';
+import { SOURCE_LINES_ATTRIBUTE } from '../core/server';
 import { LineSelection } from './lines';
 import { renderReading } from './render';
-import { session } from '@electron/remote';
+import { webFrame } from 'electron';
+import { session, webContents } from '@electron/remote';
 
 export const DOCUMENT_VIEW = 'docshelf-document';
 interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
-interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown> }
+interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown>; getWebContentsId(): number }
 
 declare global {
   interface HTMLElementTagNameMap { webview: Webview }
@@ -28,6 +30,7 @@ export class DocumentView extends ItemView {
   private status!: HTMLElement;
   private modeAction?: HTMLElement;
   private revealAction?: HTMLElement;
+  private referenceMenu: Menu | null = null;
   private unsubscribe?: () => void;
   private generation = 0;
   private closed = false;
@@ -241,12 +244,87 @@ export class DocumentView extends ItemView {
       });
       this.releaseReportNavigation = () => requests.onBeforeRequest(filter, null);
     }
+    if (!remote) {
+      // Electron reports right-clicks inside the report. One that reaches this
+      // element instead, before a new report accepts input, opens the same menu.
+      webview.addEventListener('context-menu', (event: Event) => {
+        // Electron reports window coordinates unscaled by Obsidian's zoom.
+        const { x, y } = (event as Event & { params: { x: number; y: number } }).params;
+        const zoom = webFrame.getZoomFactor();
+        void this.showReportMenu(webview, x / zoom, y / zoom);
+      });
+      webview.addEventListener('contextmenu', event => { event.preventDefault(); void this.showReportMenu(webview, event.clientX, event.clientY); });
+    }
     webview.addEventListener('did-fail-load', (event: Event) => {
       const failure = event as Event & { errorCode: number; isMainFrame: boolean };
       if (failure.errorCode === -3 || failure.isMainFrame === false || !remote && failure.errorCode === -20) return;
       this.showProblem(remote ? 'The published artifact could not load. Check the network connection and source URL.' : 'The HTML viewer could not load this document. Reload to try again.');
     });
     this.body.appendChild(webview);
+  }
+
+  // Finds the lines under a point given in this document's CSS pixels. The
+  // lookup runs in an isolated world, which works even when report scripts are
+  // disabled and cannot be altered by them; its result is checked before use.
+  private async showReportMenu(webview: Webview, x: number, y: number): Promise<void> {
+    const artifact = this.artifact;
+    if (!artifact || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const bounds = webview.getBoundingClientRect();
+    let found: unknown = null;
+    let scale = 1;
+    try {
+      const guest = webContents.fromId(webview.getWebContentsId());
+      if (guest) {
+        scale = webFrame.getZoomFactor() / guest.getZoomFactor();
+        const script = reportReferenceScript(Math.round((x - bounds.left) * scale), Math.round((y - bounds.top) * scale));
+        found = JSON.parse(String(await guest.executeJavaScriptInIsolatedWorld(REFERENCE_WORLD, [{ code: script }])));
+      }
+    } catch { /* Cite the whole report. */ }
+    if (this.closed || !webview.isConnected || artifact !== this.artifact) return;
+    const { range, box } = this.reportReference(found, scale);
+    // Right-clicks inside the report never reach an open menu's close handler.
+    this.referenceMenu?.hide();
+    const status = [...this.status.childNodes];
+    const problem = this.status.hasClass('docshelf-editor-problem');
+    if (range) {
+      this.status.empty();
+      this.status.removeClass('docshelf-editor-problem');
+      this.status.createSpan({ text: range.start === range.end ? `Source line ${range.start}` : `Source lines ${range.start}–${range.end}`, cls: 'docshelf-reference-label' });
+    }
+    // Clicks and keys inside the report never reach the host, so cover and focus
+    // it while the menu is open: the menu closes on a click there or on Escape,
+    // and a right-click moves it.
+    const layer = this.body.createDiv({ cls: 'docshelf-report-layer', attr: { tabindex: '-1' } });
+    layer.addEventListener('contextmenu', event => { event.preventDefault(); void this.showReportMenu(webview, event.clientX, event.clientY); });
+    if (box) layer.createDiv({ cls: 'docshelf-report-highlight' }).setCssStyles({ left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
+    const menu = new Menu()
+      .addItem(item => item.setTitle('Copy DocShelf link').setIcon('link').onClick(() => this.copyLink(range)))
+      .addItem(item => item.setTitle('Copy source reference').setIcon('quote').onClick(() => this.copyReference(range)))
+      .addItem(item => item.setTitle('Reveal source').setIcon('folder-open').onClick(() => { void this.plugin.revealArtifact(artifact); }));
+    this.referenceMenu = menu;
+    menu.onHide(() => {
+      const focused = layer.contains(layer.doc.activeElement);
+      layer.remove();
+      if (focused) webview.focus();
+      if (this.referenceMenu !== menu) return;
+      this.referenceMenu = null;
+      if (range) { this.status.replaceChildren(...status); this.status.toggleClass('docshelf-editor-problem', problem); }
+    });
+    menu.showAtPosition({ x, y }, webview.ownerDocument);
+    layer.focus();
+  }
+
+  private reportReference(found: unknown, scale: number): { range: LineRange | null; box: { left: number; top: number; width: number; height: number } | null } {
+    const value = (found || {}) as { lines?: unknown; box?: unknown };
+    const [start, end] = Array.isArray(value.lines) ? value.lines as unknown[] : [];
+    if (!Number.isInteger(start) || !Number.isInteger(end) || (start as number) < 1 || (end as number) < (start as number) || (end as number) > sourceLines(this.source).length) return { range: null, box: null };
+    const range = { start: start as number, end: end as number };
+    const numbers = Array.isArray(value.box) && value.box.length === 4 && value.box.every(Number.isFinite) && scale > 0 ? (value.box as number[]).map(number => number / scale) : null;
+    if (!numbers) return { range, box: null };
+    // Keep the outline inside the visible report so it cannot add scrollbars.
+    const left = Math.max(0, numbers[0]), top = Math.max(0, numbers[1]);
+    const right = Math.min(this.body.clientWidth, numbers[0] + numbers[2]), bottom = Math.min(this.body.clientHeight, numbers[1] + numbers[3]);
+    return { range, box: right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null };
   }
 
   private updateRangeStatus(selection: LineSelection): void {
@@ -259,14 +337,14 @@ export class DocumentView extends ItemView {
   }
   private saveState(): void { this.app.workspace.requestSaveLayout(); }
 
-  async copyLink(): Promise<void> {
+  async copyLink(range: LineRange | null = this.range): Promise<void> {
     if (!this.artifact) return;
-    try { await navigator.clipboard.writeText(createPermalink(this.plugin.vaultIdentity(), this.artifact, this.range)); new Notice('DocShelf link copied.'); }
+    try { await navigator.clipboard.writeText(createPermalink(this.plugin.vaultIdentity(), this.artifact, range)); new Notice('DocShelf link copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
   }
-  async copyReference(): Promise<void> {
+  async copyReference(range: LineRange | null = this.range): Promise<void> {
     if (!this.artifact) return;
-    try { await navigator.clipboard.writeText(createAgentReference(this.artifact, this.range)); new Notice('Source reference copied.'); }
+    try { await navigator.clipboard.writeText(createAgentReference(this.artifact, range)); new Notice('Source reference copied.'); }
     catch { new Notice('Could not access the clipboard.'); }
   }
 
@@ -299,4 +377,43 @@ export class DocumentView extends ItemView {
       await this.plugin.openArtifact(target, parseLineFragment(hash), hash, this.leaf);
     } catch { new Notice('Could not resolve this document link.'); }
   }
+}
+
+// Electron reserves world 0 for the page and 999 for preload scripts.
+const REFERENCE_WORLD = 1001;
+
+// Runs in the report page and only reads it. A right-click inside a selection
+// spans the blocks it touches; otherwise it cites the nearest block-level
+// element the server tagged, falling back to a tagged inline element.
+function reportReferenceScript(x: number, y: number): string {
+  return `JSON.stringify((() => {
+    const name = ${JSON.stringify(SOURCE_LINES_ATTRIBUTE)};
+    const block = node => {
+      let inline = null;
+      for (let element = node && node.nodeType === 1 ? node : node && node.parentElement; element; element = element.parentElement) {
+        if (!element.hasAttribute(name)) continue;
+        if (!['inline', 'contents'].includes(getComputedStyle(element).display)) return element;
+        inline = inline || element;
+      }
+      return inline;
+    };
+    const lines = element => element.getAttribute(name).split('-').map(Number);
+    // A macOS right-click on text selects the word under it, so a selection
+    // within one block cites that block like a plain right-click.
+    const selection = getSelection();
+    const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
+    let element = null;
+    if (range && [...range.getClientRects()].some(r => ${x} >= r.left && ${x} <= r.right && ${y} >= r.top && ${y} <= r.bottom)) {
+      const first = block(range.startContainer), last = block(range.endContainer);
+      if (first && first === last) element = first;
+      else if (first && last) {
+        const [a, b] = lines(first), [c, d] = lines(last);
+        return { lines: [Math.min(a, c), Math.max(b, d)], box: null };
+      }
+    }
+    element = element || block(document.elementFromPoint(${x}, ${y}));
+    if (!element) return null;
+    const box = element.getBoundingClientRect();
+    return { lines: lines(element), box: [box.left, box.top, box.width, box.height] };
+  })())`;
 }

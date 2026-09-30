@@ -4,11 +4,20 @@ declare module 'electron' {
     showItemInFolder(path: string): void;
     openExternal(url: string): Promise<void>;
   };
+  export const webFrame: {
+    getZoomFactor(): number;
+  };
 }
 
 declare module '@electron/remote' {
   export const dialog: {
     showOpenDialog(options: { title: string; buttonLabel: string; properties: string[]; defaultPath: string }): Promise<{ canceled: boolean; filePaths: string[] }>;
+  };
+  export const webContents: {
+    fromId(id: number): {
+      getZoomFactor(): number;
+      executeJavaScriptInIsolatedWorld(worldId: number, scripts: { code: string }[]): Promise<unknown>;
+    } | undefined;
   };
   export const session: {
     fromPartition(partition: string): {

@@ -484,6 +484,41 @@ try {
   await page.locator('webview.docshelf-webview').waitFor();
   const guest = script => page.evaluate(script => document.querySelector('webview.docshelf-webview').executeJavaScript(script), script);
   await poll(() => guest('!!document.querySelector("#run-check")'), 'The interactive HTML report did not load.');
+  const nativeMenus = await page.evaluate(() => { const value = app.vault.getConfig('nativeMenus'); app.vault.setConfig('nativeMenus', false); return value; });
+  // Report scripts may be disabled, so locate targets from an isolated world.
+  const reportPoint = async selector => {
+    const [x, y] = JSON.parse(await page.evaluate(code => {
+      const webview = document.querySelector('webview.docshelf-webview');
+      return require('@electron/remote').webContents.fromId(webview.getWebContentsId()).executeJavaScriptInIsolatedWorld(1002, [{ code }]);
+    }, `JSON.stringify((() => { const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [box.left + 8, box.top + box.height / 2]; })())`));
+    const frame = await page.locator('webview.docshelf-webview').boundingBox();
+    return [frame.x + x, frame.y + y];
+  };
+  const reportMenuItem = page.locator('.menu .menu-item').filter({ hasText: 'Copy source reference' });
+  const copyReportReference = async (selector, screenshot) => {
+    const [x, y] = await reportPoint(selector);
+    await page.mouse.click(x, y, { button: 'right' });
+    await reportMenuItem.waitFor();
+    const shown = { label: await reportStatus.locator('.docshelf-reference-label').textContent(), highlights: await page.locator('.docshelf-report-highlight').count() };
+    if (screenshot) await page.screenshot({ path: screenshot });
+    await reportMenuItem.click();
+    assert.equal(await page.locator('.docshelf-report-highlight').count(), 0);
+    return { ...shown, copied: (await page.evaluate(() => require('electron').clipboard.readText())).split('/').at(-1), after: await reportStatus.isHidden() ? '' : await reportStatus.textContent() };
+  };
+  assert.deepEqual(await copyReportReference('h1', '.local/runtime/report-reference.png'), { label: 'Source line 13', highlights: 1, copied: 'report.html:13', after: '' });
+  await guest('getSelection().setBaseAndExtent(document.querySelector("h1").firstChild, 2, document.querySelector(".intro").firstChild, 5)');
+  assert.deepEqual(await copyReportReference('.intro'), { label: 'Source lines 13–14', highlights: 0, copied: 'report.html:13-14', after: '' });
+  await guest('getSelection().removeAllRanges()');
+  const [menuX, menuY] = await reportPoint('.intro');
+  await page.mouse.click(menuX, menuY, { button: 'right' });
+  await reportMenuItem.waitFor();
+  await page.mouse.click(menuX, menuY);
+  await poll(async () => await page.locator('.menu').count() === 0 && await page.locator('.docshelf-report-highlight').count() === 0, 'A click inside the report left its reference menu open.');
+  // Electron reports right-clicks unscaled by Obsidian's zoom.
+  await page.evaluate(() => require('electron').webFrame.setZoomFactor(1.25));
+  assert.deepEqual(await copyReportReference('h1'), { label: 'Source line 13', highlights: 1, copied: 'report.html:13', after: '' });
+  await page.evaluate(() => require('electron').webFrame.setZoomFactor(1));
+  await page.evaluate(value => app.vault.setConfig('nativeMenus', value), nativeMenus);
   assert.deepEqual(await guest('({node:typeof require, process:typeof process, image:document.querySelector("img").naturalWidth, background:getComputedStyle(document.documentElement).backgroundColor})'), { node: 'undefined', process: 'undefined', image: 36, background: 'rgb(16, 24, 32)' });
   await guest('document.querySelector("#run-check").click()');
   assert.equal(await guest('document.querySelector("#checks").textContent'), '1');
@@ -570,6 +605,9 @@ try {
     return view && !view.isLoading() && view.getURL().startsWith('http://127.0.0.1:');
   }), 'Script-free report did not load.');
   await assert.rejects(guest('document.querySelector("#run-check").click()'));
+  await page.evaluate(() => app.vault.setConfig('nativeMenus', false));
+  assert.deepEqual(await copyReportReference('h1'), { label: 'Source line 13', highlights: 1, copied: 'report.html:13', after: 'Report scripts are disabled' });
+  await page.evaluate(value => app.vault.setConfig('nativeMenus', value), nativeMenus);
   console.log('Script-free HTML mode passed.');
 
   await testDirectories({ page, poll, workspace, shelfPath });

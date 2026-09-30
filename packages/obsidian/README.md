@@ -131,6 +131,8 @@ selected. GitHub Markdown retains the read-only viewer with individual line
 controls; HTML range links open its read-only Source view. These are positional
 links; later edits may move the passage. Out-of-bounds ranges are reported.
 
+Right-click a block in a local HTML report for the same **Copy DocShelf link**, **Copy source reference**, and **Reveal source** menu. It cites the source lines of the nearest block-level element around the pointer, such as a paragraph, list item, heading, or table cell, and outlines that block while the menu is open. Right-click inside a text selection to cite every block it spans. Content that report scripts create falls back to the nearest element written in the file. This works with report scripts disabled, but not for published Claude Artifacts, which DocShelf does not serve.
+
 In an HTML report, the code icon in the document header switches to Source view and the book icon returns to the report. Read-only views show a compact footer only while lines are selected, report scripts are disabled, or a document cannot load.
 
 Rendered tables show their actual source range, such as
