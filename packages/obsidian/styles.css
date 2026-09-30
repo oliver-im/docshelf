@@ -69,11 +69,12 @@ button.docshelf-empty-link:hover { color: var(--text-normal); background: var(--
 .view-content.docshelf-document { padding: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .docshelf-document-notice { padding: var(--size-4-3) var(--size-4-3) var(--size-4-8); }
 .docshelf-document-body { overflow: auto; flex: 1 1 auto; min-height: 0; position: relative; }
-.docshelf-webview { width: 100%; height: 100%; display: flex; border: 0; background: var(--background-primary); }
+/* The aria-label names the page for assistive technology; the view header already shows it, so skip Obsidian's tooltip. */
+.docshelf-webview { width: 100%; height: 100%; display: flex; border: 0; background: var(--background-primary); --no-tooltip: true; }
 .docshelf-report-layer { position: absolute; inset: 0; outline: none; }
-/* Set while a drag that started in a report is in progress; see startReportDrag. */
-body.docshelf-report-dragging * { pointer-events: none !important; }
-body.docshelf-report-dragging webview.docshelf-webview { pointer-events: auto !important; }
+/* Set while a report's button is down and briefly after; see ReportPointer. */
+body.docshelf-report-pointer * { pointer-events: none !important; }
+body.docshelf-report-pointer webview.docshelf-webview { pointer-events: auto !important; }
 .docshelf-reading { max-width: 920px; padding: 24px 28px 60px 10px; margin: 0 auto; line-height: 1.6; overflow-wrap: anywhere; }
 .docshelf-reading-block { --docshelf-gutter-width: 48px; container-type: inline-size; display: grid; grid-template-columns: var(--docshelf-gutter-width) minmax(0, 1fr); gap: 14px; position: relative; }
 .docshelf-reading-gutter { display: flex; flex-direction: column; align-items: stretch; padding: 0; border-right: 1px solid var(--background-modifier-border); }

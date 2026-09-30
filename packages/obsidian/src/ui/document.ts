@@ -9,6 +9,7 @@ import { checkRange, createAgentReference, createPermalink, parseRange } from '.
 import { sourceLines } from '../core/markdown';
 import { SOURCE_LINES_ATTRIBUTE } from '../core/server';
 import { LineSelection } from './lines';
+import { ReportPointer } from './report-pointer';
 import { renderReading } from './render';
 import { webFrame } from 'electron';
 import { session, webContents } from '@electron/remote';
@@ -42,7 +43,7 @@ export class DocumentView extends ItemView {
   private selectionToken = `docshelf-selection-${randomBytes(16).toString('hex')}`;
   private highlightKey = '';
   private highlightGeneration = 0;
-  private endReportDrag: (() => void) | null = null;
+  private reportPointer: ReportPointer | null = null;
   private unsubscribe?: () => void;
   private generation = 0;
   private closed = false;
@@ -90,7 +91,8 @@ export class DocumentView extends ItemView {
   async onClose(): Promise<void> { this.closed = true; this.generation++; this.unsubscribe?.(); this.clearContent(); }
 
   private clearContent(): void {
-    this.endReportDrag?.();
+    this.reportPointer?.stop();
+    this.reportPointer = null;
     this.reportWebview = null;
     this.reportSelection = null;
     this.highlightKey = '';
@@ -263,6 +265,7 @@ export class DocumentView extends ItemView {
     }
     if (!remote) {
       this.reportWebview = webview;
+      const pointer = this.reportPointer = new ReportPointer(webview, () => reportGuest(webview));
       // Selection changes inside the report log this view's token from the
       // isolated world; report scripts can neither see nor forge it.
       webview.addEventListener('dom-ready', () => {
@@ -276,8 +279,9 @@ export class DocumentView extends ItemView {
       webview.addEventListener('console-message', (event: Event) => {
         const { message } = event as Event & { message: string };
         if (message === this.selectionToken) void this.checkSelection(webview);
-        else if (message === `${this.selectionToken}:down`) this.startReportDrag(webview);
-        else if (message === `${this.selectionToken}:up`) this.endReportDrag?.();
+        else if (message === `${this.selectionToken}:down`) pointer.down();
+        const up = message.startsWith(`${this.selectionToken}:up:`) && /^(-?\d{1,6}),(-?\d{1,6})$/.exec(message.slice(this.selectionToken.length + 4));
+        if (up) pointer.up(Number(up[1]), Number(up[2]));
       });
       // Electron reports right-clicks inside the report. One that reaches this
       // element instead, before a new report accepts input, opens the same menu.
@@ -295,38 +299,6 @@ export class DocumentView extends ItemView {
       this.showProblem(remote ? 'The published artifact could not load. Check the network connection and source URL.' : 'The HTML viewer could not load this document. Reload to try again.');
     });
     this.body.appendChild(webview);
-  }
-
-  // A drag that starts in the report loses the pointer when it leaves the
-  // report. Until the button is released, keep the rest of the window from
-  // reacting to it, and hand a release outside back to the report, which would
-  // otherwise keep selecting as the pointer moves.
-  private startReportDrag(webview: Webview): void {
-    this.endReportDrag?.();
-    const doc = webview.ownerDocument;
-    const win = doc.defaultView;
-    if (!win || webview !== this.reportWebview) return;
-    const release = (event: MouseEvent) => {
-      if (event.button !== 0) return;
-      const bounds = webview.getBoundingClientRect();
-      const zoom = webFrame.getZoomFactor();
-      try { reportGuest(webview)?.sendInputEvent({ type: 'mouseUp', x: Math.round((event.clientX - bounds.left) * zoom), y: Math.round((event.clientY - bounds.top) * zoom), button: 'left', clickCount: 1 }); } catch { /* The report closed. */ }
-      end();
-    };
-    // A move without the button means the release happened elsewhere.
-    const move = (event: MouseEvent) => { if (!(event.buttons & 1)) end(); };
-    const end = () => {
-      doc.body.removeClass('docshelf-report-dragging');
-      win.removeEventListener('mouseup', release, true);
-      win.removeEventListener('mousemove', move, true);
-      win.removeEventListener('blur', end);
-      if (this.endReportDrag === end) this.endReportDrag = null;
-    };
-    doc.body.addClass('docshelf-report-dragging');
-    win.addEventListener('mouseup', release, true);
-    win.addEventListener('mousemove', move, true);
-    win.addEventListener('blur', end);
-    this.endReportDrag = end;
   }
 
   // Opens the reference menu for a point in this document's CSS pixels.
@@ -603,8 +575,9 @@ function reportWatchScript(token: string): string {
     if (!window.docshelfWatching) {
       const token = ${JSON.stringify(token)};
       document.addEventListener('selectionchange', () => console.debug(token));
-      addEventListener('pointerdown', event => { if (event.button === 0) console.debug(token + ':down'); }, true);
-      addEventListener('pointerup', event => { if (event.button === 0) console.debug(token + ':up'); }, true);
+      // Trusted primary-button presses and releases, for ReportPointer.
+      addEventListener('pointerdown', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':down'); }, true);
+      addEventListener('pointerup', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':up:' + Math.round(event.clientX) + ',' + Math.round(event.clientY)); }, true);
     }
     window.docshelfWatching = true;
     return null;

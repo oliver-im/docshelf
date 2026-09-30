@@ -571,6 +571,19 @@ try {
   await page.mouse.move(shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2 + 1);
   await poll(async () => await page.locator('.docshelf-item:hover').count() === 1, 'The window ignored the pointer after a report drag.');
   await resetReport();
+  // Electron also gives Obsidian each release inside the report, at the
+  // report's coordinates, which here fall on that shelf row. CDP input does
+  // not, so send the same event. Obsidian must end up hovering the report.
+  const rowCenter = [shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2];
+  const reportFrame = await page.locator('webview.docshelf-webview').boundingBox();
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down();
+  await page.mouse.move(reportFrame.x + rowCenter[0], reportFrame.y + rowCenter[1], { steps: 6 });
+  await page.mouse.up();
+  await page.evaluate(([x, y]) => window.electronWindow.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 }), rowCenter);
+  await poll(async () => await page.locator('webview.docshelf-webview:hover').count() === 1, 'Obsidian did not return to the report after its release.');
+  assert.equal(await page.locator('.docshelf-item:hover').count(), 0);
+  await resetReport();
   // Electron reports right-clicks unscaled by Obsidian's zoom.
   await page.evaluate(() => require('electron').webFrame.setZoomFactor(1.25));
   assert.deepEqual(await copyReportReference('h1', 8), { label: 'Source line 13', outlined: ['h1'], copied: 'report.html:13' });
