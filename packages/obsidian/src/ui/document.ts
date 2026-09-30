@@ -538,23 +538,26 @@ const REPORT_LIBRARY = `
     const elements = within(lines, true);
     return { lines, spans: [...new Set((elements.length ? elements : within(lines, false)).map(element => element.getAttribute(name)))].slice(0, ${MAX_HIGHLIGHT_SPANS}) };
   };
-  // The first and last text a selection actually covers: a triple-click ends
-  // at the start of the next block, which it does not select.
-  const selected = () => {
-    const selection = getSelection();
-    const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
-    if (!range) return null;
-    let first = null, last = null;
+  // The text a range actually covers: a triple-click ends at the start of the
+  // next block, which it does not select.
+  const covered = range => {
+    const nodes = [];
     const root = range.commonAncestorContainer;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let node = root.nodeType === 3 ? root : walker.nextNode(); node; node = node === root ? null : walker.nextNode()) {
       if (!node.data.trim() || !range.intersectsNode(node)) continue;
       if (node === range.startContainer && range.startOffset >= node.data.length || node === range.endContainer && range.endOffset === 0) continue;
-      first = first || node;
-      last = node;
+      nodes.push(node);
     }
-    first = block(first || range.startContainer);
-    last = block(last || range.endContainer);
+    return nodes;
+  };
+  const selected = () => {
+    const selection = getSelection();
+    const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
+    if (!range) return null;
+    const nodes = covered(range);
+    const first = block(nodes[0] || range.startContainer);
+    const last = block(nodes.at(-1) || range.endContainer);
     return first && last ? { range, first, last } : null;
   };
 `;
@@ -578,6 +581,33 @@ function reportWatchScript(token: string): string {
       // Trusted primary-button presses and releases, for ReportPointer.
       addEventListener('pointerdown', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':down'); }, true);
       addEventListener('pointerup', event => { if (event.isTrusted && event.button === 0) console.debug(token + ':up:' + Math.round(event.clientX) + ',' + Math.round(event.clientY)); }, true);
+      // A double- or triple-click that moves slightly selects whole words or
+      // paragraphs up to the pointer, and the space below a block counts as
+      // the next one. End such a selection in the last block the pointer
+      // reached instead. The selection is final by the release, and the
+      // report's sandbox blocks timers here.
+      let clicks = 0;
+      addEventListener('mousedown', event => { if (event.isTrusted && event.button === 0) clicks = event.detail; }, true);
+      addEventListener('mouseup', event => {
+        const x = event.clientX, y = event.clientY;
+        if (event.isTrusted && event.button === 0 && clicks > 1 && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) endAbove(y);
+      }, true);
+      const endAbove = y => {
+        const selection = getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        if (selection.focusNode !== range.endContainer || selection.focusOffset !== range.endOffset) return;
+        const top = node => {
+          let element = node.parentElement;
+          while (element && inline(element)) element = element.parentElement;
+          return element ? element.getBoundingClientRect().top : -Infinity;
+        };
+        const nodes = covered(range);
+        let index = nodes.length - 1;
+        while (index >= 0 && top(nodes[index]) > y) index--;
+        if (index < 0 || index === nodes.length - 1) return;
+        selection.setBaseAndExtent(range.startContainer, range.startOffset, nodes[index], nodes[index].data.length);
+      };
     }
     window.docshelfWatching = true;
     return null;

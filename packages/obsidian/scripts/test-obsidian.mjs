@@ -557,6 +557,18 @@ try {
   await selectReport('h1', '.intro', 'Source lines 13–14');
   await reportStatus.getByRole('button', { name: 'Clear selection' }).click();
   await poll(async () => await reportStatus.isHidden() && (await outlined()).length === 0 && await inReportWorld('return getSelection().isCollapsed;'), 'Clear selection left the report reference in place.');
+  // A triple-click that drifts into the space below the heading selects the
+  // next paragraph too, unless the report ends it where the pointer stopped.
+  const [tripleX, tripleY] = await reportPoint('h1', 40);
+  const headingBottom = await inReportWorld("return document.querySelector('h1').getBoundingClientRect().bottom;");
+  await page.mouse.click(tripleX, tripleY);
+  await page.mouse.click(tripleX, tripleY, { clickCount: 2 });
+  await page.mouse.down({ clickCount: 3 });
+  await page.mouse.move(tripleX, (await page.locator('webview.docshelf-webview').boundingBox()).y + headingBottom + 4, { steps: 3 });
+  await page.mouse.up({ clickCount: 3 });
+  assert.match(await inReportWorld('return getSelection().toString();'), /^Ready for a closer look\.\s*$/);
+  await poll(async () => await reportStatus.locator('.docshelf-reference-label').count() === 1 && await reportLabel() === 'Source line 13' && (await outlined()).join() === 'h1', 'A drifting triple-click did not cite only the heading.');
+  await resetReport();
   // A drag that leaves the report must not reach the rest of the window, and
   // the report must see its release there, or it keeps selecting.
   await inReportWorld("window.releases = 0; document.addEventListener('mouseup', () => window.releases++, true); return null;");
