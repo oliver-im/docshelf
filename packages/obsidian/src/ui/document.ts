@@ -40,6 +40,7 @@ export class DocumentView extends ItemView {
   private reportSelection: ReportReference | null = null;
   private selectionCheck: Promise<void> | null = null;
   private selectionPending = false;
+  private reportGeneration = 0;
   private selectionToken = `docshelf-selection-${randomBytes(16).toString('hex')}`;
   private highlightKey = '';
   private highlightGeneration = 0;
@@ -91,14 +92,27 @@ export class DocumentView extends ItemView {
   async onClose(): Promise<void> { this.closed = true; this.generation++; this.unsubscribe?.(); this.clearContent(); }
 
   private clearContent(): void {
-    this.reportPointer?.stop();
+    this.resetReportState();
     this.reportPointer = null;
     this.reportWebview = null;
-    this.reportSelection = null;
-    this.highlightKey = '';
     this.contentEl.empty();
     this.releaseReportNavigation?.();
     this.releaseReportNavigation = undefined;
+  }
+
+  private resetReportState(): void {
+    this.reportGeneration++;
+    this.highlightGeneration++;
+    this.selectionToken = `docshelf-selection-${randomBytes(16).toString('hex')}`;
+    this.reportPointer?.stop();
+    // Disconnect the hide callback before dismissing a menu for an old page.
+    const menu = this.referenceMenu;
+    this.referenceMenu = null;
+    menu?.hide();
+    this.reportSelection = null;
+    this.selectionCheck = null;
+    this.selectionPending = false;
+    this.highlightKey = '';
   }
 
   async loadDocument(): Promise<void> {
@@ -266,21 +280,35 @@ export class DocumentView extends ItemView {
     if (!remote) {
       this.reportWebview = webview;
       const pointer = this.reportPointer = new ReportPointer(webview, () => reportGuest(webview));
-      // Selection changes inside the report log this view's token from the
+      // Selection changes inside the report log this page's token from the
       // isolated world; report scripts can neither see nor forge it.
       webview.addEventListener('dom-ready', () => {
+        if (this.closed || webview !== this.reportWebview) return;
+        // The guest can reload itself without replacing the host's webview.
+        this.resetReportState();
+        this.showRangeStatus(null);
+        const generation = this.reportGeneration;
         const guest = reportGuest(webview);
         if (!guest) return;
         // Obsidian's own menu for right-clicks in webviews would open beside the
         // reference menu. Obsidian's Web viewer opts out the same way.
         try { guest.noContextMenu = true; } catch { return; }
-        void inReport(guest, reportWatchScript(this.selectionToken)).catch(() => null);
+        void inReport(guest, reportWatchScript(this.selectionToken)).then(() => {
+          if (generation === this.reportGeneration) void this.checkSelection(webview);
+        }).catch(() => null);
       });
       webview.addEventListener('console-message', (event: Event) => {
+        if (this.closed || webview !== this.reportWebview) return;
         const { message } = event as Event & { message: string };
         if (message === this.selectionToken) void this.checkSelection(webview);
         else if (message === `${this.selectionToken}:down`) pointer.down();
-        else if (message === `${this.selectionToken}:copy`) { const range = this.reportSelection?.range; if (range) void this.copyReference(range); }
+        else if (message === `${this.selectionToken}:copy`) {
+          const generation = this.reportGeneration;
+          void this.checkSelection(webview).then(() => {
+            const range = this.reportSelection?.range;
+            if (generation === this.reportGeneration && range) void this.copyReference(range);
+          });
+        }
         const up = message.startsWith(`${this.selectionToken}:up:`) && /^(-?\d{1,6}),(-?\d{1,6})$/.exec(message.slice(this.selectionToken.length + 4));
         if (up) pointer.up(Number(up[1]), Number(up[2]));
       });
@@ -305,6 +333,7 @@ export class DocumentView extends ItemView {
   // Opens the reference menu for a point in this document's CSS pixels.
   private async showReportMenu(webview: Webview, x: number, y: number): Promise<void> {
     const artifact = this.artifact;
+    const generation = this.reportGeneration;
     if (!artifact || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const bounds = webview.getBoundingClientRect();
     let found: { text?: unknown; reference?: unknown } | null = null;
@@ -315,7 +344,7 @@ export class DocumentView extends ItemView {
         found = await inReport(guest, reportPointScript(Math.round((x - bounds.left) * scale), Math.round((y - bounds.top) * scale))) as { text?: unknown; reference?: unknown } | null;
       }
     } catch { /* Cite the whole report. */ }
-    if (this.closed || !webview.isConnected || artifact !== this.artifact) return;
+    if (this.closed || webview !== this.reportWebview || generation !== this.reportGeneration || !webview.isConnected || artifact !== this.artifact) return;
     const reference = this.readReference(found?.reference);
     const range = reference?.range || null;
     // Right-clicks inside the report never reach an open menu's close handler.
@@ -364,20 +393,22 @@ export class DocumentView extends ItemView {
 
   // Reads the report's selection again, repeating if it changed meanwhile.
   private async checkSelection(webview: Webview): Promise<void> {
+    if (this.closed || webview !== this.reportWebview) return;
     if (this.selectionCheck) { this.selectionPending = true; return this.selectionCheck; }
+    const generation = this.reportGeneration;
     const check = (async () => {
       do {
         this.selectionPending = false;
         const guest = reportGuest(webview);
         const found = guest ? await inReport(guest, REPORT_SELECTION_SCRIPT).catch(() => 'same') : 'same';
-        if (this.closed || webview !== this.reportWebview) return;
+        if (this.closed || webview !== this.reportWebview || generation !== this.reportGeneration) return;
         if (found === 'same') continue;
         this.reportSelection = this.readReference(found);
         if (!this.referenceMenu) this.showReportSelection(webview);
       } while (this.selectionPending);
     })();
     this.selectionCheck = check;
-    try { await check; } finally { this.selectionCheck = null; }
+    try { await check; } finally { if (this.selectionCheck === check) this.selectionCheck = null; }
   }
 
   private showReportSelection(webview: Webview): void {
@@ -583,10 +614,11 @@ function reportWatchScript(token: string): string {
       const token = ${JSON.stringify(token)};
       document.addEventListener('selectionchange', () => console.debug(token));
       // The copy button beside a highlighted reference. It is part of the report
-      // so that it scrolls with it, and its closed shadow root keeps the
-      // report's styles and scripts away from its contents.
+      // so that it scrolls with it. The closed shadow protects its contents;
+      // the shared host element still needs validation before a trusted click.
       const copyHost = document.createElement('docshelf-copy');
-      copyHost.setAttribute('style', 'all: initial !important; position: absolute !important; z-index: 2147483647 !important; display: block !important;');
+      const hostStyle = 'all: initial !important; position: absolute !important; z-index: 2147483647 !important; display: block !important;';
+      let placedStyle = '', placedBox = null;
       const copyButton = document.createElement('button');
       copyButton.type = 'button';
       copyButton.title = 'Copy source reference';
@@ -605,30 +637,55 @@ function reportWatchScript(token: string): string {
       copyHost.attachShadow({ mode: 'closed' }).append(copyStyle, copyButton);
       // Pressing it must not move the report's selection or focus.
       copyButton.addEventListener('mousedown', event => event.preventDefault());
-      copyButton.addEventListener('click', event => { if (event.isTrusted) console.debug(token + ':copy'); });
-      let copied = [];
+      copyButton.addEventListener('click', event => {
+        if (!event.isTrusted || !placedBox || copyHost.parentElement !== document.documentElement || copyHost.getAttribute('style') !== placedStyle) return;
+        const box = copyHost.getBoundingClientRect();
+        if (['x', 'y', 'width', 'height'].some(key => Math.abs(box[key] - placedBox[key]) > 1)) return;
+        if (event.detail && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) return;
+        // An ancestor can conceal or transform the otherwise isolated button.
+        const rootStyle = getComputedStyle(document.documentElement);
+        if (rootStyle.opacity !== '1' || rootStyle.visibility !== 'visible' || ['filter', 'transform', 'perspective', 'clipPath', 'maskImage'].some(key => rootStyle[key] !== 'none')) return;
+        console.debug(token + ':copy');
+      });
+      let copied = [], copySpans = [];
       // Beside the first line, and while that scrolls away, at the top of the
       // view for as long as the reference is on screen.
       const placeCopy = () => {
         const first = copied[0], last = copied.at(-1);
-        if (!first || !first.isConnected || !last.isConnected) { copyHost.remove(); return; }
+        if (!first || !first.isConnected || !last.isConnected) { placedBox = null; copyHost.remove(); return; }
         const box = first.getBoundingClientRect(), end = last.getBoundingClientRect(), style = getComputedStyle(first);
         const size = 22;
         const line = Math.min(parseFloat(style.lineHeight) || 1.2 * parseFloat(style.fontSize) || size, box.height);
         const top = Math.min(Math.max(box.top + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.paddingTop) || 0) + (line - size) / 2, 8), end.bottom - size);
-        copyHost.style.setProperty('left', Math.max(box.left - size - 8, 2) + scrollX + 'px', 'important');
-        copyHost.style.setProperty('top', top + scrollY + 'px', 'important');
-        if (!copyHost.isConnected) document.documentElement.append(copyHost);
+        // Rebuild the whole style rather than accepting report-authored changes
+        // when a later scroll or selection places the button again.
+        copyHost.setAttribute('style', hostStyle + ' left: ' + (Math.max(box.left - size - 8, 2) + scrollX) + 'px !important; top: ' + (top + scrollY) + 'px !important;');
+        if (copyHost.parentElement !== document.documentElement) document.documentElement.append(copyHost);
+        placedStyle = copyHost.getAttribute('style');
+        placedBox = copyHost.getBoundingClientRect();
+      };
+      const refreshCopy = () => {
+        const elements = copySpans.length ? [...document.querySelectorAll(copySpans.map(span => '[' + name + '="' + span + '"]').join(', '))] : [];
+        copied = elements.filter(element => !elements.some(other => other !== element && other.contains(element)));
+        placeCopy();
       };
       window.docshelfPlaceCopy = (spans, accent, onAccent) => {
-        const elements = spans.length ? [...document.querySelectorAll(spans.map(span => '[' + name + '="' + span + '"]').join(', '))] : [];
-        copied = elements.filter(element => !elements.some(other => other !== element && other.contains(element)));
+        copySpans = spans;
         copyButton.style.setProperty('--accent', accent);
         copyButton.style.setProperty('--on-accent', onAccent);
-        placeCopy();
+        refreshCopy();
       };
       addEventListener('scroll', placeCopy, { capture: true, passive: true });
       addEventListener('resize', placeCopy);
+      // Selection endpoints alone do not identify their source blocks after a
+      // report changes its DOM. Ignore our own host/placement mutations.
+      new MutationObserver(records => {
+        const changed = records.some(record => record.target !== copyHost && !(record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node => node === copyHost)));
+        if (!changed) return;
+        if (window.docshelfSelection) window.docshelfSelection.bounds = null;
+        refreshCopy();
+        console.debug(token);
+      }).observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: [name, 'style', 'class', 'hidden'] });
       // Trusted primary-button presses and releases, for ReportPointer.
       const reportPress = event => event.isTrusted && event.button === 0 && event.target !== copyHost;
       addEventListener('pointerdown', event => { if (reportPress(event)) console.debug(token + ':down'); }, true);
@@ -670,18 +727,18 @@ function reportWatchScript(token: string): string {
 // frequent checks stay cheap. The state lives in the isolated world, which
 // report scripts cannot read or write.
 const REPORT_SELECTION_SCRIPT = `
-  const state = window.docshelfSelection || (window.docshelfSelection = { bounds: [], key: '' });
+  const state = window.docshelfSelection || (window.docshelfSelection = { bounds: null, key: null });
   const current = getSelection();
   const range = current && current.rangeCount ? current.getRangeAt(0) : null;
   const bounds = range && !range.collapsed ? [range.startContainer, range.startOffset, range.endContainer, range.endOffset] : [];
-  if (bounds.length === state.bounds.length && bounds.every((value, index) => value === state.bounds[index])) return 'same';
+  if (state.bounds && bounds.length === state.bounds.length && bounds.every((value, index) => value === state.bounds[index])) return 'same';
   state.bounds = bounds;
   const selection = selected();
-  const lines = selection && [Math.min(spanOf(selection.first)[0], spanOf(selection.last)[0]), Math.max(spanOf(selection.first)[1], spanOf(selection.last)[1])];
-  const key = lines ? lines.join('-') : '';
+  const result = selection && reference(selection.first, selection.last);
+  const key = JSON.stringify(result);
   if (key === state.key) return 'same';
   state.key = key;
-  return selection && reference(selection.first, selection.last);
+  return result;
 `;
 
 const REPORT_COPY_SCRIPT = `
@@ -695,7 +752,7 @@ const REPORT_COPY_SCRIPT = `
 
 const REPORT_CLEAR_SCRIPT = `
   getSelection().removeAllRanges();
-  window.docshelfSelection = { bounds: [], key: '' };
+  window.docshelfSelection = { bounds: [], key: 'null' };
   return null;
 `;
 

@@ -70,6 +70,7 @@ but use different rendering and file-access boundaries.
   loading. Reports receive no privileged plugin bridge; external HTTP(S) links
   open in the system browser. Renderer isolation is covered by the disposable
   Obsidian runtime suite; current verification covers Obsidian 1.13.7 on macOS.
+- HTML source references use a separate JavaScript world and a random token renewed for each loaded report. The host validates returned source ranges against the registered document. The copy button lives in the report DOM; its closed shadow encapsulates its contents, while trusted clicks also check that its host retains its placement and styles and that its ancestor has not concealed or transformed it. This does not make the surrounding report UI trusted. Enabled report scripts retain browser capabilities, including clipboard access in the currently tested runtime.
 - Public GitHub Markdown is registered in the shelf, downloaded without
   authentication under a streaming 2 MB limit, stripped of raw HTML, and
   sanitized. It is cached in memory and becomes searchable after fetching.

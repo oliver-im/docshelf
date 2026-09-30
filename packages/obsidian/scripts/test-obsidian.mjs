@@ -12,6 +12,7 @@ import { testNativeLayout } from './test-native-layout.mjs';
 import { testNativeRegressions } from './test-native-regressions.mjs';
 import { testNativeModes } from './test-native-modes.mjs';
 import { testReportRegressions } from './test-report-regressions.mjs';
+import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
@@ -632,6 +633,10 @@ try {
   assert.deepEqual(probes, { file: 'blocked', app: 'blocked', unregistered: 'blocked', parent: 'undefined' });
   await page.screenshot({ path: '.local/runtime/report.png' });
   console.log('HTML scripts, relative CSS/image, and local-file isolation checks passed.');
+  await testReportReferences({ page, poll, guest, reportStatus, selectReport, reportPoint, copied });
+  // The focused reference checks reload the report; restore the interaction
+  // state that the following preservation checks expect.
+  await guest('document.querySelector("#run-check").click()');
   await testReportRegressions({ page, poll, workspace, shelfPath, shelf, guest });
 
   await guest('document.querySelector("a").click()');
