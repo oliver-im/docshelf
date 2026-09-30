@@ -472,6 +472,16 @@ try {
     await plugin.openArtifact(plugin.catalog.artifacts[1]);
   });
   await page.locator('webview.docshelf-webview').waitFor();
+  assert.equal(await page.locator('.view-header-title:visible').last().textContent(), 'Release report');
+  const reportStatus = page.locator('.docshelf-document .docshelf-editor-status');
+  await page.locator('.view-action[aria-label="Switch to source view"]:visible').click();
+  await page.locator('.docshelf-source-row:visible [data-line="3"]').click();
+  assert.equal(await reportStatus.locator('.docshelf-reference-label').textContent(), 'Source line 3');
+  await page.screenshot({ path: '.local/runtime/report-source.png' });
+  await reportStatus.getByRole('button', { name: 'Clear selection' }).click();
+  assert.equal(await reportStatus.isHidden(), true);
+  await page.locator('.view-action[aria-label="Switch to report view"]:visible').click();
+  await page.locator('webview.docshelf-webview').waitFor();
   const guest = script => page.evaluate(script => document.querySelector('webview.docshelf-webview').executeJavaScript(script), script);
   await poll(() => guest('!!document.querySelector("#run-check")'), 'The interactive HTML report did not load.');
   assert.deepEqual(await guest('({node:typeof require, process:typeof process, image:document.querySelector("img").naturalWidth, background:getComputedStyle(document.documentElement).backgroundColor})'), { node: 'undefined', process: 'undefined', image: 36, background: 'rgb(16, 24, 32)' });

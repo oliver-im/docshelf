@@ -131,6 +131,8 @@ selected. GitHub Markdown retains the read-only viewer with individual line
 controls; HTML range links open its read-only Source view. These are positional
 links; later edits may move the passage. Out-of-bounds ranges are reported.
 
+In an HTML report, the code icon in the document header switches to Source view and the book icon returns to the report. Read-only views show a compact footer only while lines are selected, report scripts are disabled, or a document cannot load.
+
 Rendered tables show their actual source range, such as
 **17–20**, in the gutter. Clicking it references that whole block. Wrapped text
 keeps its original source-line number. Source mode exposes individual table rows
