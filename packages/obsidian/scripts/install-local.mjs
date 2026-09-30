@@ -1,8 +1,9 @@
-import { copyFile, readFile, realpath } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
+import { replacePluginFiles } from './install-files.mjs';
 
 // Replaces the DocShelf build in the developer's own vault and reloads it in
 // the running Obsidian, so a change can be tried at once. The vault comes from
@@ -16,7 +17,7 @@ const target = path.join(vault, '.obsidian', 'plugins', manifest.id);
 // Replace an existing installation only; never install into a new vault.
 const installed = await readFile(path.join(target, 'manifest.json'), 'utf8').then(JSON.parse, () => null);
 if (installed?.id !== manifest.id) throw new Error(`${target} has no installed ${manifest.id} plugin to replace.`);
-for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(name, path.join(target, name));
+await replacePluginFiles('.', target);
 console.log(`Installed ${manifest.id} ${manifest.version} in ${vault}.`);
 
 // Obsidian's command line interface opens a vault that is not already open,

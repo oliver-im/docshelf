@@ -595,8 +595,8 @@ try {
   await page.mouse.move(shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2, { steps: 8 });
   assert.equal(await page.locator('.docshelf-item:hover').count(), 0);
   await page.mouse.up();
-  await poll(async () => await inReportWorld('return window.releases;') === 1, 'The report did not see a release outside it.');
   await page.mouse.move(shelfRow.x + shelfRow.width / 2, shelfRow.y + shelfRow.height / 2 + 1);
+  await poll(async () => await inReportWorld('return window.releases;') === 1, 'The report did not see a release outside it after an immediate pointer move.');
   await poll(async () => await page.locator('.docshelf-item:hover').count() === 1, 'The window ignored the pointer after a report drag.');
   await resetReport();
   // Electron also gives Obsidian each release inside the report, at the

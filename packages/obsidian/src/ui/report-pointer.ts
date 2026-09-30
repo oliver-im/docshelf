@@ -22,6 +22,7 @@ export class ReportPointer {
   private active = false;
   private insideRelease: { x: number; y: number } | null = null;
   private outsideRelease: MouseEvent | null = null;
+  private movedAfterRelease = false;
   private timer = 0;
 
   constructor(private webview: HTMLElement, private guest: () => ReportGuest | null) {}
@@ -33,6 +34,7 @@ export class ReportPointer {
     win.clearTimeout(this.timer);
     this.insideRelease = null;
     this.outsideRelease = null;
+    this.movedAfterRelease = false;
     if (this.active) return;
     this.active = true;
     this.webview.ownerDocument.body.addClass('docshelf-report-pointer');
@@ -44,6 +46,9 @@ export class ReportPointer {
   // The report saw the release at these report coordinates.
   up(x: number, y: number): void {
     if (!this.active) return;
+    // A real move already corrected the host position while this guest
+    // notification was in transit. The guest also has its release.
+    if (this.movedAfterRelease) { this.stop(); return; }
     this.insideRelease = { x, y };
     this.settleSoon();
   }
@@ -65,10 +70,16 @@ export class ReportPointer {
     this.settleSoon();
   };
 
-  // A move without the button means the release is handled, including the
-  // move that settle sends.
+  // A buttonless move corrects the host position, but an outside release
+  // still needs forwarding. Wait for a possible delayed guest notification
+  // before deciding which kind of release it was.
   private onMouseMove = (event: MouseEvent): void => {
-    if (!(event.buttons & 1)) this.stop();
+    if (event.buttons & 1) return;
+    if (this.outsideRelease && !this.insideRelease) {
+      this.movedAfterRelease = true;
+      return;
+    }
+    this.stop();
   };
 
   private settleSoon(): void {

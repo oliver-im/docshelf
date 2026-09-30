@@ -296,11 +296,13 @@ web app and Obsidian links from the same shelf; see [shared setup and difference
 
 Write your vault's path to `packages/obsidian/.local/dev-vault`, which Git ignores, or set `DOCSHELF_DEV_VAULT`. Then run `npm run install:local`. It rebuilds, replaces `main.js`, `manifest.json`, and `styles.css` in that vault's existing DocShelf installation, and reloads the plugin in the running Obsidian through its command line interface (**Settings → General → Advanced → Command line interface**). Settings and recovery drafts stay in place. It refuses a vault without DocShelf installed, and it skips the reload unless Obsidian already has the vault open, because the command line interface would open it.
 
+The installer stages the new build and backups before replacing any installed file. A failed replacement restores files already replaced; if restoration also fails, the error names the directory holding the original files for manual recovery. The three-file update is not atomic across a process crash.
+
 ## License
 
 MIT. URL and line-range helpers are shared with the web app through `@docshelf/core`. Each build embeds the plugin's MIT license and the full license and notice texts of bundled dependencies in `main.js`. Packaging also includes separate `LICENSE` and `THIRD_PARTY_NOTICES.txt` files. These notices accompany both the ZIP and the standard three-file Obsidian installation.
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.4.1/docshelf-0.4.1.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.4.1
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.5.0/docshelf-0.5.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.5.0
