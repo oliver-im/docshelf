@@ -322,12 +322,12 @@ export default class DocShelfPlugin extends Plugin {
     this.unread = unreadSources(state, current);
   }
 
-  private markArtifactRead(artifact: Artifact): void {
-    const id = sourceIdentity(artifact);
-    if (!this.readState || !this.unread.has(id)) return;
-    this.readState.state = markRead(this.readState.state, [id]);
+  markArtifactsRead(artifacts: Artifact[]): void {
+    const ids = artifacts.map(sourceIdentity).filter(id => this.unread.has(id));
+    if (!this.readState || !ids.length) return;
+    this.readState.state = markRead(this.readState.state, ids);
     this.saveReadState(this.readState.key, this.readState.state);
-    this.unread.delete(id);
+    for (const id of ids) this.unread.delete(id);
     this.emit();
   }
 
@@ -411,7 +411,7 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   async openArtifact(artifact: Artifact, range: LineRange | null = null, hash = '', target?: WorkspaceLeaf): Promise<void> {
-    this.markArtifactRead(artifact);
+    this.markArtifactsRead([artifact]);
     const native = artifact.kind === 'markdown';
     const type = native ? NATIVE_MARKDOWN_VIEW : DOCUMENT_VIEW;
     const existing = this.app.workspace.getLeavesOfType(type).find(leaf => {

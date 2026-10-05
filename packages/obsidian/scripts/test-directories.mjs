@@ -222,6 +222,47 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   }, file);
   assert.deepEqual(await unreadRows(), [], 'Opening announced documents must mark them read.');
   await page.evaluate(file => app.plugins.getPlugin('docshelf').nativeViews().find(view => view.artifact?.sourcePath === file).leaf.detach(), second);
+  // Bulk reads include collapsed descendants but stay within the selected folder or project.
+  const outside = baseline.artifacts[0].source;
+  const beforeBulkRead = await readFile(shelfPath, 'utf8');
+  await page.evaluate(() => { document.hasFocus = () => false; });
+  for (const file of [first, second, live, loose, outside]) await announce(file);
+  await poll(announcementsRead, 'Bulk-read fixtures were not announced.');
+  await page.evaluate(() => { delete document.hasFocus; });
+  const nestedToggle = page.locator('.docshelf-folder-toggle[data-project="Watched project"]').filter({ has: page.getByText('nested', { exact: true }) });
+  await nestedToggle.click();
+  const markAllRead = async toggle => {
+    await toggle.click({ button: 'right' });
+    const labels = await page.locator('.menu-item-title').allTextContents();
+    assert.equal(labels[labels.indexOf('Mark all as read') + 1], 'Remove from shelf…');
+    await page.locator('.menu-item').filter({ hasText: /^Mark all as read$/ }).click();
+  };
+  await markAllRead(nestedToggle);
+  assert.deepEqual(await unreadRows(), ['Watched project', 'watched-documents', 'first.md', 'loose-document.md'], 'Reading a nested folder must leave its siblings unread.');
+  assert.equal(await nestedToggle.getAttribute('aria-expanded'), 'false', 'Bulk reading must not expand the folder.');
+  await markAllRead(folderToggle);
+  assert.deepEqual(await unreadRows(), ['Watched project', 'loose-document.md'], 'Reading a folder must leave loose project documents unread.');
+  const watchedProject = page.locator('.docshelf-project-toggle[data-project="Watched project"]');
+  await markAllRead(watchedProject);
+  assert.deepEqual(await unreadRows(), []);
+  assert.equal(await page.evaluate(file => {
+    const plugin = app.plugins.getPlugin('docshelf');
+    return plugin.isUnread(plugin.catalog.artifacts.find(artifact => artifact.sourcePath === file));
+  }, outside), true, 'Reading a project must leave other projects unread.');
+  await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+  assert.deepEqual(await unreadRows(), [], 'Bulk reads must survive loading read state again.');
+  assert.equal(await readFile(shelfPath, 'utf8'), beforeBulkRead, 'Bulk reads must not change the shared shelf.');
+  await watchedProject.focus();
+  await watchedProject.press('Shift+F10');
+  assert.equal(await page.locator('.menu-item').filter({ hasText: /^Mark all as read$/ }).evaluate(item => item.classList.contains('is-disabled')), true);
+  await page.keyboard.press('Escape');
+  const later = path.join(directory, 'nested/later.md');
+  await writeFile(later, '# Arrived after bulk read\n');
+  await poll(async () => (await unreadRows()).includes('later.md'), 'Documents arriving after a bulk read must still be unread.');
+  await markAllRead(folderToggle);
+  assert.deepEqual(await unreadRows(), [], 'Reading a parent folder must include unread collapsed descendants.');
+  await rm(later);
+  await nestedToggle.click();
   await page.screenshot({ path: '.local/runtime/directories-live.png' });
   // Check removal before the asynchronous catalog watcher can update its cache.
   await page.evaluate(({ file, shelfPath }) => {

@@ -359,7 +359,7 @@ const blankFrameUrl = 'about:blank';
       unread = unreadSources(readState, shelfSources);
       showUnread();
       // Another tab applied an announced update to the document this focused tab shows, where the reader sees it refresh.
-      if (currentArtifact && shownWasRead && readerIsLooking()) markArtifactRead(currentArtifact);
+      if (currentArtifact && shownWasRead && readerIsLooking()) markArtifactsRead([currentArtifact]);
     });
 
     for (const frame of frames) {
@@ -697,8 +697,9 @@ const blankFrameUrl = 'about:blank';
       menu.className = 'docshelf-document-menu'; menu.setAttribute('popover', 'manual'); menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Shelf actions');
       const menuItem = (label: string) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = label; item.setAttribute('role', 'menuitem'); return item; };
       const button = menuItem('Add…');
+      const readButton = menuItem('Mark all as read');
       const removeButton = menuItem('Remove from shelf…');
-      menu.append(button, removeButton); sidebar.append(menu);
+      menu.append(button, readButton, removeButton); sidebar.append(menu);
       const folderGroups = JSON.parse(root.dataset.folderGroups || '[]') as Array<{ project: string; folders: Array<{ key: string; name: string; title: string }> }>;
       for (const group of sidebar.querySelectorAll('ul.top-level > li > details')) {
         const headings = Array.from(group.querySelectorAll<HTMLElement>('summary'));
@@ -715,16 +716,22 @@ const blankFrameUrl = 'about:blank';
       let project = '';
       let removal: ShelfGroup | undefined;
       let removalToken: string | undefined;
+      let readGroup: HTMLDetailsElement | null = null;
       let anchor: HTMLElement | null = null;
       let point = { x: 0, y: 0 };
       let opened = 0;
       const close = () => { if (menu.matches(':popover-open')) menu.hidePopover(); };
+      const groupArtifacts = () => {
+        const routes = new Set(sidebarLinks.filter(({ link }) => readGroup?.contains(link)).map(({ route }) => route));
+        return artifacts.filter(artifact => routes.has(artifact.route));
+      };
       button.onclick = () => { close(); window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } })); };
+      readButton.onclick = () => { close(); markArtifactsRead(groupArtifacts()); anchor?.focus(); };
       removeButton.onclick = () => { close(); if (anchor && removal && removalToken) documentActions.removeGroup(removal, anchor, removalToken); };
       menu.onkeydown = event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault();
-          const items = [button, removeButton].filter(item => !item.hidden);
+          const items = [button, readButton, removeButton].filter(item => !item.hidden && !item.disabled);
           const index = items.indexOf(document.activeElement as HTMLButtonElement);
           items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
         } else if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); }
@@ -744,6 +751,9 @@ const blankFrameUrl = 'about:blank';
         const summary = target.closest('ul.top-level > li')?.querySelector(':scope > details > summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
         const heading = target.closest('summary');
+        readGroup = heading?.closest('details') ?? null;
+        readButton.hidden = !readGroup;
+        readButton.disabled = !groupArtifacts().some(artifact => artifact.sourceId && unread.has(artifact.sourceId));
         const folder = heading instanceof HTMLElement ? heading.dataset.docshelfFolder : undefined;
         removal = !project ? undefined : heading === summary ? { project } : folder ? { project, folder, name: (heading as HTMLElement).dataset.docshelfFolderName } : undefined;
         removalToken = undefined;
@@ -840,7 +850,7 @@ const blankFrameUrl = 'about:blank';
       document.title = `${artifact.title} | DocShelf`;
       hideArtifactError();
       // Refreshing the document already shown is not reading it, so an announced update stays unread.
-      if (routeChanged || !forceRefresh) markArtifactRead(artifact);
+      if (routeChanged || !forceRefresh) markArtifactsRead([artifact]);
 
       if (changed || forceRefresh) void displayArtifact(artifact, selection);
 
@@ -866,12 +876,13 @@ const blankFrameUrl = 'about:blank';
       }
     }
 
-    function markArtifactRead(artifact: Artifact) {
-      if (!readState || !artifact.sourceId || !unread.has(artifact.sourceId)) return;
+    function markArtifactsRead(documents: Artifact[]) {
+      const ids = documents.flatMap(artifact => artifact.sourceId ? [artifact.sourceId] : []);
+      if (!readState || !ids.some(id => unread.has(id))) return;
       // Start from the stored state so reads in other tabs are kept.
       readState = markRead(
         reconcileReadState(readStoredValue(readStateStorageKey) ?? readState, shelfSources),
-        [artifact.sourceId],
+        ids,
       );
       writeStoredValue(readStateStorageKey, readState);
       unread = unreadSources(readState, shelfSources);

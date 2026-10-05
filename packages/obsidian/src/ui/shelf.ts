@@ -286,6 +286,7 @@ export class ShelfView extends ItemView {
     const menu = this.createMenu(project);
     this.addMoveActions(menu, childKey(node), () => this.siblingFolders(project, parent), order => this.saveSiblingFolders(project, parent, order, node.key));
     menu.addSeparator();
+    this.addMarkAllReadAction(menu, project, node.key);
     menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project, folder: node.key, name: node.path.join('/') })));
     this.showMenu(menu, toggle);
   }
@@ -380,6 +381,7 @@ export class ShelfView extends ItemView {
     }));
     menu.addItem(item => item.setTitle('Reset project order').setIcon('list-restart').setDisabled(!this.projectOrder.length).onClick(() => this.saveProjectOrder([], project)));
     menu.addSeparator();
+    this.addMarkAllReadAction(menu, project);
     menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project })));
     this.showMenu(menu, toggle);
   }
@@ -399,6 +401,21 @@ export class ShelfView extends ItemView {
     menu.addItem(item => item.setTitle('Add…').setIcon('plus').onClick(() => this.plugin.showAdd(project)));
     menu.addSeparator();
     return menu;
+  }
+
+  private addMarkAllReadAction(menu: Menu, project: string, folder?: string): void {
+    const documents = () => {
+      const folders = folder ? this.plugin.documentFolders() : undefined;
+      return (this.plugin.catalog?.artifacts || []).filter(artifact => artifact.project === project
+        && (!folder || folders?.get(artifact.route)?.some(segment => segment.key === folder)));
+    };
+    menu.addItem(item => item.setTitle('Mark all as read').setIcon('check-check')
+      .setDisabled(!documents().some(artifact => this.plugin.isUnread(artifact)))
+      .onClick(() => {
+        this.plugin.markArtifactsRead(documents());
+        Array.from(this.results.querySelectorAll<HTMLButtonElement>(folder ? '.docshelf-folder-toggle' : '.docshelf-project-toggle'))
+          .find(button => button.dataset.project === project && (!folder || button.dataset.folder === folder))?.focus();
+      }));
   }
 
   private addMoveActions(menu: Menu, key: string, getOrder: () => string[], saveOrder: (order: string[]) => void): void {
