@@ -36,6 +36,8 @@ Removing a folder registration or source file keeps an open unsaved Obsidian dra
 
 Documents that arrive on the shelf are unread until you open them, like new mail: the name is bold with a dot, and each folder and project containing it shows a dot. This covers files that appear in watched folders and registrations made elsewhere, such as by an agent or in the other app. Everything already on the shelf the first time an app loads it, and anything you add with **Add…** in that app, starts as read. Your own edits never make a document unread; an agent's edit does when the agent [announces it](events.md). Read state follows the source file, so a changed link keeps it, while a renamed file arrives as a new, unread document.
 
+To clear the unread dots for a folder or project, right-click its row and choose **Mark all as read**, above **Remove from shelf…**. This includes documents in collapsed subfolders and is disabled when the group has no unread documents. Documents that arrive later still start unread.
+
 Read state stays on your device and is never written to the shelf file. The web app keeps it per browser and Obsidian per vault and shelf, so opening a document in one app does not mark it read in the other. Browser imports are never unread.
 
 ## Shelf format
