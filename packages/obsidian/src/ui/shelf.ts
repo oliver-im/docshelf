@@ -412,9 +412,10 @@ export class ShelfView extends ItemView {
     menu.addItem(item => item.setTitle('Mark all as read').setIcon('check-check')
       .setDisabled(!documents().some(artifact => this.plugin.isUnread(artifact)))
       .onClick(() => {
-        this.plugin.markArtifactsRead(documents());
-        Array.from(this.results.querySelectorAll<HTMLButtonElement>(folder ? '.docshelf-folder-toggle' : '.docshelf-project-toggle'))
-          .find(button => button.dataset.project === project && (!folder || button.dataset.folder === folder))?.focus();
+        void this.plugin.markArtifactsRead(documents()).then(() => {
+          Array.from(this.results.querySelectorAll<HTMLButtonElement>(folder ? '.docshelf-folder-toggle' : '.docshelf-project-toggle'))
+            .find(button => button.dataset.project === project && (!folder || button.dataset.folder === folder))?.focus();
+        });
       }));
   }
 

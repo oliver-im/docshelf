@@ -71,7 +71,7 @@ For a foreground server on other platforms or without automatic startup, use `np
 
 ### Install the Obsidian plugin
 
-Requires **desktop Obsidian 1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. Runtime verification of this **desktop beta** covers macOS with Obsidian 1.13.7; Windows, Linux, and Obsidian 1.14.2 are not yet verified.
+Requires **desktop Obsidian 1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. The full packaged runtime suite for this **desktop beta** passes on macOS with Obsidian 1.14.4; focused shared-read checks cover Obsidian 1.13.7. Windows and Linux are not yet verified.
 
 **[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
@@ -120,5 +120,5 @@ To register documents manually, follow the [web app registration guide](https://
 
 MIT. Themes adapt Tokyo Night for Obsidian; the optional HTML theme also includes matcha.css. See the [third-party notices](https://github.com/oliver-im/docshelf/blob/main/THIRD_PARTY_NOTICES.md).
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.6.0/docshelf-0.6.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.6.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.7.0/docshelf-0.7.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.7.0

@@ -14,6 +14,7 @@ import { testNativeModes } from './test-native-modes.mjs';
 import { testReportRegressions } from './test-report-regressions.mjs';
 import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
+import { testSharedReadState } from './test-shared-read-state.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 // Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
@@ -29,6 +30,7 @@ const env = { ...process.env, HOME: home };
 // The keychain follows HOME on macOS; a mock keeps the test app from asking to create one or using the user's.
 const isolation = [`--user-data-dir=${profile}`, '--use-mock-keychain'];
 const vault = path.join(root, 'DocShelf runtime vault');
+const secondVault = path.join(root, 'DocShelf second vault');
 const workspace = path.join(root, 'workspace');
 const pluginPath = path.join(vault, '.obsidian', 'plugins', 'docshelf');
 const packageMode = process.argv.includes('--package');
@@ -50,7 +52,7 @@ const bundleDirectory = process.env.OBSIDIAN_BUNDLE_DIRECTORY || path.join(homed
 const bundles = (await readdir(bundleDirectory)).filter(name => /^obsidian-[\d.]+\.asar$/.test(name)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 if (!bundles[0]) throw new Error('No installed Obsidian runtime bundle found. Set OBSIDIAN_BUNDLE_DIRECTORY.');
 await copyFile(path.join(bundleDirectory, bundles[0]), path.join(profile, bundles[0]));
-await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ vaults: { 'd0c5he1f00000001': { path: vault, open: true, ts: Date.now() } }, updateDisabled: true }));
+await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ vaults: { 'd0c5he1f00000001': { path: vault, open: true, ts: Date.now() }, 'd0c5he1f00000002': { path: secondVault, ts: Date.now() } }, updateDisabled: true }));
 await writeFile(path.join(vault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
 await writeFile(path.join(vault, '.obsidian', 'core-plugins.json'), JSON.stringify(['file-explorer', 'search']));
 await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ theme: 'obsidian' }));
@@ -64,6 +66,12 @@ const shelfTarget = path.join(vault, '.shelf-source.json');
 await writeFile(shelfTarget, JSON.stringify(shelf));
 await symlink(shelfTarget, shelfPath);
 await writeFile(path.join(pluginPath, 'data.json'), JSON.stringify({ shelfPath: 'shelf.local.json', workspaceRoot: workspace, runHtmlScripts: true }));
+const secondPlugin = path.join(secondVault, '.obsidian', 'plugins', 'docshelf');
+await mkdir(secondPlugin, { recursive: true });
+for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(path.join(pluginPath, name), path.join(secondPlugin, name));
+await writeFile(path.join(secondPlugin, 'data.json'), JSON.stringify({ shelfPath, workspaceRoot: workspace, runHtmlScripts: true }));
+await writeFile(path.join(secondVault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
+await writeFile(path.join(secondVault, '.obsidian', 'core-plugins.json'), '[]');
 
 const log = createWriteStream('.local/runtime/obsidian.log');
 const child = spawn(executable, [...isolation, '--remote-debugging-port=0'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -90,7 +98,7 @@ try {
   const port = await poll(async () => (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0], 'Obsidian did not expose the test debugging port.', 30_000);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = await poll(() => browser.contexts()[0].pages().find(page => page.url().includes('index.html')), 'The test vault did not open.');
-  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('pageerror', error => { pageErrors.push(error.message); console.error('Page error:', error.stack || error.message); });
   page.on('console', entry => { if (entry.type() === 'error') console.error('Renderer:', entry.text()); });
   await page.waitForFunction(() => window.app?.workspace?.layoutReady, { timeout: 30_000 });
   await page.setViewportSize({ width: 1180, height: 860 });
@@ -719,6 +727,25 @@ try {
   console.log('Script-free HTML mode passed.');
 
   await testDirectories({ page, poll, workspace, shelfPath });
+  await testSharedReadState({ page, poll, shelfPath, openSecondVault: async () => {
+    const dispatch = spawn(executable, [...isolation, 'obsidian://open?vault=d0c5he1f00000002'], { env, stdio: 'ignore' });
+    dispatchProcesses.push(dispatch);
+    const second = await poll(async () => {
+      for (const candidate of browser.contexts()[0].pages()) {
+        if (candidate === page) continue;
+        if (await candidate.evaluate(() => window.app?.vault?.getName() === 'DocShelf second vault').catch(() => false)) return candidate;
+      }
+    }, 'The second test vault did not open.');
+    second.on('pageerror', error => { pageErrors.push(error.message); console.error('Second vault page error:', error.stack || error.message); });
+    const trust = second.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
+    if (await trust.count()) await trust.click();
+    await second.evaluate(async () => {
+      await app.plugins.setEnable(true);
+      await app.plugins.enablePluginAndSave('docshelf');
+    });
+    await second.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
+    return second;
+  } });
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);
   await page.evaluate(() => app.plugins.disablePlugin('docshelf'));
   await poll(async () => { try { await fetch(origin); return false; } catch { return true; } }, 'Loopback listener did not close on unload.');

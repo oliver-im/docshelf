@@ -6,7 +6,7 @@ Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
 
 ## Install
 
-Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. Runtime checks of this **desktop beta** cover Obsidian 1.13.7 with Electron 34.2.0 on macOS. Windows, Linux, and Obsidian 1.14.2 are not yet verified.
+Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. The full packaged runtime suite for this **desktop beta** passes on macOS with Obsidian 1.14.4; focused shared-read checks cover Obsidian 1.13.7. Windows and Linux are not yet verified.
 
 **[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
@@ -30,6 +30,10 @@ affects ordinary Markdown notes. It is also available in **Settings → DocShelf
 An existing DocShelf Web `shelf.local.json` can be used in place: its
 relative source paths continue to resolve against its containing directory.
 The plugin does not start or change the web app's server.
+
+Read status belongs to the shelf on this device. All updated DocShelf installations in the same Obsidian profile share it when configured with the same absolute shelf path, including windows open at the same time. Opening a document or choosing **Mark all as read** clears its dots in every vault using that shelf. New documents and [agent-announced updates](../../docs/events.md) still become unread. DocShelf Web keeps its own browser read status.
+
+On the first load after upgrading, DocShelf merges the existing vault histories for that shelf. It checks pending announcements before merging, so an older vault's read flag cannot hide a newer unread update. Legacy records remain intact; later loads use the shared record. Update the plugin in each vault to use the shared status. The record and event-log position stay in Obsidian's local profile storage, outside the shelf and vault files, and do not sync to other devices.
 
 ## Update an existing plugin
 
@@ -304,5 +308,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.6.0/docshelf-0.6.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.6.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.7.0/docshelf-0.7.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.7.0
