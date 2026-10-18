@@ -24,7 +24,7 @@ export class ShelfReadState {
     // Saving the cursor and read state together prevents another window replaying a consumed update.
     return this.exclusive(this.key, async () => {
       const stored = this.storage.getItem(this.key);
-      const record: unknown = stored === null ? await this.migrate(current) : JSON.parse(stored);
+      const record: unknown = stored === null ? await this.migrate(current) : parseStoredValue(stored);
       if (!isStoredReadState(record)) throw new Error('The saved shelf read status is invalid.');
       const next = await this.catchUp(record);
       next.state = markRead(reconcileReadState(next.state, current), [...read, ...shown]);
@@ -42,10 +42,10 @@ export class ShelfReadState {
     for (let index = 0; index < this.storage.length; index++) {
       const key = this.storage.key(index);
       if (!key?.endsWith(suffix)) continue;
-      const state = parseLegacy(this.storage.getItem(key));
+      const state = parseStoredValue(this.storage.getItem(key));
       if (!isReadState(state)) continue;
       const vault = key.slice(0, -suffix.length);
-      const cursor = parseLegacy(this.storage.getItem(`${vault}-docshelf-event-cursor:${this.shelfPath}`));
+      const cursor = parseStoredValue(this.storage.getItem(`${vault}-docshelf-event-cursor:${this.shelfPath}`));
       // A history without a cursor cannot establish that it read an announced update.
       histories.push(await this.catchUp({ version: 1, state, cursor: isEventCursor(cursor) ? cursor : { offset: 0, lastId: null } }));
     }
@@ -78,7 +78,7 @@ export class ShelfReadState {
   }
 }
 
-function parseLegacy(text: string | null): unknown {
+function parseStoredValue(text: string | null): unknown {
   try { return text === null ? null : JSON.parse(text); } catch { return null; }
 }
 

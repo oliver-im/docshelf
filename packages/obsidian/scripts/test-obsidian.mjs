@@ -98,7 +98,7 @@ try {
   const port = await poll(async () => (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0], 'Obsidian did not expose the test debugging port.', 30_000);
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = await poll(() => browser.contexts()[0].pages().find(page => page.url().includes('index.html')), 'The test vault did not open.');
-  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('pageerror', error => { pageErrors.push(error.message); console.error('Page error:', error.stack || error.message); });
   page.on('console', entry => { if (entry.type() === 'error') console.error('Renderer:', entry.text()); });
   await page.waitForFunction(() => window.app?.workspace?.layoutReady, { timeout: 30_000 });
   await page.setViewportSize({ width: 1180, height: 860 });
@@ -736,7 +736,7 @@ try {
         if (await candidate.evaluate(() => window.app?.vault?.getName() === 'DocShelf second vault').catch(() => false)) return candidate;
       }
     }, 'The second test vault did not open.');
-    second.on('pageerror', error => pageErrors.push(error.message));
+    second.on('pageerror', error => { pageErrors.push(error.message); console.error('Second vault page error:', error.stack || error.message); });
     const trust = second.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
     if (await trust.count()) await trust.click();
     await second.evaluate(async () => {

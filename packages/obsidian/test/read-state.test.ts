@@ -85,9 +85,11 @@ test('failed storage writes preserve the cursor so an update is retried, and cor
   assert.equal(storage.getItem(store.key), before);
   failure.mock.restore();
   assert.deepEqual([...unreadSources(await reader().sync(['/a.md']), ['/a.md'])], ['/a.md']);
-  storage.setItem(store.key, '{"version":2}');
-  await assert.rejects(reader().sync(['/a.md']), /invalid/);
-  assert.equal(storage.getItem(store.key), '{"version":2}');
+  for (const corrupt of ['{"version":2}', '{bad']) {
+    storage.setItem(store.key, corrupt);
+    await assert.rejects(reader().sync(['/a.md']), /The saved shelf read status is invalid\./);
+    assert.equal(storage.getItem(store.key), corrupt);
+  }
 });
 
 test('migration catches up across log chunks and normalizes remote identities, including absent documents', async t => {

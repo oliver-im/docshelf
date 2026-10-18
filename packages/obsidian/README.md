@@ -6,7 +6,7 @@ Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
 
 ## Install
 
-Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. Runtime checks of this **desktop beta** cover Obsidian 1.13.7 with Electron 34.2.0 on macOS. Windows, Linux, and Obsidian 1.14.2 are not yet verified.
+Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. The full packaged runtime suite for this **desktop beta** passes on macOS with Obsidian 1.14.4; focused shared-read checks cover Obsidian 1.13.7. Windows and Linux are not yet verified.
 
 **[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
@@ -308,5 +308,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.6.0/docshelf-0.6.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.6.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.7.0/docshelf-0.7.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.7.0
