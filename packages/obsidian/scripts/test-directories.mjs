@@ -198,7 +198,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   const announce = file => run(process.execPath, [fileURLToPath(new URL('../../../scripts/event.mjs', import.meta.url)), 'updated', file, '--shelf', shelfPath, '--workspace', workspace, '--strict']);
   const announcementsRead = () => page.evaluate(log => {
     const plugin = app.plugins.getPlugin('docshelf');
-    return app.loadLocalStorage(`docshelf-event-cursor:${plugin.catalog.shelfPath}`)?.offset === require('node:fs').statSync(log).size;
+    return JSON.parse(localStorage.getItem(`docshelf:obsidian:read-state:${plugin.catalog.shelfPath}`))?.cursor.offset === require('node:fs').statSync(log).size;
   }, path.join(path.dirname(shelfPath), 'shelf.local.events.jsonl'));
   const second = path.join(directory, 'nested/second.md');
   await announce(second);
@@ -236,6 +236,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
     const labels = await page.locator('.menu-item-title').allTextContents();
     assert.equal(labels[labels.indexOf('Mark all as read') + 1], 'Remove from shelf…');
     await page.locator('.menu-item').filter({ hasText: /^Mark all as read$/ }).click();
+    await poll(() => toggle.evaluate(button => !button.querySelector('.docshelf-unread-dot')), 'The group did not become read.');
   };
   await markAllRead(nestedToggle);
   assert.deepEqual(await unreadRows(), ['Watched project', 'watched-documents', 'first.md', 'loose-document.md'], 'Reading a nested folder must leave its siblings unread.');

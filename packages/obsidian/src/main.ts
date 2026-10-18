@@ -21,11 +21,9 @@ import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
 import { documentTree, type FolderSegment } from '@docshelf/core/directories';
-import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
-import { announcedUpdates } from '@docshelf/core/events';
-import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
-import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
-import { endCursor, eventLogPath, isEventCursor, readEvents } from '../../local/events.mjs';
+import { unreadSources } from '@docshelf/core/read-state';
+import { ShelfReadState } from './core/read-state';
+import { eventLogPath } from '../../local/events.mjs';
 import { RemoveModal, type RemovalTarget } from './ui/remove';
 import { shell } from 'electron';
 
@@ -58,7 +56,8 @@ export default class DocShelfPlugin extends Plugin {
   private abort = new AbortController();
   private revisions = new Map<string, string>();
   /** Opened documents, and those on the shelf when tracking began, kept per device and shelf rather than in the shared shelf file. */
-  private readState: { key: string; state: ReadState } | null = null;
+  private readState: ShelfReadState | null = null;
+  private readStatusError = '';
   private unread = new Set<string>();
   /** Sources on the shelf before an addition in progress; the documents it adds are already known to the reader. */
   private additionBaseline: Set<string> | null = null;
@@ -77,6 +76,9 @@ export default class DocShelfPlugin extends Plugin {
       runHtmlScripts: typeof data?.runHtmlScripts === 'boolean' ? data.runHtmlScripts : true,
       vaultId: typeof data?.vaultId === 'string' ? data.vaultId : '',
     };
+    this.registerDomEvent(window, 'storage', event => {
+      if (event.storageArea === window.localStorage && event.key === this.readState?.key) void this.readAnnouncements();
+    });
     this.registerView(SHELF_VIEW, leaf => new ShelfView(leaf, this));
     this.registerView(DOCUMENT_VIEW, leaf => new DocumentView(leaf, this));
     this.registerView(NATIVE_MARKDOWN_VIEW, leaf => new NativeMarkdownView(leaf, this));
@@ -153,6 +155,7 @@ export default class DocShelfPlugin extends Plugin {
     await this.saveData(settings);
     this.catalog = null;
     this.readState = null;
+    this.readStatusError = '';
     this.unread.clear();
     this.server.setCatalog(null);
     this.abort.abort();
@@ -224,7 +227,8 @@ export default class DocShelfPlugin extends Plugin {
       }
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
-      this.updateReadState(catalog);
+      await this.updateReadState(catalog);
+      if (this.disposed || settings !== this.settings) return;
       this.watchAnnouncements(catalog.shelfPath);
       void this.readAnnouncements();
       this.shelfMissing = false;
@@ -232,7 +236,7 @@ export default class DocShelfPlugin extends Plugin {
       await this.search.replace(catalog.artifacts, contents, () => !this.disposed && settings === this.settings);
       if (this.disposed || settings !== this.settings) return;
       this.revisions = revisions;
-      this.error = failures[0] || '';
+      this.error = this.readStatusError || failures[0] || '';
       await this.updateWatcher(catalog);
     } catch (error) {
       // Before any shelf loads, a missing file in an existing folder is the empty starting state.
@@ -310,30 +314,29 @@ export default class DocShelfPlugin extends Plugin {
 
   isUnread(artifact: Artifact): boolean { return this.unread.has(sourceIdentity(artifact)); }
 
-  private updateReadState(catalog: Catalog): void {
-    const key = `docshelf-read-state:${catalog.shelfPath}`;
+  private async updateReadState(catalog: Catalog, read: string[] = []): Promise<void> {
+    if (this.readState?.shelfPath !== catalog.shelfPath) {
+      this.readState = new ShelfReadState(catalog.shelfPath, window.localStorage, async (key, update) => await navigator.locks.request(key, update));
+    }
+    const store = this.readState;
     const current = catalog.artifacts.map(sourceIdentity);
-    const stored: unknown = this.app.loadLocalStorage(key);
-    let state = reconcileReadState(stored, current);
     const baseline = this.additionBaseline;
-    if (baseline) state = markRead(state, current.filter(id => !baseline.has(id)));
-    if (JSON.stringify(stored) !== JSON.stringify(state)) this.saveReadState(key, state);
-    this.readState = { key, state };
-    this.unread = unreadSources(state, current);
+    try {
+      const state = await store.sync(current, [...read, ...(baseline ? current.filter(id => !baseline.has(id)) : [])], [...this.shownDocuments()]);
+      if (this.disposed || this.catalog !== catalog || this.readState !== store) return;
+      this.unread = unreadSources(state, current);
+      if (this.error === this.readStatusError) this.error = '';
+      this.readStatusError = '';
+    } catch (error) {
+      if (this.disposed || this.catalog !== catalog || this.readState !== store) return;
+      this.error = this.readStatusError = `Read status could not be saved: ${message(error)}`;
+    }
   }
 
-  markArtifactsRead(artifacts: Artifact[]): void {
-    const ids = artifacts.map(sourceIdentity).filter(id => this.unread.has(id));
-    if (!this.readState || !ids.length) return;
-    this.readState.state = markRead(this.readState.state, ids);
-    this.saveReadState(this.readState.key, this.readState.state);
-    for (const id of ids) this.unread.delete(id);
-    this.emit();
-  }
-
-  private saveReadState(key: string, state: ReadState): boolean {
-    // Without storage, read state lasts until Obsidian restarts.
-    try { this.app.saveLocalStorage(key, state); return true; } catch { /* Keep the in-memory state. */ return false; }
+  async markArtifactsRead(artifacts: Artifact[]): Promise<void> {
+    if (!this.catalog || !artifacts.length) return;
+    await this.updateReadState(this.catalog, artifacts.map(sourceIdentity));
+    if (!this.loading) this.emit();
   }
 
   /** Announcements change read state only, so the log has its own watcher, which also follows it before it exists. */
@@ -364,33 +367,15 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   private async readAnnouncementsNow(): Promise<void> {
-    const shelfPath = this.catalog?.shelfPath;
-    if (!shelfPath || !this.readState) return;
-    const key = `docshelf-event-cursor:${shelfPath}`;
-    const stored: unknown = this.app.loadLocalStorage(key);
-    const log = eventLogPath(shelfPath);
-    // Without a position, start at the end so earlier announcements are not replayed.
-    const { events, cursor, warnings } = isEventCursor(stored) ? await readEvents(log, stored) : { events: [], cursor: await endCursor(log), warnings: [] };
-    for (const warning of warnings) console.warn(`DocShelf event log: ${warning}`);
     const catalog = this.catalog;
-    if (this.disposed || catalog?.shelfPath !== shelfPath || !this.readState) return;
-    // Documents on screen in a focused window stay read; the reader sees them refresh.
-    const shown = this.shownDocuments();
-    const updated = new Set<string>();
-    for (const source of announcedUpdates(events)) {
-      const normalized = parseClaudeArtifactUrl(source)?.publicUrl || parseGitHubMarkdownUrl(source)?.sourceUrl || source;
-      const artifact = path.isAbsolute(normalized) || /^https:/i.test(normalized) ? findSource(catalog, normalized) : undefined;
-      if (artifact && !shown.has(sourceIdentity(artifact))) updated.add(sourceIdentity(artifact));
-    }
-    if (updated.size) {
-      this.readState.state = markUnread(this.readState.state, updated);
-      const stored = this.saveReadState(this.readState.key, this.readState.state);
-      this.unread = unreadSources(this.readState.state, catalog.artifacts.map(sourceIdentity));
-      this.emit();
-      // Keep the position until the unread state is stored, so the announcements apply again after a restart.
-      if (!stored) return;
-    }
-    try { this.app.saveLocalStorage(key, cursor); } catch { /* Announcements may apply again; marking unread is repeatable. */ }
+    if (!catalog) return;
+    const unread = this.unread;
+    const error = this.error;
+    await this.updateReadState(catalog);
+    const changed = error !== this.error || unread.size !== this.unread.size || [...unread].some(id => !this.unread.has(id));
+    // A catalog refresh publishes after replacing the search index. Do not
+    // render its temporary empty search results while synchronizing read status.
+    if (changed && !this.loading && !this.disposed && this.catalog === catalog) this.emit();
   }
 
   private shownDocuments(): Set<string> {
@@ -411,7 +396,9 @@ export default class DocShelfPlugin extends Plugin {
   }
 
   async openArtifact(artifact: Artifact, range: LineRange | null = null, hash = '', target?: WorkspaceLeaf): Promise<void> {
-    this.markArtifactsRead([artifact]);
+    // Start navigation immediately. Waiting for storage here lets the host's
+    // native link handling open a vault-file tab before our view takes over.
+    const reading = this.markArtifactsRead([artifact]);
     const native = artifact.kind === 'markdown';
     const type = native ? NATIVE_MARKDOWN_VIEW : DOCUMENT_VIEW;
     const existing = this.app.workspace.getLeavesOfType(type).find(leaf => {
@@ -427,6 +414,7 @@ export default class DocShelfPlugin extends Plugin {
       : (artifact.kind === 'html' && range ? 'source' : 'reading');
     await leaf.setViewState({ type, active: true, state: { ...previous, route: artifact.route, mode, lines: range ? `${range.start}-${range.end}` : undefined, hash } });
     await this.app.workspace.revealLeaf(leaf);
+    await reading;
   }
 
   nativeViews(): NativeMarkdownView[] { return this.app.workspace.getLeavesOfType(NATIVE_MARKDOWN_VIEW).map(leaf => leaf.view).filter((view): view is NativeMarkdownView => view instanceof NativeMarkdownView); }
