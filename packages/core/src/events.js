@@ -120,7 +120,10 @@ function isRecord(value) {
 
 /** @param {unknown} value */
 function label(value) {
-  return typeof value === 'string' && value.length > 0 && value.length <= 100 && !/[\0-\x1f\x7f]/.test(value);
+  return typeof value === 'string' && value.length > 0 && value.length <= 100 && [...value].every(character => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && code !== 127;
+  });
 }
 
 /** @param {unknown} value */

@@ -4,20 +4,35 @@ The community review of plugin `0.2.0` (commit `9423f43`) scanned the entire rep
 
 ## Published review baseline
 
-On September 24, 2026, the hosted review of `0.2.2` (commit `2660976`) was **Completed** without errors. Its release assets had valid attestations, no reported vulnerable dependencies or obfuscation, and a byte-for-byte reproduced `main.js`. The public listing reported **Excellent** health and **Caution** for the review: 261 warnings and two recommendations.
+On November 1, 2026, the public scorecard for `0.7.0` (commit `47d6c86`) reported **Excellent** health and **Caution** for the review: 82 warnings and two other findings. The install assets had verified attestations, no reported obfuscation, and a byte-for-byte reproduced build. The malware, vulnerable-dependency, and network-request scan disclosures were marked unavailable; this is not a clean result for those scans.
 
 | Warning group | Count | Scope |
 | --- | ---: | --- |
-| Unsafe types | 211 | Independent web app |
+| Dependency advisories | 26 | Repository dependencies, including web and build tooling |
 | Browser DOM creation and networking | 19 | Independent web app |
-| CSS compatibility and style rules | 27 | Web app and standalone registration skill theme |
-| Filesystem access, process inspection, and CSS overrides | 4 | Plugin and its shared lock helper |
+| CSS compatibility and style rules | 32 | Web app, plugin, and standalone registration skill theme |
+| Filesystem access and process inspection | 2 | Plugin and shared lock helper |
+| Control character in a regular expression | 1 | Shared event sender-label validation |
+| Unsafe types | 2 | Astro content configuration under the hosted scanner's type setup |
 
-The recommendations concern optional release attachments and user-triggered clipboard writes. The browser type fixes below follow that published review; their local checks do not establish a new hosted warning count. The missing contributing guide and outdated installation text have also been corrected.
+The other findings concern optional release attachments and user-triggered clipboard writes. This is the published baseline before `0.8.0`; local checks do not establish a new hosted warning count.
+
+## Dependency review for 0.8.0
+
+Update DOMPurify to 3.4.17 in both apps and markdown-it to 14.3.3 in the plugin. Update the web Astro and Markdown integration together, plus compatible transitive dependency fixes. The root lockfile audit on November 1, 2026 reports no high or critical advisories. It still reports 25 affected dependency entries (23 moderate, two low), arising from three underlying advisories:
+
+| Remaining advisory | Exposure and disposition |
+| --- | --- |
+| [minimatch glob amplification](https://github.com/advisories/GHSA-g3hv-75wg-m249) | Development lint tooling only; it is not bundled in the plugin. The lint stack's supported ranges do not yet accept the patched major. Lint only trusted repository configuration and keep the advisory visible. |
+| [Moment locale traversal](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw) | The Obsidian type package's exact development dependency; it is not bundled in the plugin, and DocShelf does not call Moment. Keep the SDK aligned with the supported CodeMirror versions rather than overriding its dependency contract. |
+| [KaTeX trust bypass after prototype pollution](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | Mermaid's web-only dependency; it is not bundled in the plugin. The advisory requires existing prototype pollution. Mermaid output remains sanitized with DOMPurify. The automatic fix requires a Mermaid major upgrade, which needs a separate compatibility review. |
+
+These remaining advisories are not described as fixed. A fresh hosted review must still inspect the exact published tag and commit.
 
 ## Fixed findings
 
 | Finding | Resolution |
+| Control-character regex warning in event sender labels | Check character codes explicitly while preserving rejection of ASCII controls and DEL. |
 | --- | --- |
 | Unsafe `innerHTML` in web Mermaid rendering | Sanitize renderer output with the bundled DOMPurify before inserting a DOM fragment. Permit Mermaid's SVG HTML labels while sanitizing their children, attributes, and URLs; preserve the source fallback if rendering or sanitization fails. Browser tests cover labels, theme changes, active markup, and a missing sanitizer. |
 | Static `innerHTML` in the web document menu | Construct the SVG icon with DOM methods. |
@@ -44,7 +59,7 @@ The recommendations concern optional release attachments and user-triggered clip
 | Shell execution | The shared lock helper uses `execFile('ps', [...])` with fixed arguments, a validated process ID, no shell, and a five-second timeout to identify a lock owner. Linux prefers `/proc`. Keep this identity check so the plugin does not break another app's active lock. No document text or shelf paths are executed as commands. |
 | Clipboard access | The plugin writes links and source references only after a user action. It does not read clipboard contents. |
 | Extra release files | Keep the manual-install ZIP, licenses, dependency notices, and checksums. Obsidian installs only the three standard files; dependency licenses are also embedded in `main.js`. These attachments are intentional and not runtime dependencies. |
-| Two plugin CSS `!important` declarations | Required to override the host's inline display state when a source is unavailable and CodeMirror's own `display: flex !important` on the native line-number gutter. Removing them can expose an unavailable editor or duplicate source labels. Both are narrowly scoped and documented in the stylesheet. |
+| Four plugin CSS `!important` declarations | Two rules keep report pointer events within the isolated guest during a press and release. The other two override the host's inline display state when a source is unavailable and CodeMirror's own `display: flex !important` on the native line-number gutter. Removing them can misroute report input, expose an unavailable editor, or duplicate source labels. The rules apply only while the relevant DocShelf state is active and are documented in the stylesheet. |
 | Unbound host method | The native Markdown adapter intentionally saves the exact host method for restoration and calls an explicitly bound copy. A single documented lint exception covers that identity-preserving capture. |
 | Custom webview creation | The `0.2.1` hosted scan rejected the local lint exception. Version `0.2.2` extends the element tag map with Electron's webview type, uses Obsidian's `createEl`, and adopts the detached element into the owning view's document. Each guest is attached only after its private session and sandbox are configured. Local HTML guests also receive a navigation guard before attachment; remote Claude Artifact guests do not use that local-document guard. |
 | Web `fetch`, DOM creation, and browser globals | These are native browser APIs used by the independent web app. Obsidian APIs are not available in its pages. Do not replace browser networking with Obsidian's `requestUrl` or add a plugin runtime dependency to the web app. |

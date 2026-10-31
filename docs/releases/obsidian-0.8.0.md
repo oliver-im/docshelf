@@ -5,6 +5,7 @@ Pin frequently used documents above the project list. Right-click a document, or
 - Pins follow the source when its title or shelf route changes, survive restarts, and return when a temporarily absent document reappears.
 - Vault windows using the same shelf on this device share pins. Concurrent updates preserve each other's changes. Different shelves, devices, and DocShelf Web keep separate pin lists.
 - Keyboard focus returns to the original document after unpinning, including when its folder was collapsed. Escape dismisses shelf menus even after a background refresh changes the active keyboard scope.
+- Update bundled DOMPurify and markdown-it to patched versions. The shared event validator keeps rejecting control characters without the hosted regex warning. See the community review notes for remaining repository-only advisories.
 
 ## Install or update
 
