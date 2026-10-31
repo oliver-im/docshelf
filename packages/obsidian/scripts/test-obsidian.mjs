@@ -40,6 +40,7 @@ await mkdir(profile, { recursive: true });
 await mkdir(home);
 await mkdir(pluginPath, { recursive: true });
 await mkdir('.local/runtime', { recursive: true });
+await rm('.local/runtime/results.json', { force: true });
 await cp('examples', workspace, { recursive: true });
 if (packageMode) {
   const archive = unzipSync(await readFile(`dist/release/docshelf-${manifest.version}.zip`));
@@ -739,6 +740,9 @@ try {
       }
     }, 'The second test vault did not open.');
     second.on('pageerror', error => { pageErrors.push(error.message); console.error('Second vault page error:', error.stack || error.message); });
+    // Match the first vault's startup order: enabling during workspace startup
+    // can race Obsidian's own plugin load and leave an unloaded instance behind.
+    await second.waitForFunction(() => window.app?.workspace?.layoutReady, undefined, { timeout: 30_000 });
     const trust = second.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
     if (await trust.count()) await trust.click();
     await second.evaluate(async () => {
@@ -750,7 +754,7 @@ try {
     } catch (error) {
       console.error('Second vault state:', await second.evaluate(() => {
         const plugin = app.plugins.getPlugin('docshelf');
-        return { loaded: !!plugin, error: plugin?.error, settings: plugin?.settings, count: plugin?.catalog?.artifacts.length };
+        return { loaded: !!plugin, disposed: plugin?.disposed, loading: plugin?.loading, error: plugin?.error, settings: plugin?.settings, count: plugin?.catalog?.artifacts.length };
       }));
       await second.screenshot({ path: '.local/runtime/second-vault-failure.png' });
       throw error;
