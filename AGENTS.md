@@ -38,10 +38,10 @@ Keep each prose paragraph on one source line, including prose within list items,
 
 ## Working commands
 
-- `npm run watch` runs the production-search build loop and local server. One watcher per checkout holds `.docshelf-runtime/watch.lock`; artifact sync (`sync`, `dev`, `check`, `build`, `preview`) serializes on `sync.lock` and waits for a rebuilding watcher. Never delete either lock while its owner runs.
+- `npm run watch` runs the production-search build loop and local server. One watcher per checkout holds `.docshelf-runtime/watch.lock`; artifact sync (`sync`, `dev`, `check`, `build:web`, `preview`) serializes on `sync.lock` and waits for a rebuilding watcher. Never delete either lock while its owner runs.
 - Every watcher update runs a full Astro build into an isolated directory and publishes it only after it succeeds and its inputs are still current. Astro's output is shown only when a build fails; `DOCSHELF_VERBOSE=1` streams it.
 - `npm run dev` is for DocShelf UI development; restart it after shelf changes.
-- Before handing off web-only code changes, run `npm test`, `npm run check`, and `npm run build` at the root. For shared or plugin changes, use `npm run test:all`, `npm run check:all`, and `npm run build:all` instead; these include the root checks and match CI.
+- Before handing off web-only code changes, run `npm test`, `npm run check`, and `npm run build:web` at the root. For shared or plugin changes, use `npm run test:all`, `npm run check:all`, and `npm run build:all` instead; these include the root checks and match CI.
 - For plugin runtime changes, build first, then run `npm run test:obsidian --workspace obsidian-docshelf`. This uses a disposable profile and vault and is separate from the aggregate checks; see the [runtime requirements](packages/obsidian/README.md#develop-and-verify).
 - After every plugin change, run `npm run install:local --workspace obsidian-docshelf` so the developer can try it right away. It rebuilds, replaces the DocShelf build in the developer's own vault, and reloads the plugin in the running Obsidian. Report what it printed. If no vault is configured, ask for its path instead of guessing; see [trying a change in your vault](packages/obsidian/README.md#try-a-change-in-your-vault).
 - The watcher is the portable runtime. `scripts/launchd.mjs` is an optional macOS-only integration.

@@ -101,7 +101,7 @@ jobs:
 
       - run: npm test
       - run: npm run check
-      - run: npm run build
+      - run: npm run build:web
 
       - name: Push version branch
         env:
@@ -171,7 +171,7 @@ jobs:
         run: npm run check
 
       - if: steps.release.outputs.publish == 'true'
-        run: npm run build
+        run: npm run build:web
 
       - name: Tag release commit
         if: steps.release.outputs.publish == 'true'
