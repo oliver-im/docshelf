@@ -22,7 +22,7 @@ For web-only changes, run these commands from the repository root:
 npm test
 npm run check
 npm run lint
-npm run build
+npm run build:web
 ```
 
 For shared helpers or plugin changes, run the aggregate checks used by CI:

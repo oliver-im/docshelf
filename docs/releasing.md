@@ -78,7 +78,7 @@ history and needs a merge commit to retain that ancestry.
 
 ## Package the Obsidian plugin
 
-The root `npm run build` builds both applications and copies the plugin’s three install files to ignored `build/` so the community build verifier can find `build/main.js`. Use `npm run build:web` for an Astro-only build; `npm run watch` still builds only the web app.
+The root `npm run build` builds the shared declarations and Obsidian plugin, then copies the plugin’s three install files to ignored `build/` so the community build verifier can find `build/main.js`. Use `npm run build:web` for the independent Astro app, or `npm run build:all` for both apps. This keeps the plugin verifier independent of Astro's Node requirement. Development and aggregate checks still require Node 24 or later; CI also checks the default plugin build on the verifier's Node 22.23.3. `npm run watch` builds only the web app.
 
 Run `npm run package:obsidian` at the repository root. It rebuilds the plugin and creates `packages/obsidian/dist/docshelf/`, containing `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`. The `packages/obsidian/dist/release/` directory contains those standalone release assets, an installable `docshelf-X.Y.Z.zip`, and `SHA256SUMS`. The ZIP includes the `docshelf/` folder and `INSTALL.txt`; it has no settings, recovery records, local shelf, source map, or source documents. These are generated outputs; do not commit them. Packaging does not install into a vault or publish a release.
 

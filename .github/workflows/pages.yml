@@ -47,7 +47,7 @@ jobs:
           DOCSHELF_LIVE_UPDATES: 'false'
 
       - name: Build the Pages site
-        run: npm run build
+        run: npm run build:web
         env:
           DOCSHELF_SITE: ${{ steps.pages.outputs.origin }}
           DOCSHELF_BASE: ${{ steps.pages.outputs.base_path }}

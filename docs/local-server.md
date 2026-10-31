@@ -106,7 +106,7 @@ to other machines. In loopback mode, DocShelf accepts only loopback and
 `*.localhost` Host headers to prevent unrelated domains from reading the local
 shelf through DNS rebinding.
 
-`DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered sources must resolve inside. It defaults to your home directory. Files inside the checkout itself, such as the README that `npm run setup` registers, are accepted whatever the root is. Give an absolute path or one relative to the checkout, and set it for every command that reads the shelf, including `npm run dev`, `npm run build`, and `npm run watch`. For example, this limits sources to the checkout's parent directory:
+`DOCSHELF_WORKSPACE` changes the workspace root, the directory that registered sources must resolve inside. It defaults to your home directory. Files inside the checkout itself, such as the README that `npm run setup` registers, are accepted whatever the root is. Give an absolute path or one relative to the checkout, and set it for every command that reads the shelf, including `npm run dev`, `npm run build:web`, and `npm run watch`. For example, this limits sources to the checkout's parent directory:
 
 ```sh
 DOCSHELF_WORKSPACE=.. npm run watch
@@ -131,7 +131,7 @@ git pull --ff-only
 npm ci
 npm test
 npm run check
-npm run build
+npm run build:web
 npm run setup
 ```
 
@@ -160,7 +160,7 @@ preserving its settings and recovery files.
 The production watcher observes shelf files and registered source documents.
 It does not reload its own server code, UI components, or configuration when
 those files change. Restart it after an update, even if a separate
-`npm run build` succeeds: the running watcher serves an isolated runtime build,
+`npm run build:web` succeeds: the running watcher serves an isolated runtime build,
 not the latest `dist/` directory. Use `npm run dev` for UI work.
 
 ## Locks
@@ -179,11 +179,11 @@ is the launchd agent, `kill` alone lets launchd restart it; use
 `npm run daemon:uninstall` instead.
 
 Artifact synchronization takes `.docshelf-runtime/sync.lock`. The sync step
-that `npm run sync`, `dev`, `check`, `build`, and `preview` run first waits for
+that `npm run sync`, `dev`, `check`, `build:web`, and `preview` run first waits for
 a rebuilding watcher to finish (up to two minutes) before it replaces
 `public/artifacts`, and the watcher waits for a running sync before it
 rebuilds. The lock covers the sync step only: a watcher rebuild that starts
-while a manual `npm run build` is already copying `public/artifacts` can still
+while a manual `npm run build:web` is already copying `public/artifacts` can still
 make that manual build fail with a revision mismatch. Rerun it.
 
 ## Managing automatic startup
@@ -254,7 +254,7 @@ npm run check:all
 npm run build:all
 ```
 
-Root `npm test`, `npm run check`, and `npm run build` target only the web app.
+Root `npm test`, `npm run check`, and `npm run build:web` target only the web app.
 For plugin runtime changes, build first and then run
 `npm run test:obsidian --workspace obsidian-docshelf`. The actual-host suite
 uses a disposable profile and vault; see the

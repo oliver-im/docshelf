@@ -17,6 +17,8 @@ On November 1, 2026, the public scorecard for `0.7.0` (commit `47d6c86`) reporte
 
 The other findings concern optional release attachments and user-triggered clipboard writes. This is the published baseline before `0.8.0`; local checks do not establish a new hosted warning count.
 
+The completed `0.8.0` scan (commit `69dce41`) reports 56 warnings and three other findings. Dependency advisories fell from 26 to one, and the regex and unknown-webview CSS warnings are gone. The additional recommendation concerns shared local storage. Build verification failed because the hosted Node 22.23.3 cannot run the independent Astro app, which requires at least 22.23.4. Version `0.8.1` separates the plugin build from Astro; its exact published tag still needs hosted build verification.
+
 ## Dependency review for 0.8.0
 
 Update DOMPurify to 3.4.17 in both apps and markdown-it to 14.3.3 in the plugin. Update the web Astro and Markdown integration together, plus compatible transitive dependency fixes. The root lockfile audit on November 1, 2026 reports no high or critical advisories. It still reports 25 affected dependency entries (23 moderate, two low), arising from three underlying advisories:
@@ -45,7 +47,7 @@ These remaining advisories are not described as fixed. A fresh hosted review mus
 | CommonJS imports | Use typed imports for the desktop host's Electron and remote APIs; those modules remain external to the bundle. |
 | Detached DOM elements in source gutters | Use Obsidian creation helpers and adopt the detached nodes into the editor's document. |
 | Settings absent from settings search | Supply declarative setting definitions with named custom renderers, preserving the explicit Save and reload action and the immediate vault display preference. |
-| Build verifier cannot find `main.js` | The root build builds both apps and stages the plugin's three install files in ignored `build/`. Web-only builds remain available as `npm run build:web`; the watcher still builds only Astro. The staging script refuses symlink outputs. |
+| Build verifier cannot find `main.js`, or fails on the web app's Node requirement | The root build builds the shared declarations and plugin, then stages the plugin's three install files in ignored `build/`. The `0.8.0` verifier used Node 22.23.3, below Astro's requirement; version `0.8.1` separates this plugin build from the independent web build. `npm run build:all` still builds both apps on Node 24, and CI checks the default build on the verifier's Node version. Web builds remain available as `npm run build:web`; the staging script refuses symlink outputs. |
 | No release asset attestations | The plugin release workflow attests `main.js`, `manifest.json`, and `styles.css` using GitHub Actions provenance. This applies to releases built by the updated workflow. |
 | Duplicate `overflow-x` declaration | Remove the redundant web stylesheet fallback. |
 
