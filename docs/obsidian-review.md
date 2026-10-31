@@ -2,22 +2,21 @@
 
 The community review of plugin `0.2.0` (commit `9423f43`) scanned the entire repository, including the independent web app and the registration skill's stylesheet. This document records the findings, their fixes, and the deliberate capabilities that remain. The [official linter configuration](https://github.com/obsidianmd/eslint-plugin/blob/master/docs/configuration.md) describes the scanner; [upstream issue 178](https://github.com/obsidianmd/eslint-plugin/issues/178) tracks findings on non-plugin code in shared repositories. A local linter configuration does not guarantee the hosted scanner will use the same scope or types.
 
-## Published review baseline
+## Published review
 
-On November 1, 2026, the public scorecard for `0.7.0` (commit `47d6c86`) reported **Excellent** health and **Caution** for the review: 82 warnings and two other findings. The install assets had verified attestations, no reported obfuscation, and a byte-for-byte reproduced build. The malware, vulnerable-dependency, and network-request scan disclosures were marked unavailable; this is not a clean result for those scans.
+On November 1, 2026, the completed [public scorecard](https://community.obsidian.md/plugins/docshelf#scorecard) for `0.8.1` (commit `bb42577`) reported **Excellent** health and **Caution** for the review: 55 warnings and three other findings. The hosted verifier reproduced the release `main.js` byte for byte, verified asset attestations, and found no reported obfuscation. The malware, vulnerable-dependency, and network-request scan disclosures remain unavailable; this is not a clean result for those scans.
 
 | Warning group | Count | Scope |
 | --- | ---: | --- |
-| Dependency advisories | 26 | Repository dependencies, including web and build tooling |
+| Dependency advisories | 1 | KaTeX in the independent web app |
 | Browser DOM creation and networking | 19 | Independent web app |
-| CSS compatibility and style rules | 32 | Web app, plugin, and standalone registration skill theme |
+| CSS compatibility and style rules | 31 | Web app, plugin, and standalone registration skill theme |
 | Filesystem access and process inspection | 2 | Plugin and shared lock helper |
-| Control character in a regular expression | 1 | Shared event sender-label validation |
 | Unsafe types | 2 | Astro content configuration under the hosted scanner's type setup |
 
-The other findings concern optional release attachments and user-triggered clipboard writes. This is the published baseline before `0.8.0`; local checks do not establish a new hosted warning count.
+The other findings concern optional release attachments, user-triggered clipboard writes, and shared local storage. Their dispositions appear below. Compared with `0.7.0` (commit `47d6c86`), warnings fell from 82 to 55: dependency advisories fell from 26 to one, and the regex and unknown-webview CSS warnings are gone.
 
-The completed `0.8.0` scan (commit `69dce41`) reports 56 warnings and three other findings. Dependency advisories fell from 26 to one, and the regex and unknown-webview CSS warnings are gone. The additional recommendation concerns shared local storage. Build verification failed because the hosted Node 22.23.3 cannot run the independent Astro app, which requires at least 22.23.4. Version `0.8.1` separates the plugin build from Astro; its exact published tag still needs hosted build verification.
+The intervening `0.8.0` scan (commit `69dce41`) reported 56 warnings because its build verification failed: hosted Node 22.23.3 cannot run the independent Astro app, which requires at least 22.23.4. Version `0.8.1` separates the plugin build from Astro and passes the hosted build comparison on the exact published tag.
 
 ## Dependency review for 0.8.0
 
@@ -29,7 +28,7 @@ Update DOMPurify to 3.4.17 in both apps and markdown-it to 14.3.3 in the plugin.
 | [Moment locale traversal](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw) | The Obsidian type package's exact development dependency; it is not bundled in the plugin, and DocShelf does not call Moment. Keep the SDK aligned with the supported CodeMirror versions rather than overriding its dependency contract. |
 | [KaTeX trust bypass after prototype pollution](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | Mermaid's web-only dependency; it is not bundled in the plugin. The advisory requires existing prototype pollution. Mermaid output remains sanitized with DOMPurify. The automatic fix requires a Mermaid major upgrade, which needs a separate compatibility review. |
 
-These remaining advisories are not described as fixed. A fresh hosted review must still inspect the exact published tag and commit.
+These remaining advisories are not described as fixed. The hosted `0.8.1` review reports only KaTeX; the broader lockfile audit also includes development tooling. Each future release must still receive a review of its exact published tag and commit.
 
 ## Fixed findings
 
