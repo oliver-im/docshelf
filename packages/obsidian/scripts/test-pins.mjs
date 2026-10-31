@@ -50,25 +50,27 @@ export async function testDocumentPins({ page, poll, shelfPath }) {
     assert.equal(await page.locator('.docshelf-pin-icon').count(), 0);
     assert.equal(await page.locator('.docshelf-project .docshelf-item[data-route="renamed/guide.html"]').evaluate(el => el === document.activeElement), true, 'Unpinning must restore focus even when the original project was collapsed.');
     // Storage can reject a write; never present an unsaved pin as successful.
-    const failingRow = page.locator('.docshelf-project .docshelf-item[data-route="renamed/guide.html"]');
-    await failingRow.press('Shift+F10');
-    await page.evaluate(() => {
-      const key = app.plugins.getPlugin('docshelf').pinsKey;
+    const failedSave = await page.evaluate(async () => {
+      const plugin = app.plugins.getPlugin('docshelf');
+      const key = plugin.pinsKey;
       const original = Storage.prototype.setItem;
-      window.restorePinStorage = () => { Storage.prototype.setItem = original; delete window.restorePinStorage; };
+      let attempted = false;
       Storage.prototype.setItem = function (name, value) {
-        if (name === key) throw new Error('Quota exceeded');
+        if (name === key) { attempted = true; throw new Error('Quota exceeded'); }
         return original.call(this, name, value);
       };
+      try {
+        await plugin.pinDocument(plugin.catalog.artifacts[0], true);
+        // Obsidian 1.14 can show notices in its active popout window.
+        return { attempted, notices: [...activeWindow.document.querySelectorAll('.notice')].map(el => el.textContent) };
+      } finally {
+        Storage.prototype.setItem = original;
+      }
     });
-    try {
-      await page.getByText('Pin document', { exact: true }).click();
-      await poll(async () => await page.getByText(/Document pin could not be saved:.*Quota exceeded/).count() > 0, 'A failed pin save did not show its error.');
-      assert.equal(await pins.count(), 0, 'A failed save must not add a shortcut.');
-      assert.equal(await failingRow.locator('.docshelf-pin-icon').count(), 0, 'A failed save must not mark the original as pinned.');
-    } finally {
-      await page.evaluate(() => window.restorePinStorage());
-    }
+    assert.equal(failedSave.attempted, true, 'The storage failure must reach the real pin writer.');
+    assert.match(failedSave.notices.join('\n'), /Document pin could not be saved:.*Quota exceeded/, 'A failed save must explain the storage error.');
+    assert.equal(await pins.count(), 0, 'A failed save must not add a shortcut.');
+    assert.equal(await page.locator('.docshelf-pin-icon').count(), 0, 'A failed save must not mark the original as pinned.');
     console.log('Document pins survived reload and route changes, stayed scoped to their shelf, and unpinned without removing originals.');
   } finally {
     await writeFile(shelfPath, baseline);
