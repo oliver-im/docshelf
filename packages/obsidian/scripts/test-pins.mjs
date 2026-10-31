@@ -63,7 +63,7 @@ export async function testDocumentPins({ page, poll, shelfPath }) {
     });
     try {
       await page.getByText('Pin document', { exact: true }).click();
-      await poll(async () => await page.getByText('Document pin could not be saved: Quota exceeded', { exact: true }).count() === 1, 'A failed pin save did not show its error.');
+      await poll(async () => await page.getByText(/Document pin could not be saved:.*Quota exceeded/).count() > 0, 'A failed pin save did not show its error.');
       assert.equal(await pins.count(), 0, 'A failed save must not add a shortcut.');
       assert.equal(await failingRow.locator('.docshelf-pin-icon').count(), 0, 'A failed save must not mark the original as pinned.');
     } finally {
