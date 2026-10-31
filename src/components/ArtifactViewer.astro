@@ -33,6 +33,7 @@ const blankFrameUrl = 'about:blank';
   data-artifacts={JSON.stringify(artifacts)}
   data-folder-groups={JSON.stringify(shelf.folderGroups)}
   data-shelf-revision={shelf.shelfRevision}
+  data-shelf-id={shelf.shelfId}
   data-docshelf-live-updates={String(liveUpdatesEnabled)}
 >
   {
@@ -171,6 +172,7 @@ const blankFrameUrl = 'about:blank';
   import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
   import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
+  import { readPins, setPinned } from '@docshelf/core/pins';
 
   interface Artifact {
     route: string;
@@ -331,6 +333,8 @@ const blankFrameUrl = 'about:blank';
     const shelfSources = artifacts.flatMap((artifact) => (artifact.sourceId ? [artifact.sourceId] : []));
     let readState = loadReadState(shelfSources);
     let unread = readState ? unreadSources(readState, shelfSources) : new Set<string>();
+    const pinsKey = `docshelf:pins:${basePath}:${root.dataset.shelfId}`;
+    let pins = readPins(readStoredValue(pinsKey));
 
     let currentArtifact: Artifact | undefined;
     let currentSelection: ArtifactSelection | undefined;
@@ -343,6 +347,21 @@ const blankFrameUrl = 'about:blank';
     const documentActions = createDocumentActions({
       basePath,
       localActions: root.dataset.docshelfLiveUpdates === 'true',
+      pins: {
+        isPinned: route => pins.sources.includes(pinIdentity(artifacts.find(artifact => artifact.route === route))),
+        setPinned: async (route, pinned) => {
+          const source = pinIdentity(artifacts.find(artifact => artifact.route === route));
+          if (!source) throw new Error('This document is no longer on the shelf.');
+          const update = () => {
+            const next = setPinned(readStoredValue(pinsKey), source, pinned);
+            if (!writeStoredValue(pinsKey, next)) throw new Error('Document pin could not be saved. Check your browser’s storage settings.');
+            pins = next;
+            showPins();
+          };
+          if (navigator.locks) await navigator.locks.request(pinsKey, update);
+          else update();
+        },
+      },
       removeImported: route => {
         writeImportedArtifacts(readImportedArtifacts().filter(artifact => artifact.route !== route));
         window.location.reload();
@@ -352,6 +371,10 @@ const blankFrameUrl = 'about:blank';
     initializeImportDialog();
     showUnread();
     window.addEventListener('storage', (event) => {
+      if (event.key === pinsKey || event.key === null) {
+        pins = readPins(readStoredValue(pinsKey));
+        showPins();
+      }
       if (event.key !== readStateStorageKey || !readState) return;
       const shown = currentArtifact?.sourceId;
       const shownWasRead = Boolean(shown && !unread.has(shown));
@@ -386,6 +409,84 @@ const blankFrameUrl = 'about:blank';
       registerSidebarLink(link, route);
     }
     for (const artifact of importedArtifacts) addImportedSidebarLink(artifact);
+    showPins();
+
+    function pinIdentity(artifact?: Artifact): string {
+      if (!artifact) return '';
+      // Remote identities also cover browser imports and their hosted equivalents.
+      return parseClaudeArtifactUrl(artifact.embedUrl || artifact.source || '')?.publicUrl
+        || parseGitHubMarkdownUrl(artifact.rawUrl || artifact.source || '')?.rawUrl
+        || artifact.sourceId || '';
+    }
+
+    function showPins() {
+      const topLevel = document.querySelector<HTMLUListElement>('#starlight__sidebar ul.top-level');
+      if (!topLevel) return;
+      const previous = topLevel.querySelector<HTMLElement>('[data-docshelf-pins]');
+      const collapsed = previous?.querySelector('details')?.open === false;
+      const focusedRoute = previous?.contains(document.activeElement)
+        ? document.activeElement?.closest('li.docshelf-document-row')?.querySelector<HTMLAnchorElement>('a')?.dataset.docshelfRoute : undefined;
+      for (let index = sidebarLinks.length - 1; index >= 0; index--) {
+        if (previous?.contains(sidebarLinks[index].link)) sidebarLinks.splice(index, 1);
+      }
+      previous?.remove();
+      const bySource = new Map(artifacts.map(artifact => [pinIdentity(artifact), artifact]));
+      const pinned = pins.sources.flatMap(id => bySource.has(id) ? [bySource.get(id)!] : []);
+      if (pinned.length) {
+        const section = document.createElement('li');
+        section.dataset.docshelfPins = '';
+        const details = document.createElement('details');
+        details.open = !collapsed;
+        const heading = document.createElement('summary');
+        heading.textContent = 'Pinned';
+        const list = document.createElement('ul');
+        details.append(heading, list);
+        section.append(details);
+        topLevel.prepend(section);
+        for (const artifact of pinned) {
+          const item = document.createElement('li');
+          const link = document.createElement('a');
+          link.href = artifactViewerUrl(emptySelection(artifact.route));
+          link.dataset.docshelfRoute = artifact.route;
+          const title = document.createElement('span');
+          title.className = 'docshelf-pin-title';
+          title.textContent = artifact.title;
+          title.title = artifact.title;
+          const context = document.createElement('span');
+          context.className = 'docshelf-pin-location';
+          context.textContent = [artifact.project || 'Imported', ...(artifact.folders || [])].join(' › ');
+          context.title = context.textContent;
+          link.setAttribute('aria-label', `${artifact.title}, ${context.textContent}`);
+          link.append(title, context);
+          if (currentArtifact?.route === artifact.route) {
+            link.setAttribute('data-docshelf-current', '');
+            link.setAttribute('aria-current', 'page');
+          }
+          item.append(link);
+          list.append(item);
+          sidebarLinks.push({ link, route: artifact.route });
+          registerSidebarLink(link, artifact.route);
+        }
+      }
+      for (const { link, route } of sidebarLinks) {
+        const pinned = pins.sources.includes(pinIdentity(artifacts.find(artifact => artifact.route === route)));
+        link.toggleAttribute('data-docshelf-pinned', pinned);
+        link.querySelector('.docshelf-pin-marker')?.remove();
+        if (pinned) {
+          const marker = document.createElement('span');
+          marker.className = 'docshelf-pin-marker';
+          marker.setAttribute('role', 'img');
+          marker.setAttribute('aria-label', 'Pinned');
+          link.append(marker);
+        }
+      }
+      showUnread();
+      if (focusedRoute) {
+        const target = sidebarLinks.find(entry => entry.route === focusedRoute)?.link;
+        for (let group = target?.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
+        target?.focus();
+      }
+    }
 
     function registerSidebarLink(link: HTMLAnchorElement, route: string) {
       documentActions.add(
@@ -669,6 +770,7 @@ const blankFrameUrl = 'about:blank';
             addImportedSidebarLink(artifact);
           }
           writeImportedArtifacts(importedArtifacts);
+          showPins();
           forgetButton.hidden = false;
           closeDialog();
           showDocumentPane();
@@ -940,7 +1042,10 @@ const blankFrameUrl = 'about:blank';
     function showUnread() {
       for (const { link, route } of sidebarLinks) {
         const sourceId = artifacts.find((artifact) => artifact.route === route)?.sourceId;
-        setUnreadMarker(link, link, Boolean(sourceId && unread.has(sourceId)), 'Unread');
+        const isUnread = Boolean(sourceId && unread.has(sourceId));
+        const pinnedTitle = link.querySelector<HTMLElement>('.docshelf-pin-title');
+        setUnreadMarker(link, pinnedTitle || link, isUnread, 'Unread');
+        if (pinnedTitle) link.setAttribute('aria-description', isUnread ? 'Pinned. Unread.' : 'Pinned.');
       }
       for (const group of document.querySelectorAll<HTMLDetailsElement>('#starlight__sidebar details')) {
         const summary = group.querySelector<HTMLElement>(':scope > summary');

@@ -6,6 +6,10 @@
   "license": "MIT",
   "description": "Host-independent DocShelf URL and source-reference helpers.",
   "exports": {
+    "./pins": {
+      "types": "./types/pins.d.ts",
+      "default": "./src/pins.js"
+    },
     "./directories": {
       "types": "./types/directories.d.ts",
       "default": "./src/directories.js"

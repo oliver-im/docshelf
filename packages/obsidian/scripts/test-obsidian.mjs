@@ -15,6 +15,7 @@ import { testReportRegressions } from './test-report-regressions.mjs';
 import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 import { testSharedReadState } from './test-shared-read-state.mjs';
+import { testDocumentPins } from './test-pins.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 // Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
@@ -127,6 +128,7 @@ try {
   assert.equal(await page.locator('.docshelf-item-description, .docshelf-kind').count(), 0);
   assert.equal(await page.locator('.docshelf-item-icon svg').count(), 2);
   assert.deepEqual(await page.locator('.docshelf-project-count').allTextContents(), ['1', '1']);
+  await testDocumentPins({ page, poll, shelfPath });
   await firstProject.click();
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await secondProject.getAttribute('aria-expanded'), 'true');
@@ -743,7 +745,16 @@ try {
       await app.plugins.setEnable(true);
       await app.plugins.enablePluginAndSave('docshelf');
     });
-    await second.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
+    try {
+      await second.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
+    } catch (error) {
+      console.error('Second vault state:', await second.evaluate(() => {
+        const plugin = app.plugins.getPlugin('docshelf');
+        return { loaded: !!plugin, error: plugin?.error, settings: plugin?.settings, count: plugin?.catalog?.artifacts.length };
+      }));
+      await second.screenshot({ path: '.local/runtime/second-vault-failure.png' });
+      throw error;
+    }
     return second;
   } });
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);

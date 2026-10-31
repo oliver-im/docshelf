@@ -25,7 +25,12 @@ async function responseRecord(response: Response): Promise<Record<string, unknow
 }
 
 /** One shared menu, attached beside its trigger so mobile navigation retains focus ownership. */
-export function createDocumentActions(options: { basePath: string; localActions: boolean; removeImported: (route: string) => void }) {
+export function createDocumentActions(options: {
+  basePath: string;
+  localActions: boolean;
+  removeImported: (route: string) => void;
+  pins?: { isPinned: (route: string) => boolean; setPinned: (route: string, pinned: boolean) => Promise<void> };
+}) {
   const menu = document.createElement('div');
   menu.id = 'docshelf-document-actions';
   menu.className = 'docshelf-document-menu';
@@ -34,13 +39,14 @@ export function createDocumentActions(options: { basePath: string; localActions:
   menu.setAttribute('popover', 'manual');
   const openLink = menuLink('Open in new tab');
   const copyButton = menuButton('Copy link');
+  const pinButton = menuButton('Pin document');
   const separator = document.createElement('hr');
   separator.setAttribute('role', 'separator');
   const sourceLink = menuLink('View source');
   const revealButton = menuButton('Reveal in Finder');
   const addButton = menuButton('Add…');
   const removeButton = menuButton('Remove from shelf…');
-  menu.append(openLink, copyButton, separator, sourceLink, revealButton, addButton, removeButton);
+  menu.append(openLink, copyButton, pinButton, separator, sourceLink, revealButton, addButton, removeButton);
 
   const notice = document.createElement('div');
   notice.className = 'docshelf-action-notice';
@@ -182,6 +188,15 @@ export function createDocumentActions(options: { basePath: string; localActions:
     close();
     window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } }));
   });
+  pinButton.addEventListener('click', () => {
+    const selection = active;
+    if (!selection || !options.pins) return;
+    const pinned = !options.pins.isPinned(selection.artifact.route);
+    close(true);
+    void options.pins.setPinned(selection.artifact.route, pinned).then(() => {
+      showNotice(pinned ? 'Document pinned.' : 'Document unpinned.');
+    }).catch(error => showNotice(error instanceof Error ? error.message : 'Document pin could not be saved.', true));
+  });
   removeButton.addEventListener('click', () => {
     const selection = active;
     if (!selection || !selection.artifact.imported && !selection.token) return;
@@ -314,7 +329,7 @@ export function createDocumentActions(options: { basePath: string; localActions:
       trigger.setAttribute('aria-expanded', 'false');
       trigger.setAttribute('aria-controls', menu.id);
       trigger.popoverTargetElement = menu;
-      trigger.setAttribute('aria-label', `Actions for ${link.textContent?.trim() || 'document'}`);
+      trigger.setAttribute('aria-label', `Actions for ${link.getAttribute('aria-label') || link.textContent?.trim() || 'document'}`);
       trigger.title = 'Document actions';
       const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       icon.setAttribute('viewBox', '0 0 24 24');
@@ -333,6 +348,8 @@ export function createDocumentActions(options: { basePath: string; localActions:
         const artifact = getArtifact();
         if (!artifact) return;
         active = { trigger, artifact, viewerUrl };
+        pinButton.hidden = !options.pins;
+        pinButton.textContent = options.pins?.isPinned(artifact.route) ? 'Unpin document' : 'Pin document';
         const remoteSource = parseClaudeArtifactUrl(artifact.embedUrl || artifact.source || '')?.publicUrl
           || parseGitHubMarkdownUrl(artifact.source || '')?.sourceUrl;
         openLink.href = link.href;

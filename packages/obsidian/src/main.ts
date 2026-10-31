@@ -22,6 +22,7 @@ import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
 import { documentTree, type FolderSegment } from '@docshelf/core/directories';
 import { unreadSources } from '@docshelf/core/read-state';
+import { readPins, setPinned } from '@docshelf/core/pins';
 import { ShelfReadState } from './core/read-state';
 import { eventLogPath } from '../../local/events.mjs';
 import { RemoveModal, type RemovalTarget } from './ui/remove';
@@ -57,6 +58,8 @@ export default class DocShelfPlugin extends Plugin {
   private revisions = new Map<string, string>();
   /** Opened documents, and those on the shelf when tracking began, kept per device and shelf rather than in the shared shelf file. */
   private readState: ShelfReadState | null = null;
+  pinnedSources: string[] = [];
+  private pinsKey = '';
   private readStatusError = '';
   private unread = new Set<string>();
   /** Sources on the shelf before an addition in progress; the documents it adds are already known to the reader. */
@@ -78,6 +81,10 @@ export default class DocShelfPlugin extends Plugin {
     };
     this.registerDomEvent(window, 'storage', event => {
       if (event.storageArea === window.localStorage && event.key === this.readState?.key) void this.readAnnouncements();
+      if (event.storageArea === window.localStorage && (event.key === this.pinsKey || event.key === null)) {
+        this.loadPins();
+        if (!this.loading) this.emit();
+      }
     });
     this.registerView(SHELF_VIEW, leaf => new ShelfView(leaf, this));
     this.registerView(DOCUMENT_VIEW, leaf => new DocumentView(leaf, this));
@@ -155,6 +162,8 @@ export default class DocShelfPlugin extends Plugin {
     await this.saveData(settings);
     this.catalog = null;
     this.readState = null;
+    this.pinsKey = '';
+    this.pinnedSources = [];
     this.readStatusError = '';
     this.unread.clear();
     this.server.setCatalog(null);
@@ -227,6 +236,8 @@ export default class DocShelfPlugin extends Plugin {
       }
       if (this.disposed || settings !== this.settings) return;
       this.catalog = catalog;
+      this.pinsKey = `docshelf:obsidian:pins:${catalog.shelfPath}`;
+      this.loadPins();
       await this.updateReadState(catalog);
       if (this.disposed || settings !== this.settings) return;
       this.watchAnnouncements(catalog.shelfPath);
@@ -313,6 +324,26 @@ export default class DocShelfPlugin extends Plugin {
   private emit(): void { for (const listener of this.listeners) listener(); }
 
   isUnread(artifact: Artifact): boolean { return this.unread.has(sourceIdentity(artifact)); }
+
+  isPinned(artifact: Artifact): boolean { return this.pinnedSources.includes(sourceIdentity(artifact)); }
+
+  private loadPins(): void {
+    try { this.pinnedSources = readPins(JSON.parse(window.localStorage.getItem(this.pinsKey) || 'null')).sources; }
+    catch { this.pinnedSources = []; }
+  }
+
+  async pinDocument(artifact: Artifact, pinned: boolean): Promise<void> {
+    const key = this.pinsKey;
+    const identity = sourceIdentity(artifact);
+    if (!key || !this.catalog?.artifacts.some(item => sourceIdentity(item) === identity)) return;
+    try {
+      await navigator.locks.request(key, () => {
+        const next = setPinned(JSON.parse(window.localStorage.getItem(key) || 'null'), identity, pinned);
+        window.localStorage.setItem(key, JSON.stringify(next));
+        if (this.pinsKey === key) { this.pinnedSources = next.sources; this.emit(); }
+      });
+    } catch (error) { new Notice(`Document pin could not be saved: ${message(error)}`); }
+  }
 
   private async updateReadState(catalog: Catalog, read: string[] = []): Promise<void> {
     if (this.readState?.shelfPath !== catalog.shelfPath) {

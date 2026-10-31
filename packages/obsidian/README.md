@@ -6,7 +6,7 @@ Edit registered local Markdown in Obsidian's native editor, browse HTML reports,
 
 ## Install
 
-Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. The full packaged runtime suite for this **desktop beta** passes on macOS with Obsidian 1.14.4; focused shared-read checks cover Obsidian 1.13.7. Windows and Linux are not yet verified.
+Requires desktop Obsidian **1.13.7 or later**. Open the [community listing](https://community.obsidian.md/plugins/docshelf) for the installation link and current review scorecard. The full packaged runtime suite for this **desktop beta** passes on macOS with Obsidian 1.14.5; earlier focused shared-read checks cover Obsidian 1.13.7. Windows and Linux are not yet verified.
 
 **[Download DocShelf for Obsidian ZIP][obsidian-download]** · [Release notes][obsidian-release]
 
@@ -267,6 +267,12 @@ and do not join Obsidian Sync. This plugin is desktop-only. Mirroring and mobile
 support are outside this version's scope. Local Markdown uses Obsidian's native
 rendering; the read-only GitHub viewer displays Mermaid fences as code.
 
+## Pinned documents
+
+Right-click a document, or focus its row and press **Shift+F10**, then choose **Pin document**. The **Pinned** section above the projects shows a shortcut with its project and folder. The document stays in its original folder with a pin indicator. Choose **Unpin document** from either row to remove the shortcut. Pins survive restarts and title or route changes, and temporarily absent documents regain their shortcut when they return. Pins are stored per shelf in this device's Obsidian profile, shared between vault windows using that shelf, and separate from web pins.
+
+![Pinned document above the projects, with a pin indicator on its original row](../../docs/images/document-pins.png)
+
 ## Develop and verify
 
 Install with `npm ci` at the repository root using Node 24 or later. The commands
@@ -308,5 +314,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.7.0/docshelf-0.7.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.7.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.8.0/docshelf-0.8.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.8.0

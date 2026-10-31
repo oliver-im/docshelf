@@ -467,6 +467,7 @@ async function writeGeneratedShelf(shelf, revisionState) {
   const folders = shelfFolders(shelf);
   const generatedShelf = {
     version: shelf.version,
+    shelfId: contentRevision(path.resolve(shelfConfigurations.get(shelf)?.shelfPath || path.join(docShelfRoot, 'shelf.json'))).slice(0, 16),
     shelfRevision: revisionState.shelfRevision,
     folderGroups: shelfFolderGroups(shelf),
     artifacts: shelf.artifacts.map(({ project, source, sourcePath, route, title, description, embedUrl, format }, index) => ({

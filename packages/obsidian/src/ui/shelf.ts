@@ -3,7 +3,7 @@ import type DocShelfPlugin from '../main';
 import type { SearchHit } from '../core/search';
 import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
-import { documentLabel } from '../core/catalog';
+import { documentLabel, sourceIdentity } from '../core/catalog';
 import type { DocumentTreeNode, FolderSegment } from '@docshelf/core/directories';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -24,6 +24,7 @@ const displayPath = (file: string): string => file.startsWith(homedir() + path.s
 
 export class ShelfView extends ItemView {
   private query = '';
+  private pinsCollapsed = false;
   private collapsedProjects = new Set<string>();
   private collapsedFolders = new Set<string>();
   private projectOrder: string[] = [];
@@ -44,11 +45,12 @@ export class ShelfView extends ItemView {
   getViewType(): string { return SHELF_VIEW; }
   getDisplayText(): string { return 'DocShelf'; }
   getIcon(): string { return DOCSHELF_ICON; }
-  getState(): Record<string, unknown> { return { collapsedProjects: [...this.collapsedProjects], collapsedFolders: [...this.collapsedFolders], projectOrder: this.projectOrder, documentOrder: Object.fromEntries(this.documentOrder), folderOrder: Object.fromEntries(this.folderOrder) }; }
+  getState(): Record<string, unknown> { return { pinsCollapsed: this.pinsCollapsed, collapsedProjects: [...this.collapsedProjects], collapsedFolders: [...this.collapsedFolders], projectOrder: this.projectOrder, documentOrder: Object.fromEntries(this.documentOrder), folderOrder: Object.fromEntries(this.folderOrder) }; }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     this.renderedResults = '';
-    const state = value as { collapsedProjects?: unknown; collapsedFolders?: unknown; projectOrder?: unknown; documentOrder?: unknown; folderOrder?: unknown } | null;
+    const state = value as { pinsCollapsed?: unknown; collapsedProjects?: unknown; collapsedFolders?: unknown; projectOrder?: unknown; documentOrder?: unknown; folderOrder?: unknown } | null;
+    this.pinsCollapsed = state?.pinsCollapsed === true;
     this.collapsedProjects = new Set(stringList(state?.collapsedProjects));
     this.collapsedFolders = new Set(stringList(state?.collapsedFolders));
     this.projectOrder = stringList(state?.projectOrder);
@@ -103,7 +105,7 @@ export class ShelfView extends ItemView {
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
     const unread = artifacts.filter(artifact => this.plugin.isUnread(artifact)).map(artifact => artifact.route);
-    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath(), unread]);
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath(), unread, this.plugin.pinnedSources]);
     if (key === this.renderedResults) return;
     this.renderedResults = key;
     this.results.empty();
@@ -112,6 +114,24 @@ export class ShelfView extends ItemView {
     if (searching) {
       for (const hit of hits) this.renderItem(this.results, hit, true, folders.get(hit.artifact.route) || []);
       return;
+    }
+    const bySource = new Map(hits.map(hit => [sourceIdentity(hit.artifact), hit]));
+    const pinned = this.plugin.pinnedSources.flatMap(id => bySource.has(id) ? [bySource.get(id)!] : []);
+    if (pinned.length) {
+      const section = this.results.createDiv({ cls: 'docshelf-pinned' });
+      const heading = section.createEl('h3', { cls: 'docshelf-project-heading' });
+      const toggle = heading.createEl('button', { cls: 'docshelf-pinned-toggle', attr: { type: 'button', 'aria-expanded': String(!this.pinsCollapsed) } });
+      setIcon(toggle.createSpan({ cls: 'docshelf-project-chevron', attr: { 'aria-hidden': 'true' } }), 'chevron-right');
+      toggle.createSpan({ text: 'Pinned' });
+      const items = section.createDiv({ cls: 'docshelf-project-items' });
+      items.hidden = this.pinsCollapsed;
+      toggle.onclick = () => {
+        this.pinsCollapsed = !this.pinsCollapsed;
+        items.hidden = this.pinsCollapsed;
+        toggle.setAttribute('aria-expanded', String(!this.pinsCollapsed));
+        this.app.workspace.requestSaveLayout();
+      };
+      for (const hit of pinned) this.renderItem(items, hit, false, folders.get(hit.artifact.route) || [], true);
     }
     const groups = new Map<string, SearchHit[]>();
     const ordered = [...hits].sort((a, b) => a.artifact.project.localeCompare(b.artifact.project) || a.artifact.title.localeCompare(b.artifact.title));
@@ -389,6 +409,15 @@ export class ShelfView extends ItemView {
   private showDocumentMenu(artifact: Artifact, button: HTMLButtonElement, searching: boolean, folder: string): void {
     const { project, route } = artifact;
     const menu = this.createMenu(project);
+    const pinned = this.plugin.isPinned(artifact);
+    menu.addItem(item => item.setTitle(pinned ? 'Unpin document' : 'Pin document').setIcon(pinned ? 'pin-off' : 'pin').onClick(async () => {
+      await this.plugin.pinDocument(artifact, !pinned);
+      const target = Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-item')).find(item => item.dataset.route === route);
+      for (let parent = target?.parentElement; parent && parent !== this.results; parent = parent.parentElement) {
+        if (parent.hidden) parent.parentElement?.querySelector<HTMLButtonElement>(':scope > .docshelf-folder-toggle, :scope > h3 > button')?.click();
+      }
+      target?.focus();
+    }));
     if (!searching) this.addMoveActions(menu, route, () => this.folderDocuments(project, folder), order => this.saveFolderDocuments(project, folder, order, route));
     menu.addSeparator();
     menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ artifact })));
@@ -437,7 +466,21 @@ export class ShelfView extends ItemView {
   }
 
   private showMenu(menu: Menu, anchor: HTMLButtonElement): void {
-    menu.onHide(() => { this.orderMenu = undefined; if (anchor.isConnected) anchor.focus(); });
+    // Keep keyboard dismissal local to this menu, including when a refresh has
+    // replaced its trigger and Obsidian's active keyboard scope has changed.
+    const doc = anchor.ownerDocument;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      menu.hide();
+    };
+    doc.addEventListener('keydown', escape, true);
+    menu.onHide(() => {
+      doc.removeEventListener('keydown', escape, true);
+      if (this.orderMenu === menu) this.orderMenu = undefined;
+      if (anchor.isConnected) anchor.focus();
+    });
     const bounds = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, anchor.ownerDocument);
   }
@@ -460,7 +503,7 @@ export class ShelfView extends ItemView {
 
   private makeDocumentSortable(button: HTMLButtonElement, { project, route }: Artifact, folder: string): void {
     button.draggable = true;
-    button.setAttribute('aria-description', `Drag to reorder within this ${folder === ROOT_FOLDER ? 'project' : 'folder'}. Press Shift+F10 for document actions.`);
+    button.setAttribute('aria-description', `${button.hasAttribute('data-pinned') ? 'Pinned. ' : ''}Drag to reorder within this ${folder === ROOT_FOLDER ? 'project' : 'folder'}. Press Shift+F10 for document actions.`);
     button.addEventListener('dragstart', event => {
       if (!event.dataTransfer) { event.preventDefault(); return; }
       event.stopPropagation();
@@ -536,28 +579,32 @@ export class ShelfView extends ItemView {
     if (this.renderAfterDrag) { this.renderAfterDrag = false; this.renderResults(); }
   }
 
-  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean, folders: FolderSegment[]): void {
+  private renderItem(parent: HTMLElement, { artifact, excerpt }: SearchHit, searching: boolean, folders: FolderSegment[], pinnedShortcut = false): void {
     const kind = { markdown: 'Markdown', html: 'HTML', github: 'GitHub Markdown', claude: 'Claude artifact' }[artifact.kind];
     const icon = { markdown: 'file-text', html: 'file-code', github: 'github', claude: 'globe' }[artifact.kind];
     const label = documentLabel(artifact);
     const folder = folders.at(-1)?.key || ROOT_FOLDER;
     const location = [artifact.project, ...folders.length ? [folders.map(folder => folder.name).join('/')] : []].join(' › ');
     const unread = this.plugin.isUnread(artifact);
-    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [unread ? 'Unread' : '', label.title, kind, searching ? location : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
+    const pinned = this.plugin.isPinned(artifact);
+    const button = parent.createEl('button', { cls: 'docshelf-item', attr: { type: 'button', 'aria-label': label.name, 'aria-description': [pinned ? 'Pinned' : '', unread ? 'Unread' : '', label.title, kind, searching || pinnedShortcut ? location : '', searching ? excerpt : ''].filter(Boolean).join('. ') } });
     button.toggleClass('docshelf-search-result', searching);
     button.toggleClass('docshelf-unread', unread);
+    button.toggleClass('docshelf-pinned-item', pinnedShortcut);
+    if (pinned) button.setAttribute('data-pinned', 'true');
     button.dataset.route = artifact.route;
     setTooltip(button, [label.title, `${label.name} (${kind})`].filter(Boolean).join('\n'), { placement: 'right' });
     const heading = button.createDiv({ cls: 'docshelf-item-heading' });
     setIcon(heading.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), icon);
     heading.createSpan({ text: label.name, cls: 'docshelf-item-title' });
+    if (pinned) setIcon(heading.createSpan({ cls: 'docshelf-pin-icon', attr: { 'aria-label': 'Pinned', role: 'img' } }), 'pin');
     if (unread) heading.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
     if (label.title) heading.createSpan({ text: label.title, cls: 'docshelf-item-subtitle' });
-    if (searching) {
-      if (excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
+    if (searching || pinnedShortcut) {
+      if (searching && excerpt) button.createSpan({ text: excerpt, cls: 'docshelf-item-description' });
       button.createSpan({ text: location, cls: 'docshelf-item-project' });
     } else this.makeDocumentSortable(button, artifact, folder);
-    this.makeDocumentMenu(button, artifact, searching, folder);
+    this.makeDocumentMenu(button, artifact, searching || pinnedShortcut, folder);
     button.onclick = () => { void this.plugin.openArtifact(artifact); };
   }
 }

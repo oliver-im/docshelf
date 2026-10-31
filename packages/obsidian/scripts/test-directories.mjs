@@ -65,6 +65,14 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   });
   const expectedOutline = JSON.stringify([{ 'watched-documents': [{ nested: ['second.md'] }, 'first.md'] }, 'loose-document.md']);
   await poll(async () => JSON.stringify(await outline()) === expectedOutline, 'Folder documents did not nest as they sit on disk.');
+  const nestedRow = page.locator('.docshelf-project .docshelf-item').filter({ has: page.getByText('second.md', { exact: true }) });
+  await nestedRow.click({ button: 'right' });
+  await page.getByText('Pin document', { exact: true }).click();
+  await poll(async () => await page.locator('.docshelf-pinned .docshelf-item').count() === 1, 'The nested document did not pin.');
+  assert.equal(await page.locator('.docshelf-pinned .docshelf-item-project').textContent(), 'Watched project › watched-documents/nested');
+  await nestedRow.click({ button: 'right' });
+  await page.getByText('Unpin document', { exact: true }).click();
+  await poll(async () => await page.locator('.docshelf-pinned').count() === 0, 'Unpinning the original row left a shortcut behind.');
   await page.screenshot({ path: '.local/runtime/directories-added.png' });
   const unreadRows = () => page.evaluate(() => {
     const group = [...document.querySelectorAll('.docshelf-project')].find(group => group.querySelector('.docshelf-project-name')?.textContent === 'Watched project');
@@ -257,6 +265,7 @@ export async function testDirectories({ page, poll, workspace, shelfPath }) {
   await watchedProject.press('Shift+F10');
   assert.equal(await page.locator('.menu-item').filter({ hasText: /^Mark all as read$/ }).evaluate(item => item.classList.contains('is-disabled')), true);
   await page.keyboard.press('Escape');
+  await poll(async () => await page.locator('.menu').count() === 0, 'Escape did not dismiss the shelf menu after a read-state refresh.');
   const later = path.join(directory, 'nested/later.md');
   await writeFile(later, '# Arrived after bulk read\n');
   await poll(async () => (await unreadRows()).includes('later.md'), 'Documents arriving after a bulk read must still be unread.');
