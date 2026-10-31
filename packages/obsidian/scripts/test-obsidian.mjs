@@ -15,6 +15,7 @@ import { testReportRegressions } from './test-report-regressions.mjs';
 import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 import { testSharedReadState } from './test-shared-read-state.mjs';
+import { testDocumentPins } from './test-pins.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 // Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
@@ -39,6 +40,7 @@ await mkdir(profile, { recursive: true });
 await mkdir(home);
 await mkdir(pluginPath, { recursive: true });
 await mkdir('.local/runtime', { recursive: true });
+await rm('.local/runtime/results.json', { force: true });
 await cp('examples', workspace, { recursive: true });
 if (packageMode) {
   const archive = unzipSync(await readFile(`dist/release/docshelf-${manifest.version}.zip`));
@@ -127,6 +129,7 @@ try {
   assert.equal(await page.locator('.docshelf-item-description, .docshelf-kind').count(), 0);
   assert.equal(await page.locator('.docshelf-item-icon svg').count(), 2);
   assert.deepEqual(await page.locator('.docshelf-project-count').allTextContents(), ['1', '1']);
+  await testDocumentPins({ page, poll, shelfPath });
   await firstProject.click();
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await secondProject.getAttribute('aria-expanded'), 'true');
@@ -737,13 +740,25 @@ try {
       }
     }, 'The second test vault did not open.');
     second.on('pageerror', error => { pageErrors.push(error.message); console.error('Second vault page error:', error.stack || error.message); });
+    // Match the first vault's startup order: enabling during workspace startup
+    // can race Obsidian's own plugin load and leave an unloaded instance behind.
+    await second.waitForFunction(() => window.app?.workspace?.layoutReady, undefined, { timeout: 30_000 });
     const trust = second.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
     if (await trust.count()) await trust.click();
     await second.evaluate(async () => {
       await app.plugins.setEnable(true);
       await app.plugins.enablePluginAndSave('docshelf');
     });
-    await second.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
+    try {
+      await second.waitForFunction(() => app.plugins.getPlugin('docshelf')?.catalog?.artifacts.length === 2);
+    } catch (error) {
+      console.error('Second vault state:', await second.evaluate(() => {
+        const plugin = app.plugins.getPlugin('docshelf');
+        return { loaded: !!plugin, disposed: plugin?.disposed, loading: plugin?.loading, error: plugin?.error, settings: plugin?.settings, count: plugin?.catalog?.artifacts.length };
+      }));
+      await second.screenshot({ path: '.local/runtime/second-vault-failure.png' });
+      throw error;
+    }
     return second;
   } });
   const origin = await page.evaluate(() => app.plugins.getPlugin('docshelf').server.origin);

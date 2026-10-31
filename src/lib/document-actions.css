@@ -2,6 +2,18 @@
   position: relative;
 }
 
+#starlight__sidebar [data-docshelf-pins] { margin-block-end: 1rem; }
+#starlight__sidebar [data-docshelf-pins] summary { padding-block: 0.35rem; font-weight: 600; cursor: pointer; }
+#starlight__sidebar [data-docshelf-pins] > details > ul { margin: 0; padding: 0; list-style: none; }
+#starlight__sidebar [data-docshelf-pins] .docshelf-document-row { margin: 0; }
+#starlight__sidebar [data-docshelf-pins] .docshelf-document-row > a { display: block; padding-block: 0.4rem; padding-inline-start: 0.5rem; border-radius: 0.25rem; color: var(--sl-color-gray-2); font-size: var(--sl-text-sm); line-height: 1.4; text-decoration: none; }
+#starlight__sidebar [data-docshelf-pins] .docshelf-document-row > a:hover { color: var(--sl-color-white); }
+.docshelf-pin-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docshelf-pin-location { display: block; color: var(--sl-color-gray-3); font-size: var(--sl-text-xs); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docshelf-pin-marker { display: inline-block; width: 0.8rem; height: 0.8rem; margin-inline-start: 0.4rem; vertical-align: middle; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M16 9V4l1-1H7l1 1v5l-3 3v3h6v7h2v-7h6v-3z'/%3E%3C/svg%3E") center / contain no-repeat; }
+#starlight__sidebar [data-docshelf-pins] .docshelf-pin-marker { position: absolute; inset-inline-end: 2.25rem; top: 0.65rem; }
+#starlight__sidebar [data-docshelf-pins] .docshelf-pin-title { padding-inline-end: 1rem; }
+
 #starlight__sidebar .docshelf-document-row > a {
   min-height: 2rem;
   padding-inline-end: 2.25rem;
@@ -56,6 +68,7 @@
     align-items: center;
   }
   .docshelf-document-more { width: 44px; height: 44px; }
+  #starlight__sidebar [data-docshelf-pins] .docshelf-pin-marker { inset-inline-end: calc(44px + 0.25rem); }
 }
 
 /* The popover's top layer escapes the sidebar's scrolling/stacking boundaries. */

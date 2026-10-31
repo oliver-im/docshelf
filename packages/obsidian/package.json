@@ -1,6 +1,6 @@
 {
   "name": "obsidian-docshelf",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Edit registered external Markdown in Obsidian and browse Markdown and HTML documents by project.",
   "type": "module",
@@ -32,8 +32,8 @@
   "dependencies": {
     "@docshelf/core": "*",
     "chokidar": "^4.0.3",
-    "dompurify": "^3.4.14",
-    "markdown-it": "^14.1.0",
+    "dompurify": "^3.4.17",
+    "markdown-it": "^14.3.3",
     "minisearch": "^7.1.2",
     "parse5": "^7.3.0"
   }

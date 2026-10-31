@@ -38,12 +38,12 @@
     "lint": "eslint packages/obsidian/src \"public/*.js\" \"src/lib/*.{ts,js}\" src/content.config.ts"
   },
   "dependencies": {
-    "@astrojs/markdown-remark": "^7.2.4",
+    "@astrojs/markdown-remark": "^7.3.5",
     "@astrojs/starlight": "^0.41.10",
     "@docshelf/core": "*",
-    "astro": "^7.2.9",
+    "astro": "^7.4.4",
     "chokidar": "^5.0.0",
-    "dompurify": "^3.4.14",
+    "dompurify": "^3.4.17",
     "marked": "^18.0.11",
     "mermaid": "^11.17.2",
     "pagefind": "^1.5.2",

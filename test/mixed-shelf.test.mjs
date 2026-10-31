@@ -62,6 +62,16 @@ test('generated documents keep an opaque source identity when their route change
   assert.equal(generated.includes(await realpath(fixture)), false);
   const moved = await generate([{ project: 'Notes', source: 'local.md', route: 'moved/local.html', title: 'Local' }]);
   assert.deepEqual(sourceIds(moved), [local]);
+  assert.equal(JSON.parse(moved).shelfId, JSON.parse(generated).shelfId, 'Editing a shelf must preserve its pin namespace.');
+  const alias = path.join(fixture, 'shelf-alias.json');
+  await symlink(shelfPath, alias);
+  await implementation.syncArtifacts(await implementation.loadShelfFrom(alias));
+  const aliased = JSON.parse(await readFile(implementation.generatedShelfPath, 'utf8'));
+  assert.equal(aliased.shelfId, JSON.parse(generated).shelfId, 'A symlink and its target must share their pin namespace.');
+  const separate = path.join(fixture, 'separate-shelf.json');
+  await writeFile(separate, await readFile(shelfPath));
+  await implementation.syncArtifacts(await implementation.loadShelfFrom(separate));
+  assert.notEqual(JSON.parse(await readFile(implementation.generatedShelfPath, 'utf8')).shelfId, aliased.shelfId, 'Separate shelf files must not share pins even with identical contents.');
 });
 
 for (const replacement of ['file', 'directory']) {

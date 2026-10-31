@@ -74,6 +74,19 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
     });
     await expectBoth([]);
     console.log('Shared read status migrated vault histories, synchronized two vault windows, preserved concurrent reads, and survived reload without replaying updates.');
+    const pin = (window, index, pinned) => window.evaluate(async ({ index, pinned }) => {
+      const p = app.plugins.getPlugin('docshelf');
+      await p.pinDocument(p.catalog.artifacts[index], pinned);
+    }, { index, pinned });
+    await Promise.all([pin(page, 0, true), pin(second, 1, true)]);
+    for (const window of [page, second]) {
+      await poll(async () => await window.locator('.docshelf-pinned .docshelf-item').count() === 2, 'Concurrent pins were lost or did not reach the other vault window.');
+    }
+    await Promise.all([pin(second, 0, false), pin(page, 1, false)]);
+    for (const window of [page, second]) {
+      await poll(async () => await window.locator('.docshelf-pinned').count() === 0, 'Unpinning did not reach the other vault window.');
+    }
+    console.log('Document pins synchronized between vault windows without losing concurrent changes.');
   } finally {
     await page.evaluate(() => { delete document.hasFocus; });
     await second.close();
