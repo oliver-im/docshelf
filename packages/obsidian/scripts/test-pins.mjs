@@ -49,6 +49,26 @@ export async function testDocumentPins({ page, poll, shelfPath }) {
     assert.equal(await page.locator('.docshelf-project .docshelf-item[data-route="renamed/guide.html"]').count(), 1);
     assert.equal(await page.locator('.docshelf-pin-icon').count(), 0);
     assert.equal(await page.locator('.docshelf-project .docshelf-item[data-route="renamed/guide.html"]').evaluate(el => el === document.activeElement), true, 'Unpinning must restore focus even when the original project was collapsed.');
+    // Storage can reject a write; never present an unsaved pin as successful.
+    const failingRow = page.locator('.docshelf-project .docshelf-item[data-route="renamed/guide.html"]');
+    await failingRow.press('Shift+F10');
+    await page.evaluate(() => {
+      const key = app.plugins.getPlugin('docshelf').pinsKey;
+      const original = Storage.prototype.setItem;
+      window.restorePinStorage = () => { Storage.prototype.setItem = original; delete window.restorePinStorage; };
+      Storage.prototype.setItem = function (name, value) {
+        if (name === key) throw new Error('Quota exceeded');
+        return original.call(this, name, value);
+      };
+    });
+    try {
+      await page.getByText('Pin document', { exact: true }).click();
+      await poll(async () => await page.getByText('Document pin could not be saved: Quota exceeded', { exact: true }).count() === 1, 'A failed pin save did not show its error.');
+      assert.equal(await pins.count(), 0, 'A failed save must not add a shortcut.');
+      assert.equal(await failingRow.locator('.docshelf-pin-icon').count(), 0, 'A failed save must not mark the original as pinned.');
+    } finally {
+      await page.evaluate(() => window.restorePinStorage());
+    }
     console.log('Document pins survived reload and route changes, stayed scoped to their shelf, and unpinned without removing originals.');
   } finally {
     await writeFile(shelfPath, baseline);

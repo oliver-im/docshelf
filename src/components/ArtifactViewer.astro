@@ -358,8 +358,8 @@ const blankFrameUrl = 'about:blank';
             pins = next;
             showPins();
           };
-          if (navigator.locks) await navigator.locks.request(pinsKey, update);
-          else update();
+          if (!navigator.locks) throw new Error('To save document pins, use an up-to-date browser on HTTPS or localhost.');
+          await navigator.locks.request(pinsKey, update);
         },
       },
       removeImported: route => {
@@ -424,6 +424,7 @@ const blankFrameUrl = 'about:blank';
       if (!topLevel) return;
       const previous = topLevel.querySelector<HTMLElement>('[data-docshelf-pins]');
       const collapsed = previous?.querySelector('details')?.open === false;
+      const focusedSummary = previous?.querySelector('summary') === document.activeElement;
       const focusedRoute = previous?.contains(document.activeElement)
         ? document.activeElement?.closest('li.docshelf-document-row')?.querySelector<HTMLAnchorElement>('a')?.dataset.docshelfRoute : undefined;
       for (let index = sidebarLinks.length - 1; index >= 0; index--) {
@@ -481,6 +482,7 @@ const blankFrameUrl = 'about:blank';
         }
       }
       showUnread();
+      if (focusedSummary) topLevel.querySelector<HTMLElement>('summary')?.focus();
       if (focusedRoute) {
         const target = sidebarLinks.find(entry => entry.route === focusedRoute)?.link;
         for (let group = target?.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;

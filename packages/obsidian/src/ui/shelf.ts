@@ -469,8 +469,12 @@ export class ShelfView extends ItemView {
     // Keep keyboard dismissal local to this menu, including when a refresh has
     // replaced its trigger and Obsidian's active keyboard scope has changed.
     const doc = anchor.ownerDocument;
+    const ownsFocus = () => {
+      const focused = doc.activeElement;
+      return !focused || focused === doc.body || this.contentEl.contains(focused) || Boolean(focused.closest('.menu'));
+    };
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || !ownsFocus()) return;
       event.preventDefault();
       event.stopPropagation();
       menu.hide();
@@ -479,7 +483,7 @@ export class ShelfView extends ItemView {
     menu.onHide(() => {
       doc.removeEventListener('keydown', escape, true);
       if (this.orderMenu === menu) this.orderMenu = undefined;
-      if (anchor.isConnected) anchor.focus();
+      if (anchor.isConnected && ownsFocus()) anchor.focus();
     });
     const bounds = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: bounds.left, y: bounds.bottom }, anchor.ownerDocument);
