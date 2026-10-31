@@ -32,8 +32,8 @@ These remaining advisories are not described as fixed. A fresh hosted review mus
 ## Fixed findings
 
 | Finding | Resolution |
-| Control-character regex warning in event sender labels | Check character codes explicitly while preserving rejection of ASCII controls and DEL. |
 | --- | --- |
+| Control-character regex warning in event sender labels | Check character codes explicitly while preserving rejection of ASCII controls and DEL. |
 | Unsafe `innerHTML` in web Mermaid rendering | Sanitize renderer output with the bundled DOMPurify before inserting a DOM fragment. Permit Mermaid's SVG HTML labels while sanitizing their children, attributes, and URLs; preserve the source fallback if rendering or sanitization fails. Browser tests cover labels, theme changes, active markup, and a missing sanitizer. |
 | Static `innerHTML` in the web document menu | Construct the SVG icon with DOM methods. |
 | Unnecessary SVG namespace assertion | Pass the nullable namespace accepted by `createElementNS` directly. |
@@ -58,6 +58,7 @@ These remaining advisories are not described as fixed. A fresh hosted review mus
 | Direct filesystem access | Required to open and edit explicitly registered files outside the vault. Reads and writes retain canonical workspace containment, registration checks, file identity and baseline checks, and draft recovery. Using the vault API would change the product's purpose. |
 | Shell execution | The shared lock helper uses `execFile('ps', [...])` with fixed arguments, a validated process ID, no shell, and a five-second timeout to identify a lock owner. Linux prefers `/proc`. Keep this identity check so the plugin does not break another app's active lock. No document text or shelf paths are executed as commands. |
 | Clipboard access | The plugin writes links and source references only after a user action. It does not read clipboard contents. |
+| Local storage | Shelf-scoped pins and read status use local storage so separate vault windows on the same device share them. Web Locks serialize updates and storage events refresh the other windows. This state contains source identities and read or pin metadata, not document contents; it is separate from vault settings and the shared shelf file. Moving it to vault-specific plugin data would break the intended cross-vault behavior. |
 | Extra release files | Keep the manual-install ZIP, licenses, dependency notices, and checksums. Obsidian installs only the three standard files; dependency licenses are also embedded in `main.js`. These attachments are intentional and not runtime dependencies. |
 | Four plugin CSS `!important` declarations | Two rules keep report pointer events within the isolated guest during a press and release. The other two override the host's inline display state when a source is unavailable and CodeMirror's own `display: flex !important` on the native line-number gutter. Removing them can misroute report input, expose an unavailable editor, or duplicate source labels. The rules apply only while the relevant DocShelf state is active and are documented in the stylesheet. |
 | Unbound host method | The native Markdown adapter intentionally saves the exact host method for restoration and calls an explicitly bound copy. A single documented lint exception covers that identity-preserving capture. |
