@@ -9,7 +9,7 @@ export async function testDocumentHistory({ page, poll, workspace, shelfPath }) 
   await mkdir(folder);
   const notes = '# Citation notes\n\nFirst cited line.\nSecond cited line.\n\n[Next note](notes-b.md#next)\n[Other report](report-b.html#section)\n';
   const fixtures = {
-    'report-a.html': '<h1 id="summary">Report A</h1><a id="report" href="report-b.html?session=2026-10-17&filter=a%26b#section">Other report</a><a id="plain" href="report-b.html#section">Default report</a><a id="session" href="?session=2026-10-28#summary">Next session</a><a id="notes" href="notes-a.md#L3-L4">Cited notes</a>',
+    'report-a.html': '<h1 id="summary">Report A</h1><a id="report" href="report-b.html?session=2026-10-17&filter=a%26b#section">Other report</a><a id="plain" href="report-b.html#section">Default report</a><a id="session" href="?session=2026-10-28#summary">Next session</a><button id="script" onclick="location.search=\'?session=2026-10-31\'">Script session</button><a id="notes" href="notes-a.md#L3-L4">Cited notes</a>',
     'report-b.html': '<h1 id="section">Report B</h1><a id="return" href="report-a.html?session=2026-10-17#summary">Return to the earlier session</a>',
     'notes-a.md': notes,
     'notes-b.md': '# Next\n\nSecond note.\n',
@@ -102,6 +102,20 @@ export async function testDocumentHistory({ page, poll, workspace, shelfPath }) 
     assert.equal(await guest('location.search'), '?session=2026-10-17', 'Reloads and restored view state must retain the query.');
     assert.deepEqual(await history(), beforeReload, 'A reload or no-op state must preserve the Forward entry.');
 
+    // Script-driven reloads use the document URL rather than a rewritten link.
+    await guest('document.querySelector("#script").click()');
+    await poll(() => guest('location.search === "?session=2026-10-31"'), 'The report script did not select its session.');
+    assert.equal((await state()).query, '?session=2026-10-31', 'Script-driven query changes must persist in the host state.');
+    assert.equal((await history()).back, beforeReload.back + 1);
+    await page.evaluate(leaf => leaf.view.loadDocument(), leaf);
+    await ready(reportA);
+    assert.equal(await guest('location.search'), '?session=2026-10-31');
+    await navigate('back', reportA);
+    assert.equal(await guest('location.search'), '?session=2026-10-17');
+    await navigate('forward', reportA);
+    assert.equal(await guest('location.search'), '?session=2026-10-31');
+    await navigate('back', reportA);
+
     await guest('document.querySelector("#notes").click()');
     await ready(notesA);
     assert.equal((await state()).type, 'docshelf-markdown');
@@ -143,6 +157,31 @@ export async function testDocumentHistory({ page, poll, workspace, shelfPath }) 
     // Back from Markdown to HTML closes the editor. An unsaved conflict must
     // be checkpointed and adopted again on Forward, without writing the source.
     await navigate('back', notesA);
+    // A temporary storage failure must not leave saving permanently blocked
+    // after storage returns, when the source has not changed outside the editor.
+    const recoveryDirectory = await page.evaluate(() => app.plugins.getPlugin('docshelf').recovery.directory);
+    const backup = `${recoveryDirectory}-history-test`;
+    const retryText = `${notes}\nSave after storage recovers.\n`;
+    await mkdir(recoveryDirectory, { recursive: true });
+    await rename(recoveryDirectory, backup);
+    try {
+      await writeFile(recoveryDirectory, 'Recovery storage unavailable');
+      await page.evaluate(({ leaf, text }) => leaf.view.editor.setValue(text), { leaf, text: retryText });
+      await page.evaluate(async ({ leaf, route }) => {
+        const plugin = app.plugins.getPlugin('docshelf');
+        await plugin.openArtifact(plugin.catalog.artifacts.find(item => item.route === route), null, '', leaf);
+      }, { leaf, route: reportA });
+      assert.equal((await state()).route, notesA);
+      assert.match(await page.locator('[data-docshelf-history-test] .docshelf-editor-status').innerText(), /Could not verify a recovery copy/);
+      assert.equal(await readFile(artifacts[2].source, 'utf8'), notes);
+    } finally {
+      await rm(recoveryDirectory, { recursive: true, force: true });
+      await rename(backup, recoveryDirectory);
+    }
+    await page.evaluate(leaf => leaf.view.save(), leaf);
+    assert.equal(await readFile(artifacts[2].source, 'utf8'), retryText, 'Saving must resume after recovery storage returns.');
+    await page.evaluate(async ({ leaf, text }) => { leaf.view.editor.setValue(text); await leaf.view.save(); }, { leaf, text: notes });
+
     const mine = `${notes}\nUnsaved citation edit.\n`, theirs = `${notes}\nExternal change.\n`;
     await page.evaluate(({ leaf, mine }) => leaf.view.editor.setValue(mine), { leaf, mine });
     await writeFile(artifacts[2].source, theirs);
@@ -194,8 +233,6 @@ export async function testDocumentHistory({ page, poll, workspace, shelfPath }) 
     // A genuine recovery-storage failure must keep the live editor and newest
     // text. The host has already moved history on Back; there is no public API
     // to undo that movement. Do not repair it by mutating private host stacks.
-    const recoveryDirectory = await page.evaluate(() => app.plugins.getPlugin('docshelf').recovery.directory);
-    const backup = `${recoveryDirectory}-history-test`;
     await rename(recoveryDirectory, backup);
     try {
       await writeFile(recoveryDirectory, 'Recovery storage unavailable');

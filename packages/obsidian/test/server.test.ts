@@ -51,6 +51,7 @@ test('loopback server serves only registered documents/assets and rejects reques
   assert.equal(server.navigationTarget(links.get('session')!)?.query, '?session=2026-10-17&filter=a%26b');
   assert.equal(server.navigationTarget(links.get('session')!)?.hash, '#section');
   assert.equal(server.navigationTarget(links.get('self')!)?.artifact.id, catalog.artifacts[0].id, 'Query-only links must target the current report.');
+  assert.equal(server.navigationTarget(links.get('self')!)?.hash, '#summary', 'Query-only links must keep their fragment.');
   assert.equal(new URL(links.get('self')!).search, '?session=2026-10-28');
   const ownToken = new URL(url).pathname.split('/')[1];
   const other = catalog.artifacts[2];

@@ -274,6 +274,13 @@ export class DocumentView extends ItemView {
         let destination: URL;
         try { destination = new URL(details.url); } catch { callback({ cancel: true }); return; }
         if (destination.origin === document.origin && destination.pathname === document.pathname && !destination.username && !destination.password) {
+          // location.search uses the report's read URL, bypassing rewritten
+          // links. Route query changes through host state and native history.
+          if (this.artifact && destination.search !== this.query) {
+            callback({ cancel: true });
+            void this.plugin.openArtifact(this.artifact, parseLineFragment(destination.hash), destination.hash, this.leaf, destination.search).catch(error => new Notice(message(error)));
+            return;
+          }
           callback({}); return;
         }
         callback({ cancel: true });

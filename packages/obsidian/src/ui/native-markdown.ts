@@ -13,6 +13,7 @@ import { markdownHeadingLine, markdownLink } from '../core/markdown';
 import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference, sourceReferenceAt } from './native-lines';
 
 export const NATIVE_MARKDOWN_VIEW = 'docshelf-markdown';
+const navigationRecoveryProblem = 'Could not verify a recovery copy. Your unsaved edits remain in this tab.';
 
 /** The open source-reference menu, in any view. */
 let referenceMenu: Menu | null = null;
@@ -336,6 +337,9 @@ export class NativeMarkdownView extends MarkdownView {
     try {
       this.plugin.recovery.record(this.draftId, this.artifact.sourcePath, this.route, this.externalSnapshot, this.getViewData(), this.hasUnsavedEdits);
       this.draftChanged = false;
+      // Storage failures are retryable. Keep source conflicts and recovered
+      // draft review requirements, which still need an explicit resolution.
+      if (this.saveProblem === navigationRecoveryProblem || this.saveProblem.startsWith('Could not keep a recovery copy: ')) this.saveProblem = '';
       return true;
     } catch (error) { this.saveProblem = `Could not keep a recovery copy: ${message(error)}`; return false; }
   }
@@ -348,7 +352,7 @@ export class NativeMarkdownView extends MarkdownView {
     // refreshSource(true) adopts it and requires review when we return.
     if (this.externalSnapshot && this.artifact?.sourcePath
       && this.plugin.recovery.hasPendingCheckpoint(this.draftId, this.artifact.sourcePath, this.externalSnapshot, this.getViewData())) return true;
-    this.saveProblem = 'Could not verify a recovery copy. Your unsaved edits remain in this tab.';
+    this.saveProblem = navigationRecoveryProblem;
     this.updateSaveStatus();
     new Notice(this.saveProblem);
     return false;

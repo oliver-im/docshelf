@@ -122,6 +122,7 @@ test('recovery checkpoints reuse the baseline, retire superseded blobs, and load
 
     const legacy = randomUUID();
     writeFileSync(path.join(directory, `${legacy}.json`), JSON.stringify({ version: 1, id: legacy, source: f.source, route: 'note.html', canonicalPath: snapshot.canonicalPath, baseline: snapshot.bytes.toString('base64'), text: 'Legacy draft', pending: true, updated: Date.now() }));
+    assert.equal(store.hasPendingCheckpoint(legacy, f.source, snapshot, 'Legacy draft'), true);
     assert.equal(store.pending(f.source, new Set())?.text, 'Legacy draft');
     assert.throws(() => store.record(legacy, f.source, 'note.html', snapshot, 'Replacement', true), /adopted/);
     store.adopt(store.read(legacy)!);

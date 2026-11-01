@@ -2,9 +2,9 @@
 
 Fix Obsidian's native Back and Forward navigation between registered documents. Citation links reuse the same tab, including HTML-to-HTML, Markdown-to-Markdown, and mixed HTML/Markdown transitions. Reloads, source selections, and mode changes do not add document history entries.
 
-Registered HTML links retain query parameters and anchors. A report's observation date now survives following a return link, reloading the report, and navigating Back or Forward. Links that change only the query on the same report also enter native history. Markdown links to HTML reports retain their queries, and links without a query do not inherit the previous report's parameters.
+Registered HTML links retain query parameters and anchors. A report's observation date now survives following a return link, reloading the report, and navigating Back or Forward. Links and script-driven reloads that change only the query on the same report also enter native history. Markdown links to HTML reports retain their queries, and links without a query do not inherit the previous report's parameters.
 
-Before leaving Markdown with unsaved edits, DocShelf saves the source or verifies an exact pending recovery copy. Returning to a conflicted draft restores its text and requires review before saving. The checks apply both when changing Markdown documents and when switching to another view type.
+Before leaving Markdown with unsaved edits, DocShelf saves the source or verifies an exact pending recovery copy. Returning to a conflicted draft restores its text and requires review before saving. The checks apply both when changing Markdown documents and when switching to another view type. Saving can resume after a temporary recovery-storage failure; source conflicts still require review.
 
 Existing registrations, pins, settings, and recovery records need no migration. Personal shelf configurations and documents are not included in the release.
 
