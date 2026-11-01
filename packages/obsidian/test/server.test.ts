@@ -13,7 +13,7 @@ test('loopback server serves only registered documents/assets and rejects reques
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, 'docs'));
   const document = path.join(root, 'docs', 'report.html');
-  await writeFile(document, '<h1>Report</h1><script>window.works=true</script><img src="mark.svg"><a href="note.md#L2" target="_blank">note</a>');
+  await writeFile(document, '<h1>Report</h1><script>window.works=true</script><img src="mark.svg"><a href="note.md#L2" target="_blank">note</a><a id="session" href="other.html?session=2026-10-17&amp;filter=a%26b#section">Earlier session</a><a id="self" href="?session=2026-10-28#summary">This report</a>');
   await writeFile(path.join(root, 'docs', 'mark.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   await writeFile(path.join(root, 'docs', 'private.json'), '{"secret":true}');
   await writeFile(path.join(root, 'docs', 'note.md'), '# Note\ntext');
@@ -37,6 +37,22 @@ test('loopback server serves only registered documents/assets and rejects reques
   assert.match(html, /window.works=true/);
   assert.ok(html.includes(server.navigationUrl(catalog.artifacts[1], '#L2')));
   assert.doesNotMatch(html, /target=/);
+  const links = new Map<string, string>();
+  const visit = (node: DefaultTreeAdapterTypes.Node) => {
+    if ('tagName' in node && node.tagName === 'a') {
+      const id = node.attrs.find(attr => attr.name === 'id')?.value;
+      const href = node.attrs.find(attr => attr.name === 'href')?.value;
+      if (id && href) links.set(id, href);
+    }
+    if ('childNodes' in node) node.childNodes.forEach(visit);
+  };
+  visit(parse(html));
+  assert.equal(new URL(links.get('session')!).search, '?session=2026-10-17&filter=a%26b');
+  assert.equal(server.navigationTarget(links.get('session')!)?.query, '?session=2026-10-17&filter=a%26b');
+  assert.equal(server.navigationTarget(links.get('session')!)?.hash, '#section');
+  assert.equal(server.navigationTarget(links.get('self')!)?.artifact.id, catalog.artifacts[0].id, 'Query-only links must target the current report.');
+  assert.equal(server.navigationTarget(links.get('self')!)?.hash, '#summary', 'Query-only links must keep their fragment.');
+  assert.equal(new URL(links.get('self')!).search, '?session=2026-10-28');
   const ownToken = new URL(url).pathname.split('/')[1];
   const other = catalog.artifacts[2];
   const otherUrl = server.documentUrl(other);

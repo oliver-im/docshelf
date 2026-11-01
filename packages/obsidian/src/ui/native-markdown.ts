@@ -13,6 +13,7 @@ import { markdownHeadingLine, markdownLink } from '../core/markdown';
 import { applyExternalText, nativeSourceControls, setSourceReference, sourceReference, sourceReferenceAt } from './native-lines';
 
 export const NATIVE_MARKDOWN_VIEW = 'docshelf-markdown';
+const navigationRecoveryProblem = 'Could not verify a recovery copy. Your unsaved edits remain in this tab.';
 
 /** The open source-reference menu, in any view. */
 let referenceMenu: Menu | null = null;
@@ -105,11 +106,13 @@ export class NativeMarkdownView extends MarkdownView {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- Deliberately retained for identity comparison and restoration.
     const original = leaf.setViewState;
     const callOriginal = original.bind(leaf);
-    const setViewState: typeof leaf.setViewState = (state, ephemeral) => {
+    const setViewState: typeof leaf.setViewState = async (state, ephemeral) => {
       if (leaf.view === this && state.type === 'markdown' && !state.state?.file && state.state?.route === this.route) {
         state = { ...state, type: NATIVE_MARKDOWN_VIEW };
       }
-      return callOriginal(state, ephemeral);
+      // A different view type closes this editor before setState can guard it.
+      if (leaf.view === this && state.type !== NATIVE_MARKDOWN_VIEW && !await this.prepareNavigation()) return;
+      await callOriginal(state, ephemeral);
     };
     leaf.setViewState = setViewState;
     this.register(() => { if (leaf.setViewState === setViewState) leaf.setViewState = original; });
@@ -193,10 +196,10 @@ export class NativeMarkdownView extends MarkdownView {
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     const state = (value || {}) as Record<string, unknown>;
     const route = typeof state.route === 'string' ? state.route : this.route;
-    if (this.route && route !== this.route) {
-      await this.save();
-      if (this.hasUnsavedEdits) { new Notice('Resolve the unsaved edits before changing this tab’s document.'); return; }
-    }
+    if (this.route && route !== this.route && !await this.prepareNavigation()) return;
+    // FileView tracks TFile changes, but these documents have no vault file.
+    // Record only accepted route changes, after the unsaved-edit guard.
+    if (route !== this.route) result.history = true;
     const changed = route !== this.route || !this.externalSnapshot;
     this.route = route;
     if (changed) {
@@ -334,8 +337,25 @@ export class NativeMarkdownView extends MarkdownView {
     try {
       this.plugin.recovery.record(this.draftId, this.artifact.sourcePath, this.route, this.externalSnapshot, this.getViewData(), this.hasUnsavedEdits);
       this.draftChanged = false;
+      // Storage failures are retryable. Keep source conflicts and recovered
+      // draft review requirements, which still need an explicit resolution.
+      if (this.saveProblem === navigationRecoveryProblem || this.saveProblem.startsWith('Could not keep a recovery copy: ')) this.saveProblem = '';
       return true;
     } catch (error) { this.saveProblem = `Could not keep a recovery copy: ${message(error)}`; return false; }
+  }
+
+  private async prepareNavigation(): Promise<boolean> {
+    await this.save();
+    if (!this.hasUnsavedEdits) return true;
+    // Native Back/Forward has already moved its history position. A conflict
+    // can leave this editor only after its exact pending draft is on disk;
+    // refreshSource(true) adopts it and requires review when we return.
+    if (this.externalSnapshot && this.artifact?.sourcePath
+      && this.plugin.recovery.hasPendingCheckpoint(this.draftId, this.artifact.sourcePath, this.externalSnapshot, this.getViewData())) return true;
+    this.saveProblem = navigationRecoveryProblem;
+    this.updateSaveStatus();
+    new Notice(this.saveProblem);
+    return false;
   }
 
   private cancelDraftTimer(): void {
@@ -464,7 +484,8 @@ export class NativeMarkdownView extends MarkdownView {
       const target = relative ? this.plugin.catalog?.artifacts.find(item => item.sourcePath === candidate || item.canonicalPath === candidate || item.kind === 'markdown' && item.sourcePath === `${candidate}.md`) : this.artifact;
       if (!target) { new Notice('Register this document in DocShelf to open it.'); return; }
       const hash = fragment ? `#${fragment}` : '';
-      void this.plugin.openArtifact(target, parseLineFragment(hash), hash, this.hasUnsavedEdits ? undefined : this.leaf);
+      const query = new URL(href, 'https://docshelf.invalid/').search;
+      void this.plugin.openArtifact(target, parseLineFragment(hash), hash, this.hasUnsavedEdits ? undefined : this.leaf, query);
     } catch { new Notice('Could not resolve this document link.'); }
   }
 

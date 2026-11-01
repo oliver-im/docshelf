@@ -428,7 +428,7 @@ export default class DocShelfPlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
   }
 
-  async openArtifact(artifact: Artifact, range: LineRange | null = null, hash = '', target?: WorkspaceLeaf): Promise<void> {
+  async openArtifact(artifact: Artifact, range: LineRange | null = null, hash = '', target?: WorkspaceLeaf, query = ''): Promise<void> {
     // Start navigation immediately. Waiting for storage here lets the host's
     // native link handling open a vault-file tab before our view takes over.
     const reading = this.markArtifactsRead([artifact]);
@@ -445,7 +445,7 @@ export default class DocShelfPlugin extends Plugin {
     const mode = native
       ? (range || hash ? 'source' : previous.mode || 'source')
       : (artifact.kind === 'html' && range ? 'source' : 'reading');
-    await leaf.setViewState({ type, active: true, state: { ...previous, route: artifact.route, mode, lines: range ? `${range.start}-${range.end}` : undefined, hash } });
+    await leaf.setViewState({ type, active: true, state: { ...previous, route: artifact.route, mode, lines: range ? `${range.start}-${range.end}` : undefined, hash, query: artifact.kind === 'html' ? query : undefined } });
     await this.app.workspace.revealLeaf(leaf);
     await reading;
   }

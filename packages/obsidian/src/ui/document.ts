@@ -15,7 +15,7 @@ import { webFrame } from 'electron';
 import { session, webContents } from '@electron/remote';
 
 export const DOCUMENT_VIEW = 'docshelf-document';
-interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string }
+interface DocumentState extends Record<string, unknown> { route?: string; mode?: 'reading' | 'source'; lines?: string; hash?: string; query?: string }
 interface Webview extends HTMLElement { src: string; getURL(): string; reload(): void; executeJavaScript(script: string): Promise<unknown>; getWebContentsId(): number }
 
 type ReportGuest = NonNullable<ReturnType<typeof webContents.fromId>>;
@@ -51,21 +51,29 @@ export class DocumentView extends ItemView {
   private route = '';
   private page = 0;
   private hash = '';
+  private query = '';
   private lastRevision = '';
   private releaseReportNavigation?: () => void;
   private localReportIdentity = '';
   private localPartition = `docshelf-local-${randomBytes(16).toString('hex')}`;
   private remotePartition = `docshelf-remote-${randomBytes(16).toString('hex')}`;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, private plugin: DocShelfPlugin) { super(leaf); this.navigation = true; }
   getViewType(): string { return DOCUMENT_VIEW; }
   getDisplayText(): string { return this.artifact?.title || 'DocShelf document'; }
   getIcon(): string { return 'file-text'; }
-  getState(): DocumentState { return { route: this.route, mode: this.mode, lines: this.range ? `${this.range.start}-${this.range.end}` : undefined, hash: this.hash || undefined }; }
+  getState(): DocumentState { return { route: this.route, mode: this.mode, lines: this.range ? `${this.range.start}-${this.range.end}` : undefined, hash: this.hash || undefined, query: this.query || undefined }; }
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     const state = (value || {}) as DocumentState;
-    this.route = typeof state.route === 'string' ? state.route : '';
+    const route = typeof state.route === 'string' ? state.route : '';
+    const query = typeof state.query === 'string' ? state.query : '';
+    // Obsidian records view-type changes itself; same-view document changes
+    // must opt in. Report queries can select another session of the same file.
+    // Reloads, modes and source selections do not create history entries.
+    if (route !== this.route || query !== this.query) result.history = true;
+    this.route = route;
+    this.query = query;
     this.mode = state.mode === 'source' ? 'source' : 'reading';
     this.hash = typeof state.hash === 'string' ? state.hash : '';
     try { this.range = parseRange(state.lines); } catch { this.range = null; }
@@ -181,6 +189,7 @@ export class DocumentView extends ItemView {
     try { checkRange(this.range, lines.length); } catch (error) { rangeError = message(error); this.range = null; }
     if (this.mode === 'reading' && artifact.kind === 'html') {
       const url = new URL(this.plugin.server.documentUrl(artifact));
+      url.search = this.query;
       url.hash = this.hash;
       this.renderWebview(url.href, false);
       this.showRangeStatus(null);
@@ -265,12 +274,19 @@ export class DocumentView extends ItemView {
         let destination: URL;
         try { destination = new URL(details.url); } catch { callback({ cancel: true }); return; }
         if (destination.origin === document.origin && destination.pathname === document.pathname && !destination.username && !destination.password) {
+          // location.search uses the report's read URL, bypassing rewritten
+          // links. Route query changes through host state and native history.
+          if (this.artifact && destination.search !== this.query) {
+            callback({ cancel: true });
+            void this.plugin.openArtifact(this.artifact, parseLineFragment(destination.hash), destination.hash, this.leaf, destination.search).catch(error => new Notice(message(error)));
+            return;
+          }
           callback({}); return;
         }
         callback({ cancel: true });
         const target = this.plugin.server.navigationTarget(details.url);
         if (target) {
-          void this.plugin.openArtifact(target.artifact, parseLineFragment(target.hash), target.hash, this.leaf).catch(error => new Notice(message(error)));
+          void this.plugin.openArtifact(target.artifact, parseLineFragment(target.hash), target.hash, this.leaf, target.query).catch(error => new Notice(message(error)));
         } else if (destination.origin !== document.origin && ['http:', 'https:'].includes(destination.protocol)) {
           this.plugin.openExternal(destination.href);
         }
@@ -522,7 +538,8 @@ export class DocumentView extends ItemView {
       const target = this.plugin.catalog?.artifacts.find(item => item.sourcePath === candidate || item.canonicalPath === candidate);
       if (!target) { new Notice('Register this document in the shelf to open it here.'); return; }
       const hash = fragment ? `#${fragment}` : '';
-      await this.plugin.openArtifact(target, parseLineFragment(hash), hash, this.leaf);
+      const query = new URL(href, 'https://docshelf.invalid/').search;
+      await this.plugin.openArtifact(target, parseLineFragment(hash), hash, this.leaf, query);
     } catch { new Notice('Could not resolve this document link.'); }
   }
 }

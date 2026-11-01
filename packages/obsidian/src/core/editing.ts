@@ -210,6 +210,13 @@ export class RecoveryStore {
     } catch { return null; }
   }
 
+  /** Confirm a pending draft is recoverable from disk before releasing its editor. */
+  hasPendingCheckpoint(id: string, source: string, snapshot: FileSnapshot, text: string): boolean {
+    const draft = this.read(id);
+    return !!draft?.pending && draft.source === source && draft.canonicalPath === snapshot.canonicalPath
+      && draft.baseline === snapshot.bytes.toString('base64') && draft.text === text;
+  }
+
   pending(source: string, excluded: Set<string>): Recovery | undefined {
     let names: string[];
     try { names = readdirSync(this.directory); } catch { return undefined; }
