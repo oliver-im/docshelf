@@ -21,6 +21,9 @@ export function extractText(html: string): string {
 export function searchContent(source: string, kind: string): SearchContent & { length: number } {
   const text = kind === 'html' ? extractText(source) : markdownText(source);
   // Copy the bounded text so a substring cannot retain a much larger source or extracted string.
-  const body = Buffer.from(text.slice(0, MAX_SEARCH_DOCUMENT_CHARACTERS)).toString('utf8');
+  let end = Math.min(text.length, MAX_SEARCH_DOCUMENT_CHARACTERS);
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end--;
+  const body = Buffer.from(text.slice(0, end)).toString('utf8');
   return { body, length: body.length, truncated: text.length > MAX_SEARCH_DOCUMENT_CHARACTERS };
 }

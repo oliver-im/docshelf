@@ -39,6 +39,9 @@ for (const kind of ['file', 'directory']) {
     await writeFile(target, 'The new target changed');
     await waitFor(() => events.some(event => event.endsWith(` ${target}`)));
 
+    // A write can deliver more than one change event on macOS. Let that burst
+    // settle before attributing events to the unrelated writes below.
+    await delay(500);
     events.length = 0;
     await writeFile(path.join(root, 'a/report.html'), 'The old target is no longer registered');
     await writeFile(path.join(root, 'b/private.html'), 'Unregistered sibling');

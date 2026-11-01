@@ -33,11 +33,26 @@ export async function testSearchCoverage({ page, poll, workspace, shelfPath }) {
     await page.screenshot({ path: '.local/runtime/search-coverage.png' });
     await page.locator('.docshelf-search').fill('');
     assert.equal(await warning.count(), 0, 'Clearing search must remove its diagnostic note.');
+    await page.evaluate(() => app.commands.executeCommandById('docshelf:search'));
+    const modalInput = page.getByPlaceholder('Search DocShelf…', { exact: true });
+    const modalNote = page.locator('.docshelf-search-note');
+    assert.equal(await modalNote.isVisible(), false);
+    await modalInput.fill('omittedmetadata');
+    await poll(() => modalNote.isVisible(), 'The search modal did not disclose limited text search.');
+    assert.match(await modalNote.getAttribute('title'), /2 documents: text exceeds/);
+    await modalInput.fill('');
+    await poll(async () => !(await modalNote.isVisible()), 'The search modal kept diagnostics after clearing its query.');
+    await modalInput.press('Escape');
     await page.locator('.docshelf-search').fill('qzxvplimitedbody');
     // Removing the other large documents must restore the omitted body's search on the next refresh.
     await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [...shelf.artifacts, artifacts[84]] }));
     await poll(() => page.evaluate(() => app.plugins.getPlugin('docshelf').search.search('qzxvplimitedbody').length === 1), 'Freed space did not restore content search.');
     await poll(async () => !(await warning.isVisible()), 'Complete coverage did not clear the warning.');
+    const remote = { source: 'https://github.com/oliver-im/docshelf/blob/main/README.md', route: 'unfetched.html', title: 'Unfetched remote', project: 'Search budget' };
+    await writeFile(shelfPath, JSON.stringify({ ...shelf, artifacts: [...shelf.artifacts, remote] }));
+    await page.locator('.docshelf-search').fill('Unfetched remote');
+    await poll(async () => (await warning.getAttribute('title'))?.includes('1 document: content is unavailable'), 'Unfetched remote text was not disclosed during search.');
+    assert.equal(await page.locator('.docshelf-item').count(), 1, 'An unfetched document must keep metadata search.');
     console.log('Search budget coverage, metadata fallback, compact search-only diagnostics, and recovery passed.');
   } finally {
     await writeFile(shelfPath, baseline);

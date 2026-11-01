@@ -1,8 +1,8 @@
 # DocShelf for Obsidian 0.8.2 — desktop beta
 
-Fix content search dropping documents when large HTML reports use up the shelf's search budget. The budget now counts extracted searchable text instead of raw source characters, so scripts, styles, and embedded image data no longer crowd other documents out of search. The search cache retains bounded text and file revisions instead of full sources.
+Fix content search dropping documents when large HTML reports use up the shelf's search budget. The budget now counts extracted searchable text instead of raw source characters, so scripts, styles, and embedded image data no longer crowd other documents out of search. The search cache retains bounded text and file revisions instead of full sources. Truncation keeps Unicode character pairs intact.
 
-The existing limits remain 16,777,216 extracted text characters across the shelf and 200,000 per document. Documents that do not fit the remaining total budget keep metadata search; later smaller documents can still fit. A muted **Limited text search** note appears beside the result count only during a search when text is omitted or shortened. Hover over it for the limits and affected counts. Browsing has no persistent banner or diagnostic dialog; shelf and source errors remain separate.
+The existing limits remain 16,777,216 extracted text characters across the shelf and 200,000 per document. Documents that do not fit the remaining total budget keep metadata search; later smaller documents can still fit. A muted **Limited text search** note appears beside the sidebar result count or in the search dialog only during a search when text is omitted, shortened, or unavailable. Hover over it for the limits and affected counts. Browsing has no persistent banner or diagnostic dialog; shelf and source errors remain separate.
 
 The folder guide now explains how to keep several projects on a focused shelf using selected documentation folders and individual entry points. Existing registrations, pins, settings, and recovery records need no migration. Personal shelf configurations are not included in the release.
 

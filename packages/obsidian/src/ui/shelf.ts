@@ -9,6 +9,18 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { MAX_SEARCH_DOCUMENT_CHARACTERS } from '../core/search-text';
 
+function searchCoverageDetails(plugin: DocShelfPlugin): string {
+  const { limited, partial, total, indexed } = plugin.search.coverage;
+  const unavailable = total - indexed - limited;
+  if (!limited && !partial && !unavailable) return '';
+  return [
+    partial ? `${partial} long document${partial === 1 ? '' : 's'}: only the first ${MAX_SEARCH_DOCUMENT_CHARACTERS.toLocaleString()} text characters are searched.` : '',
+    limited ? `${limited} document${limited === 1 ? '' : 's'}: text exceeds the remaining shelf search limit.` : '',
+    unavailable ? `${unavailable} document${unavailable === 1 ? '' : 's'}: content is unavailable to search.` : '',
+    'Titles, filenames, projects, and descriptions are always searched.',
+  ].filter(Boolean).join(' ');
+}
+
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
 const DOCUMENT_DRAG_TYPE = 'application/x-docshelf-document';
@@ -103,14 +115,9 @@ export class ShelfView extends ItemView {
     // Background refreshes must not shift the rows under a pointer or drag.
     this.status.setText(this.plugin.error || (this.plugin.loading && !this.plugin.catalog ? 'Loading documents…' : searchStatus));
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
-    const { limited, partial } = this.plugin.search.coverage;
-    if (searching && !this.plugin.error && (limited || partial)) {
-      const details = [
-        partial ? `${partial} long document${partial === 1 ? '' : 's'}: only the first ${MAX_SEARCH_DOCUMENT_CHARACTERS.toLocaleString()} text characters are searched.` : '',
-        limited ? `${limited} document${limited === 1 ? '' : 's'}: text exceeds the remaining shelf search limit.` : '',
-        'Titles, filenames, projects, and descriptions are always searched.',
-      ].filter(Boolean).join(' ');
-      this.status.createSpan({ text: ' · Limited text search', cls: 'docshelf-search-coverage', attr: { title: details, 'aria-label': details } });
+    const details = searchCoverageDetails(this.plugin);
+    if (searching && !this.plugin.error && details) {
+      this.status.createSpan({ text: ' · Limited text search', cls: 'docshelf-search-coverage', attr: { title: details, role: 'note', 'aria-label': details } });
     }
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
@@ -624,10 +631,23 @@ export class ShelfView extends ItemView {
 }
 
 export class SearchModal extends FuzzySuggestModal<SearchHit> {
-  constructor(private plugin: DocShelfPlugin) { super(plugin.app); this.setPlaceholder('Search DocShelf…'); }
+  private coverage: HTMLElement;
+  constructor(private plugin: DocShelfPlugin) {
+    super(plugin.app);
+    this.setPlaceholder('Search DocShelf…');
+    this.coverage = this.modalEl.createDiv({ cls: 'docshelf-search-note docshelf-muted', attr: { role: 'note' } });
+    this.coverage.hidden = true;
+  }
   getItems(): SearchHit[] { return this.plugin.search.search(''); }
   getItemText(hit: SearchHit): string { return `${hit.artifact.title} — ${hit.artifact.project}`; }
-  getSuggestions(query: string): FuzzyMatch<SearchHit>[] { return this.plugin.search.search(query).map(item => ({ item, match: { score: 0, matches: [] } })); }
+  getSuggestions(query: string): FuzzyMatch<SearchHit>[] {
+    const details = searchCoverageDetails(this.plugin);
+    this.coverage.hidden = !query.trim() || !details;
+    this.coverage.setText('Limited text search');
+    this.coverage.setAttribute('title', details);
+    this.coverage.setAttribute('aria-label', details);
+    return this.plugin.search.search(query).map(item => ({ item, match: { score: 0, matches: [] } }));
+  }
   renderSuggestion(value: FuzzyMatch<SearchHit>, el: HTMLElement): void {
     const hit = value.item;
     el.createDiv({ text: hit.artifact.title });

@@ -68,6 +68,17 @@ test('cached GitHub text follows the extracted budget and changed source revisio
   assert.equal(changed.body, 'Otherword');
 });
 
+test('search text truncation keeps Unicode pairs intact', () => {
+  const split = searchContent('a'.repeat(199_999) + '😀tail', 'markdown');
+  assert.equal(split.body?.slice(-1), 'a');
+  assert.equal(split.length, 199_999);
+  assert.equal(split.truncated, true);
+  const fits = searchContent('a'.repeat(199_998) + '😀', 'markdown');
+  assert.equal(fits.body?.slice(-2), '😀');
+  assert.equal(fits.length, 200_000);
+  assert.equal(fits.truncated, false);
+});
+
 test('index cache revalidates containment, replacements, same-size edits, and text budgets', async t => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'docshelf-index-')));
   t.after(() => rm(root, { recursive: true, force: true }));
