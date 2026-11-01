@@ -16,6 +16,7 @@ import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 import { testSharedReadState } from './test-shared-read-state.mjs';
 import { testDocumentPins } from './test-pins.mjs';
+import { testSearchCoverage } from './test-search-coverage.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 // Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
@@ -55,7 +56,9 @@ const bundles = (await readdir(bundleDirectory)).filter(name => /^obsidian-[\d.]
 if (!bundles[0]) throw new Error('No installed Obsidian runtime bundle found. Set OBSIDIAN_BUNDLE_DIRECTORY.');
 await copyFile(path.join(bundleDirectory, bundles[0]), path.join(profile, bundles[0]));
 await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ vaults: { 'd0c5he1f00000001': { path: vault, open: true, ts: Date.now() }, 'd0c5he1f00000002': { path: secondVault, ts: Date.now() } }, updateDisabled: true }));
-await writeFile(path.join(vault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
+// Enable the plugin explicitly after startup. Pre-enabling it here makes the
+// trust action and enablePluginAndSave race to load the same view types twice.
+await writeFile(path.join(vault, '.obsidian', 'community-plugins.json'), '[]');
 await writeFile(path.join(vault, '.obsidian', 'core-plugins.json'), JSON.stringify(['file-explorer', 'search']));
 await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ theme: 'obsidian' }));
 const shelf = JSON.parse(await readFile(path.join(workspace, 'shelf.json'), 'utf8'));
@@ -72,7 +75,7 @@ const secondPlugin = path.join(secondVault, '.obsidian', 'plugins', 'docshelf');
 await mkdir(secondPlugin, { recursive: true });
 for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(path.join(pluginPath, name), path.join(secondPlugin, name));
 await writeFile(path.join(secondPlugin, 'data.json'), JSON.stringify({ shelfPath, workspaceRoot: workspace, runHtmlScripts: true }));
-await writeFile(path.join(secondVault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
+await writeFile(path.join(secondVault, '.obsidian', 'community-plugins.json'), '[]');
 await writeFile(path.join(secondVault, '.obsidian', 'core-plugins.json'), '[]');
 
 const log = createWriteStream('.local/runtime/obsidian.log');
@@ -367,12 +370,14 @@ try {
   await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure({ ...settings, shelfPath: 'new-shelf.json' }), shelfSettings);
   await page.locator('.docshelf-empty-shelf').waitFor();
   assert.deepEqual(await page.evaluate(() => [app.plugins.getPlugin('docshelf').shelfMissing, app.plugins.getPlugin('docshelf').error]), [true, '']);
-  assert.equal(await page.locator('.docshelf-status').textContent(), '');
+  await poll(async () => await page.locator('.docshelf-status').textContent() === '', 'The missing shelf status did not settle after watcher startup.');
   assert.match(await page.locator('.docshelf-empty-note').textContent(), /new-shelf\.json$/);
   await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure(settings), shelfSettings);
   await poll(async () => (await documentRoutes()).length === 1, 'The shelf did not reload after leaving the missing shelf.');
   assert.equal(await page.locator('.docshelf-empty-shelf').count(), 0);
   console.log('A missing shelf file shows the empty shelf without an error.');
+
+  await testSearchCoverage({ page, poll, workspace, shelfPath });
 
   assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:reload')), true);
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Reload command did not complete.');
@@ -740,6 +745,7 @@ try {
       }
     }, 'The second test vault did not open.');
     second.on('pageerror', error => { pageErrors.push(error.message); console.error('Second vault page error:', error.stack || error.message); });
+    second.on('console', entry => { if (entry.type() === 'error') console.error('Second vault renderer:', entry.text()); });
     // Match the first vault's startup order: enabling during workspace startup
     // can race Obsidian's own plugin load and leave an unloaded instance behind.
     await second.waitForFunction(() => window.app?.workspace?.layoutReady, undefined, { timeout: 30_000 });

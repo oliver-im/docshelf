@@ -5,7 +5,79 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { IndexSources } from '../src/core/index-sources';
 import { ShelfSearch } from '../src/core/search';
+import { searchContent } from '../src/core/search-text';
 import type { Artifact } from '../src/core/types';
+
+test('HTML search budgets count visible text instead of embedded data', async t => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'docshelf-search-budget-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'report.html');
+  await writeFile(file, `<html><head><style>${'hiddenstyle '.repeat(20_000)}</style></head><body><script>${'hiddenword '.repeat(20_000)}</script><img src="data:image/png;base64,${'a'.repeat(100_000)}"><p>Zebracorn</p></body></html>`);
+  const cache = new IndexSources();
+  const entry = await cache.read(file, [root], 9);
+  assert.equal(entry.length, 9, 'Only the nine visible characters should consume the search budget.');
+  assert.equal(entry.body, 'Zebracorn');
+  assert.equal(entry.truncated, false);
+  const artifact: Artifact = { id: 'report', source: file, route: 'report.html', title: 'Report', project: 'Project', description: '', kind: 'html' };
+  const search = new ShelfSearch();
+  await search.replace([artifact], new Map([[artifact.id, entry]]));
+  assert.equal(search.search('Zebracorn')[0].artifact.id, 'report');
+  assert.equal(search.search('hiddenword').length, 0);
+  assert.equal(search.search('hiddenstyle').length, 0);
+});
+
+test('budget exhaustion keeps metadata and recovers content when space becomes available', async t => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'docshelf-search-coverage-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'long.md');
+  await writeFile(file, 'A'.repeat(199_989) + ' Zebracorn ' + 'Afterthecutoff');
+  const cache = new IndexSources();
+  const full = await cache.read(file, [root], 200_000);
+  assert.equal(full.length, 200_000);
+  assert.equal(full.truncated, true);
+  const artifact: Artifact = { id: 'long', source: file, route: 'long.html', title: 'Long document', project: 'Project', description: 'Metadataword', kind: 'markdown' };
+  const search = new ShelfSearch();
+  await search.replace([artifact], new Map([[artifact.id, full]]));
+  assert.equal(search.search('Zebracorn')[0].artifact.id, 'long');
+  assert.equal(search.search('Afterthecutoff').length, 0);
+  assert.deepEqual(search.coverage, { total: 1, indexed: 1, partial: 1, limited: 0 });
+  await search.replace([artifact], new Map([[artifact.id, await cache.read(file, [root], 199_999)]]));
+  assert.equal(search.search('Zebracorn').length, 0, 'Content indexed during an earlier refresh must not survive a smaller budget.');
+  assert.equal(search.search('Metadataword')[0].artifact.id, 'long');
+  assert.deepEqual(search.coverage, { total: 1, indexed: 0, partial: 0, limited: 1 });
+  await search.replace([artifact], new Map([[artifact.id, await cache.read(file, [root], 200_000)]]));
+  assert.equal(search.search('Zebracorn')[0].artifact.id, 'long');
+  await writeFile(file, 'Nowshort');
+  await search.replace([artifact], new Map([[artifact.id, await cache.read(file, [root], 8)]]));
+  assert.deepEqual(search.coverage, { total: 1, indexed: 1, partial: 0, limited: 0 });
+  assert.equal(search.search('Nowshort')[0].artifact.id, 'long');
+  await search.replace([], new Map());
+  assert.equal(search.coverage.total, 0);
+});
+
+test('cached GitHub text follows the extracted budget and changed source revisions', () => {
+  const cache = new IndexSources();
+  const source = '---\nhidden: metadata\n---\n**Zebracorn**';
+  const first = cache.remote('https://example.test/note.md', source, 9);
+  assert.equal(first.body, 'Zebracorn');
+  assert.equal(first.length, 9);
+  assert.equal(cache.remote('https://example.test/note.md', source, 8).body, undefined);
+  assert.equal(cache.remote('https://example.test/note.md', source, 9).body, 'Zebracorn');
+  const changed = cache.remote('https://example.test/note.md', 'Otherword', 9);
+  assert.notEqual(changed.revision, first.revision);
+  assert.equal(changed.body, 'Otherword');
+});
+
+test('search text truncation keeps Unicode pairs intact', () => {
+  const split = searchContent('a'.repeat(199_999) + '😀tail', 'markdown');
+  assert.equal(split.body?.slice(-1), 'a');
+  assert.equal(split.length, 199_999);
+  assert.equal(split.truncated, true);
+  const fits = searchContent('a'.repeat(199_998) + '😀', 'markdown');
+  assert.equal(fits.body?.slice(-2), '😀');
+  assert.equal(fits.length, 200_000);
+  assert.equal(fits.truncated, false);
+});
 
 test('index cache revalidates containment, replacements, same-size edits, and text budgets', async t => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'docshelf-index-')));
@@ -20,10 +92,10 @@ test('index cache revalidates containment, replacements, same-size edits, and te
   await writeFile(file, 'Other');
   await utimes(file, before.atime, before.mtime);
   const changed = await cache.read(link, [root], 100);
-  assert.equal(changed.source, 'Other');
+  assert.equal(changed.body, 'Other');
   assert.notEqual(changed.revision, first.revision, 'Restoring mtime on a same-size edit must not reuse stale text.');
-  assert.equal((await cache.read(link, [root], 0)).source, undefined);
-  assert.equal((await cache.read(link, [root], 100)).source, 'Other');
+  assert.equal((await cache.read(link, [root], 0)).body, undefined);
+  assert.equal((await cache.read(link, [root], 100)).body, 'Other');
   await unlink(link);
   await symlink(import.meta.filename, link);
   await assert.rejects(cache.read(link, [root], 100), /outside/);
@@ -32,21 +104,21 @@ test('index cache revalidates containment, replacements, same-size edits, and te
   await rm(file);
   await assert.rejects(cache.read(link, [root], 100), /ENOENT/);
   await writeFile(file, 'Again');
-  assert.equal((await cache.read(link, [root], 100)).source, 'Again');
+  assert.equal((await cache.read(link, [root], 100)).body, 'Again');
 });
 
 test('search updates only changed entries and keeps metadata, removals, and visible Markdown text correct', async t => {
   const search = new ShelfSearch();
   const one: Artifact = { id: 'one', source: 'one.md', route: 'one.html', title: 'First', project: 'Project', description: '', kind: 'markdown' };
   const two: Artifact = { ...one, id: 'two', source: 'two.md', route: 'two.html', title: 'Second' };
-  const contents = new Map([['one', '---\nhiddenkey: hiddenvalue\n---\n\n**Zebracorn** and [visiblelabel](https://hiddenurl.example).\n\n<script>hiddenscript</script>\n'], ['two', 'Originalword']]);
+  const contents = new Map([['one', '---\nhiddenkey: hiddenvalue\n---\n\n**Zebracorn** and [visiblelabel](https://hiddenurl.example).\n\n<script>hiddenscript</script>\n'], ['two', 'Originalword']].map(([id, text]) => [id, searchContent(text, 'markdown')]));
   await search.replace([one, two], contents);
   assert.equal(search.search('zebracorn').length, 1);
   for (const hidden of ['hiddenkey', 'hiddenvalue', 'hiddenurl', 'hiddenscript']) assert.equal(search.search(hidden).length, 0);
   const updates = t.mock.method((search as any).index, 'replace');
   await search.replace([one, two], contents);
   assert.equal(updates.mock.callCount(), 0, 'Unchanged documents must not be re-indexed.');
-  contents.set('two', 'Replacementword');
+  contents.set('two', searchContent('Replacementword', 'markdown'));
   await search.replace([one, two], contents);
   assert.equal(updates.mock.callCount(), 1);
   assert.equal(updates.mock.calls[0].arguments[0].id, 'two');

@@ -4,6 +4,7 @@
 .docshelf-search { width: 100%; min-height: 36px; }
 .docshelf-status { color: var(--text-muted); font-size: var(--font-ui-small); margin: 12px 0; }
 .docshelf-status:empty { margin: 0; }
+.docshelf-search-note { padding: 4px 18px; font-size: var(--font-ui-small); }
 .docshelf-results { margin-top: 8px; }
 .docshelf-error { color: var(--text-error); overflow-wrap: anywhere; }
 .docshelf-project { position: relative; margin-bottom: 8px; }

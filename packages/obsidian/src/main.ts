@@ -17,6 +17,7 @@ import { DOCSHELF_ICON, DOCSHELF_ICON_SVG } from './ui/icon';
 import { NativeMarkdownView, NATIVE_MARKDOWN_VIEW, nativeMarkdownExtension } from './ui/native-markdown';
 import { RecoveryStore } from './core/editing';
 import { IndexSources } from './core/index-sources';
+import { MAX_SEARCH_CHARACTERS, type SearchContent } from './core/search-text';
 import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
@@ -200,18 +201,19 @@ export default class DocShelfPlugin extends Plugin {
     try {
       const catalog = await loadCatalog(this.shelfPath(), settings.workspaceRoot, { allowUnavailableFiles: true });
       if (this.disposed || settings !== this.settings) return;
-      const contents = new Map<string, string>();
+      const contents = new Map<string, SearchContent>();
       const revisions = new Map<string, string>();
       const failures: string[] = [...(catalog.warnings || [])];
-      let indexedBytes = 0;
-      this.indexSources.retain(new Set(catalog.artifacts.flatMap(artifact => artifact.sourcePath ? [artifact.sourcePath] : [])));
+      let indexedCharacters = 0;
+      this.indexSources.retain(new Set(catalog.artifacts.map(artifact => artifact.sourcePath || artifact.source)));
       for (const artifact of catalog.artifacts) {
         if (this.disposed || settings !== this.settings) return;
         try {
-          const budget = 16 * 1024 * 1024 - indexedBytes;
+          const budget = MAX_SEARCH_CHARACTERS - indexedCharacters;
           const local = artifact.sourcePath ? await this.indexSources.read(artifact.sourcePath, artifactRoots(artifact, catalog.roots), budget) : undefined;
-          const source = local ? local.source : this.remoteCache.get(artifact.source);
-          const contentRevision = local?.revision || createHash('sha256').update(source || '').digest('hex');
+          const remote = this.remoteCache.get(artifact.source);
+          const content = local || (remote === undefined ? undefined : this.indexSources.remote(artifact.source, remote, budget));
+          const contentRevision = content?.revision || '';
           const assets = await Promise.all((artifact.assets || []).map(async asset => {
             try {
               const assetPath = await canonicalFile(path.resolve(path.dirname(artifact.sourcePath!), asset), catalog.roots);
@@ -224,10 +226,10 @@ export default class DocShelfPlugin extends Plugin {
             }
           }));
           revisions.set(artifact.route, createHash('sha256').update(JSON.stringify([artifact, assets, settings.runHtmlScripts, contentRevision])).digest('hex'));
-          if (source !== undefined && indexedBytes + source.length <= 16 * 1024 * 1024) {
-            contents.set(artifact.id, source);
-            indexedBytes += source.length;
-          } else if (source !== undefined || local) failures.push('Search content limit reached; remaining documents are searchable by title.');
+          if (content) {
+            contents.set(artifact.id, content);
+            indexedCharacters += content.body?.length || 0;
+          }
         } catch (error) {
           const failure = message(error);
           failures.push(`${artifact.title}: ${failure}`);
