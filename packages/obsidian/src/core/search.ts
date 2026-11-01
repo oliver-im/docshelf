@@ -14,8 +14,6 @@ export class ShelfSearch {
   private artifacts = new Map<string, Artifact>();
   private entries = new Map<string, { metadata: string; body: string; coverage: SearchCoverage }>();
 
-  coverageFor(id: string): SearchCoverage { return this.entries.get(id)?.coverage || 'unavailable'; }
-
   get coverage() {
     const entries = [...this.entries.values()];
     return {

@@ -7,7 +7,7 @@ import { documentLabel, sourceIdentity } from '../core/catalog';
 import type { DocumentTreeNode, FolderSegment } from '@docshelf/core/directories';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { coverageSummary, SearchCoverageModal } from './search-coverage';
+import { MAX_SEARCH_DOCUMENT_CHARACTERS } from '../core/search-text';
 
 export const SHELF_VIEW = 'docshelf-shelf';
 const PROJECT_DRAG_TYPE = 'application/x-docshelf-project';
@@ -39,7 +39,6 @@ export class ShelfView extends ItemView {
   private orderMenu?: Menu;
   private results!: HTMLElement;
   private status!: HTMLElement;
-  private coverage!: HTMLButtonElement;
   private renderedResults = '';
   private unsubscribe?: () => void;
 
@@ -80,8 +79,6 @@ export class ShelfView extends ItemView {
     input.addEventListener('input', () => { this.query = input.value; this.renderResults(); });
     input.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); this.results.querySelector<HTMLButtonElement>('button')?.focus(); } });
     this.status = this.contentEl.createDiv({ cls: 'docshelf-status', attr: { role: 'status', 'aria-live': 'polite' } });
-    this.coverage = this.contentEl.createEl('button', { cls: 'docshelf-search-coverage', attr: { type: 'button', 'aria-label': 'Review search coverage' } });
-    this.coverage.onclick = () => new SearchCoverageModal(this.plugin).open();
     this.results = this.contentEl.createDiv({ cls: 'docshelf-results' });
     this.unsubscribe = this.plugin.subscribe(() => this.renderResults());
     this.renderResults();
@@ -106,9 +103,15 @@ export class ShelfView extends ItemView {
     // Background refreshes must not shift the rows under a pointer or drag.
     this.status.setText(this.plugin.error || (this.plugin.loading && !this.plugin.catalog ? 'Loading documents…' : searchStatus));
     this.status.classList.toggle('docshelf-error', !!this.plugin.error);
-    const coverage = this.plugin.search.coverage;
-    this.coverage.hidden = !coverage.limited && !coverage.partial;
-    this.coverage.setText(`${coverageSummary(this.plugin)} Review…`);
+    const { limited, partial } = this.plugin.search.coverage;
+    if (searching && !this.plugin.error && (limited || partial)) {
+      const details = [
+        partial ? `${partial} long document${partial === 1 ? '' : 's'}: only the first ${MAX_SEARCH_DOCUMENT_CHARACTERS.toLocaleString()} text characters are searched.` : '',
+        limited ? `${limited} document${limited === 1 ? '' : 's'}: text exceeds the remaining shelf search limit.` : '',
+        'Titles, filenames, projects, and descriptions are always searched.',
+      ].filter(Boolean).join(' ');
+      this.status.createSpan({ text: ' · Limited text search', cls: 'docshelf-search-coverage', attr: { title: details, 'aria-label': details } });
+    }
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
     const unread = artifacts.filter(artifact => this.plugin.isUnread(artifact)).map(artifact => artifact.route);

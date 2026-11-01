@@ -56,7 +56,9 @@ const bundles = (await readdir(bundleDirectory)).filter(name => /^obsidian-[\d.]
 if (!bundles[0]) throw new Error('No installed Obsidian runtime bundle found. Set OBSIDIAN_BUNDLE_DIRECTORY.');
 await copyFile(path.join(bundleDirectory, bundles[0]), path.join(profile, bundles[0]));
 await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ vaults: { 'd0c5he1f00000001': { path: vault, open: true, ts: Date.now() }, 'd0c5he1f00000002': { path: secondVault, ts: Date.now() } }, updateDisabled: true }));
-await writeFile(path.join(vault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
+// Enable the plugin explicitly after startup. Pre-enabling it here makes the
+// trust action and enablePluginAndSave race to load the same view types twice.
+await writeFile(path.join(vault, '.obsidian', 'community-plugins.json'), '[]');
 await writeFile(path.join(vault, '.obsidian', 'core-plugins.json'), JSON.stringify(['file-explorer', 'search']));
 await writeFile(path.join(vault, '.obsidian', 'app.json'), JSON.stringify({ theme: 'obsidian' }));
 const shelf = JSON.parse(await readFile(path.join(workspace, 'shelf.json'), 'utf8'));
@@ -73,7 +75,7 @@ const secondPlugin = path.join(secondVault, '.obsidian', 'plugins', 'docshelf');
 await mkdir(secondPlugin, { recursive: true });
 for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(path.join(pluginPath, name), path.join(secondPlugin, name));
 await writeFile(path.join(secondPlugin, 'data.json'), JSON.stringify({ shelfPath, workspaceRoot: workspace, runHtmlScripts: true }));
-await writeFile(path.join(secondVault, '.obsidian', 'community-plugins.json'), JSON.stringify(['docshelf']));
+await writeFile(path.join(secondVault, '.obsidian', 'community-plugins.json'), '[]');
 await writeFile(path.join(secondVault, '.obsidian', 'core-plugins.json'), '[]');
 
 const log = createWriteStream('.local/runtime/obsidian.log');

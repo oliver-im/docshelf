@@ -4,11 +4,6 @@
 .docshelf-search { width: 100%; min-height: 36px; }
 .docshelf-status { color: var(--text-muted); font-size: var(--font-ui-small); margin: 12px 0; }
 .docshelf-status:empty { margin: 0; }
-button.docshelf-search-coverage { width: 100%; height: auto; margin: 8px 0; padding: 6px 8px; color: var(--text-warning); font-size: var(--font-ui-small); text-align: left; white-space: normal; background: var(--background-secondary); box-shadow: none; cursor: pointer; }
-button.docshelf-search-coverage[hidden] { display: none; }
-.docshelf-search-coverage-list { max-height: 50vh; overflow: auto; margin-bottom: 16px; }
-.docshelf-search-coverage-item { padding: 8px 0; overflow-wrap: anywhere; }
-.docshelf-search-coverage-item button { max-width: 100%; height: auto; text-align: left; white-space: normal; }
 .docshelf-results { margin-top: 8px; }
 .docshelf-error { color: var(--text-error); overflow-wrap: anywhere; }
 .docshelf-project { position: relative; margin-bottom: 8px; }
