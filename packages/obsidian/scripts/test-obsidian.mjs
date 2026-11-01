@@ -17,6 +17,7 @@ import { testDirectories } from './test-directories.mjs';
 import { testSharedReadState } from './test-shared-read-state.mjs';
 import { testDocumentPins } from './test-pins.mjs';
 import { testSearchCoverage } from './test-search-coverage.mjs';
+import { testDocumentHistory } from './test-document-history.mjs';
 
 // Use a separate profile, vault, and sources. Never load tests into the user's vault.
 // Whatever the profile, Obsidian replaces its command-line socket in the home directory, or in XDG_RUNTIME_DIR
@@ -378,6 +379,7 @@ try {
   console.log('A missing shelf file shows the empty shelf without an error.');
 
   await testSearchCoverage({ page, poll, workspace, shelfPath });
+  await testDocumentHistory({ page, poll, workspace, shelfPath });
 
   assert.equal(await page.evaluate(() => app.commands.executeCommandById('docshelf:reload')), true);
   await poll(() => page.evaluate(() => !app.plugins.getPlugin('docshelf').loading), 'Reload command did not complete.');

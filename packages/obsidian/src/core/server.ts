@@ -51,8 +51,11 @@ export class DocumentServer {
     return `${this.origin}/${this.capability('read', artifact.id)}/d/${artifact.id}/${asset.split('/').map(encodeURIComponent).join('/')}`;
   }
 
-  navigationUrl(artifact: Artifact, hash = ''): string {
-    return `${this.origin}/${this.capability('open', artifact.id)}/open/${artifact.id}${hash}`;
+  navigationUrl(artifact: Artifact, hash = '', query = ''): string {
+    const url = new URL(`${this.origin}/${this.capability('open', artifact.id)}/open/${artifact.id}`);
+    url.search = query;
+    url.hash = hash;
+    return url.href;
   }
 
   // Report URLs grant access to just that document and its registered assets.
@@ -61,14 +64,14 @@ export class DocumentServer {
     return createHmac('sha256', this.token).update(`${kind}:${id}`).digest('hex');
   }
 
-  navigationTarget(url: string): { artifact: Artifact; hash: string } | null {
+  navigationTarget(url: string): { artifact: Artifact; hash: string; query: string } | null {
     let parsed: URL;
     try { parsed = new URL(url); } catch { return null; }
     if (parsed.origin !== this.origin) return null;
     const match = /^\/([a-f0-9]{64})\/open\/([a-f0-9]{24})$/.exec(parsed.pathname);
     if (!match || match[1] !== this.capability('open', match[2])) return null;
     const artifact = this.catalog?.artifacts.find(item => item.id === match[2]);
-    return artifact ? { artifact, hash: parsed.hash } : null;
+    return artifact ? { artifact, hash: parsed.hash, query: parsed.search } : null;
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -126,9 +129,9 @@ export class DocumentServer {
           try {
             const reference = new URL(href.value, `https://docshelf.invalid/${encodeURIComponent(path.basename(artifact.sourcePath!))}`);
             const rawPath = href.value.split(/[?#]/)[0];
-            const candidate = path.resolve(path.dirname(artifact.sourcePath!), decodeURIComponent(rawPath));
+            const candidate = rawPath ? path.resolve(path.dirname(artifact.sourcePath!), decodeURIComponent(rawPath)) : artifact.sourcePath!;
             const target = catalog.artifacts.find(item => item.sourcePath === candidate || item.canonicalPath === candidate);
-            if (target) href.value = this.navigationUrl(target, reference.hash);
+            if (target) href.value = this.navigationUrl(target, reference.hash, reference.search);
           } catch { /* An invalid authored link stays unavailable. */ }
         }
       }

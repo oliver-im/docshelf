@@ -162,3 +162,36 @@ test('recovery follows re-registered sources across routes without adopting anot
     assert.equal(readFileSync(f.source, 'utf8'), '# Original\n');
   } finally { f.cleanup(); }
 });
+
+test('a pending checkpoint must match the live draft and remain readable on disk', () => {
+  const f = fixture();
+  try {
+    const directory = path.join(f.directory, 'recovery');
+    const store = new RecoveryStore(directory), id = randomUUID();
+    const snapshot = readEditableFile(f.source, f.roots);
+    const draft = '# Unsaved navigation draft\n';
+    store.record(id, f.source, 'note.html', snapshot, draft, true);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, draft), true);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, `${draft}Latest edit\n`), false);
+    assert.equal(store.hasPendingCheckpoint(id, path.join(f.directory, 'other.md'), snapshot, draft), false);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, { ...snapshot, canonicalPath: path.join(f.directory, 'other.md') }, draft), false);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, { ...snapshot, bytes: Buffer.from('# Different baseline\n') }, draft), false);
+
+    // record() can reuse its cached checkpoint. Successful return alone cannot
+    // prove that its blobs survived deletion or corruption outside the store.
+    const metadata = JSON.parse(readFileSync(path.join(directory, `${id}.json`), 'utf8'));
+    const textFile = path.join(directory, metadata.textFile);
+    writeFileSync(textFile, 'Damaged draft');
+    store.record(id, f.source, 'note.html', snapshot, draft, true);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, draft), false);
+    writeFileSync(textFile, draft);
+    rmSync(path.join(directory, metadata.baselineFile));
+    store.record(id, f.source, 'note.html', snapshot, draft, true);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, draft), false);
+    writeFileSync(path.join(directory, metadata.baselineFile), snapshot.bytes);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, draft), true);
+    store.record(id, f.source, 'note.html', snapshot, draft, false);
+    assert.equal(store.hasPendingCheckpoint(id, f.source, snapshot, draft), false);
+    assert.equal(readFileSync(f.source, 'utf8'), '# Original\n');
+  } finally { f.cleanup(); }
+});

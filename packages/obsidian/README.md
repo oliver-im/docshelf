@@ -242,14 +242,9 @@ used to read the destination's contents. It provides no write API and closes on
 plugin unload. Report code receives no privileged plugin bridge. This avoids
 using `file://` or Obsidian's `app://` resource origin for reports.
 
-Local reports stay in their viewer when following external HTTP(S) links;
-those links open in the system browser. Registered document links open in
-DocShelf, and same-report anchors remain in the page. Popups are disabled.
-Unrelated shelf errors do not reset a report's interactive state.
-Reloading the same report preserves its viewer session, including localStorage.
-Opening a different report or reassigning its route to a different source starts
-a fresh session, so reports do not inherit each other's browser storage. These
-sessions are not persisted across application restarts.
+Local reports stay in their viewer when following external HTTP(S) links; those links open in the system browser. Citation links from HTML reports to registered documents open in the same DocShelf tab and use Obsidian's Back and Forward buttons. Same-report anchors remain in the page. Popups are disabled. Unrelated shelf errors do not reset a report's interactive state. Reloading the same report preserves its viewer session, including localStorage. Opening a different report or reassigning its route to a different source starts a fresh session, so reports do not inherit each other's browser storage. These sessions are not persisted across application restarts.
+
+Back and Forward restore the document and its saved view state. Registered HTML links retain query parameters, such as an observation date, through reloads and Back/Forward; following a different query on the same report creates a history entry. Returning to an HTML report loads it again; transient script state and manual scroll position are not restored. Native Markdown uses Obsidian's cursor and scroll restoration. A Markdown conflict can leave its tab after its exact pending draft is verified in recovery storage. Returning restores that draft and requires review before saving. If recovery storage fails, navigation stops and the unsaved text stays in the editor; Obsidian may already have advanced its history position.
 
 Registered HTML can run its own scripts and load HTTPS resources or contact
 remote services named by the report. Disable **Run HTML scripts** to view it
@@ -310,5 +305,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.8.2/docshelf-0.8.2.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.8.2
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.8.3/docshelf-0.8.3.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.8.3
