@@ -16,6 +16,12 @@ You can restore a removed local document by adding that file explicitly. Open un
 
 In Obsidian, right-click a project heading and choose **Reset to alphabetical** to reset the order of its folders and documents. **Reset project order** resets the order of project headings. Both actions leave shelf registrations unchanged.
 
+## Keep several projects on a focused shelf
+
+A project is a group of registrations, not a request to scan its repository. Use **Add…**, choose a project name, then select its useful files and document folders. Repeat with the same project name to combine files from different locations, or choose another name for the next project. For example, one shelf can hold `workspace/project-a/README.md`, `workspace/project-a/docs/guides`, and `workspace/project-b/reports` under two project headings without registering `workspace` or either repository root. Individual files do not bring in their siblings; watched folders bring in current and future Markdown and HTML descendants.
+
+Prefer individual registrations when only a few documents are useful, and watch a folder when most of its documents belong on the shelf. For an existing broad registration, remove unwanted subfolders or documents with **Remove from shelf…**; exact exclusions keep them out of later discovery. To keep just the current useful documents, remove the broad folder registration, then add those files or narrower folders to the same project. Original files stay in place. Pins provide shortcuts to registered documents and do not change which documents the shelf includes.
+
 ## Recursive discovery
 
 Folders include `.md`, `.markdown`, `.html`, and `.htm` documents recursively, including subfolders created later. Markdown front-matter scalar titles or headings outside code blocks and HTML page titles provide names, with filenames as a fallback. Existing individual registrations take precedence, preserving their title, route, project, description, and asset list. Originals stay in their projects.

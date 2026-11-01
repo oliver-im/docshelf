@@ -7,6 +7,7 @@ import { documentLabel, loadCatalog, sourceIdentity } from '../src/core/catalog'
 import { readBoundedFile } from '../src/core/files';
 import { createPermalink, parseProtocol, parseRange, checkRange } from '../src/core/protocol';
 import { renderMarkdown, sourceLines } from '../src/core/markdown';
+import { searchContent } from '../src/core/search-text';
 import { extractText, ShelfSearch } from '../src/core/search';
 import { parseGitHubMarkdownUrl } from '@docshelf/core/github-markdown';
 import { parseClaudeArtifactUrl } from '@docshelf/core/claude-artifacts';
@@ -31,7 +32,7 @@ test('descriptions are optional and searchable while malformed values are reject
     await writeFile(f.shelfPath, JSON.stringify({ version: 1, artifacts: [{ ...f.entry, description }] }));
     const artifact = (await loadCatalog(f.shelfPath, f.workspace)).artifacts[0];
     assert.equal(artifact.description, description?.trim() || '');
-    await search.replace([artifact], new Map([[artifact.id, '# Notes\nBodykeyword remains searchable.']]));
+    await search.replace([artifact], new Map([[artifact.id, searchContent('# Notes\nBodykeyword remains searchable.', 'markdown')]]));
     assert.equal(search.search('')[0].excerpt, '');
     assert.equal(search.search('   ')[0].excerpt, '');
     assert.match(search.search('Bodykeyword')[0].excerpt, /Bodykeyword/);
@@ -164,7 +165,7 @@ test('search includes document contents and excludes scripts and styles', async 
   const f = await fixture(); t.after(f.cleanup);
   const artifact = (await loadCatalog(f.shelfPath, f.workspace)).artifacts[0];
   const search = new ShelfSearch();
-  await search.replace([artifact], new Map([[artifact.id, '# Notes\n\nDistinctive zebracorn phrase.']]));
+  await search.replace([artifact], new Map([[artifact.id, searchContent('# Notes\n\nDistinctive zebracorn phrase.', 'markdown')]]));
   assert.equal(search.search('zebracorn')[0].artifact.id, artifact.id);
   assert.equal(extractText('<body><h1>Visible</h1><script>secretjs</script><style>secretcss</style></body>'), 'Visible');
 });
