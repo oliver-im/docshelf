@@ -15,4 +15,4 @@ Existing shelves, routes, settings, recovery records, and document pins remain c
 
 ## Verification and limits
 
-Requires desktop Obsidian **1.13.7 or later**. Windows and Linux remain unverified; mobile is unsupported. The [community review notes](https://github.com/oliver-im/docshelf/blob/main/docs/obsidian-review.md) distinguish intentional plugin capabilities from hosted scanner findings on the independent web app.
+Requires desktop Obsidian **1.13.7 or later**. Native and packaged runtime suites pass on macOS with Obsidian **1.15.0**, including restart persistence, compacted-folder aliases, empty registrations, keyboard access, concurrent vault windows, and plugin replacement preserving settings and recovery drafts. Package integrity and aggregate type checks/builds pass. A full 1.13.7 runtime run is not claimed. Windows and Linux remain unverified; mobile is unsupported. The [community review notes](https://github.com/oliver-im/docshelf/blob/main/docs/obsidian-review.md) distinguish intentional plugin capabilities from hosted scanner findings on the independent web app.
