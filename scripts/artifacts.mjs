@@ -313,8 +313,8 @@ function shelfTrees(shelf) {
 /** Stable folder identities in the same preorder as the rendered sidebar, including empty registrations.
  * @param {Shelf} shelf */
 export function shelfFolderGroups(shelf) {
-  /** @param {import('@docshelf/core/directories').DocumentTreeNode<Artifact>[]} nodes @returns {Array<{ key: string, name: string, title: string }>} */
-  const folders = nodes => nodes.flatMap(node => node.type === 'folder' ? [{ key: node.key, name: node.name, title: node.path.join('/') }, ...folders(node.children)] : []);
+  /** @param {import('@docshelf/core/directories').DocumentTreeNode<Artifact>[]} nodes @returns {Array<{ key: string, keys: string[], name: string, title: string }>} */
+  const folders = nodes => nodes.flatMap(node => node.type === 'folder' ? [{ key: node.key, keys: node.keys, name: node.name, title: node.path.join('/') }, ...folders(node.children)] : []);
   return shelfTrees(shelf).map(({ project, nodes }) => ({ project, folders: folders(nodes) }));
 }
 

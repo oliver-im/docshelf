@@ -51,7 +51,7 @@ export function excludedPath(relative, exclude = []) {
 
 /**
  * @template T
- * @typedef {{ type: 'folder', name: string, key: string, orderKey: string, path: string[], registered: boolean, count: number, children: DocumentTreeNode<T>[] } | { type: 'document', item: T }} DocumentTreeNode
+ * @typedef {{ type: 'folder', name: string, key: string, orderKey: string, keys: string[], path: string[], registered: boolean, count: number, children: DocumentTreeNode<T>[] } | { type: 'document', item: T }} DocumentTreeNode
  */
 
 /**
@@ -86,16 +86,18 @@ export function documentTree(entries, registrations = []) {
   const nodes = (branch, parent) => [
     ...[...branch.folders.values()].sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key)).map(folder => {
       const orderKey = folder.key;
+      const keys = [folder.key];
       const path = [...parent, folder.name];
       while (!folder.registered && !folder.documents.length && folder.folders.size === 1) {
         const [only] = folder.folders.values();
         if (only.registered) break;
         path.push(only.name);
+        keys.push(only.key);
         folder = only;
       }
       const children = nodes(folder, path);
       const count = children.reduce((sum, child) => sum + (child.type === 'document' ? 1 : child.count), 0);
-      return { type: /** @type {const} */ ('folder'), name: path.slice(parent.length).join('/'), key: folder.key, orderKey, path, registered: !!folder.registered, count, children };
+      return { type: /** @type {const} */ ('folder'), name: path.slice(parent.length).join('/'), key: folder.key, orderKey, keys, path, registered: !!folder.registered, count, children };
     }),
     ...branch.documents.map(item => ({ type: /** @type {const} */ ('document'), item })),
   ];

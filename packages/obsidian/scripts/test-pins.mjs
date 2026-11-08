@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+import path from 'node:path';
 
 export async function testDocumentPins({ page, poll, shelfPath }) {
   const baseline = await readFile(shelfPath, 'utf8');
@@ -68,7 +69,7 @@ export async function testDocumentPins({ page, poll, shelfPath }) {
       }
     });
     assert.equal(failedSave.attempted, true, 'The storage failure must reach the real pin writer.');
-    assert.match(failedSave.notices.join('\n'), /Document pin could not be saved:.*Quota exceeded/, 'A failed save must explain the storage error.');
+    assert.match(failedSave.notices.join('\n'), /Pin could not be saved:.*Quota exceeded/, 'A failed save must explain the storage error.');
     assert.equal(await pins.count(), 0, 'A failed save must not add a shortcut.');
     assert.equal(await page.locator('.docshelf-pin-icon').count(), 0, 'A failed save must not mark the original as pinned.');
     console.log('Document pins survived reload and route changes, stayed scoped to their shelf, and unpinned without removing originals.');
@@ -80,5 +81,105 @@ export async function testDocumentPins({ page, poll, shelfPath }) {
       for (const artifact of plugin.catalog.artifacts) if (plugin.isPinned(artifact)) await plugin.pinDocument(artifact, false);
     }, settings);
     await rm(otherShelf, { force: true });
+  }
+}
+
+export async function testFolderPins({ page, poll, shelfPath, workspace }) {
+  const baseline = await readFile(shelfPath, 'utf8');
+  const root = path.join(workspace, 'pin-folders');
+  await mkdir(path.join(root, 'parent/child'), { recursive: true });
+  await writeFile(path.join(root, 'parent/child/note.md'), '# Folder pin fixture\n');
+  const project = 'Folder pin tests';
+  const rows = page.locator('.docshelf-project .docshelf-folder-toggle[data-project="Folder pin tests"]');
+  const shortcut = page.locator('.docshelf-pinned-folder[data-project="Folder pin tests"]');
+  let folderKey;
+  try {
+    await page.evaluate(async ({ root, project }) => {
+      const p = app.plugins.getPlugin('docshelf');
+      await p.addSources([root], project);
+      await p.openShelf();
+    }, { root, project });
+    const target = rows.filter({ has: page.getByText('parent/child', { exact: true }) });
+    await poll(() => target.isVisible(), 'The compacted folder fixture did not appear.');
+    folderKey = await target.getAttribute('data-folder');
+    const beforePin = await readFile(shelfPath, 'utf8');
+    await target.focus();
+    await target.press('Shift+F10');
+    await page.getByText('Pin folder', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 1, 'Pinning a folder did not create a shortcut.');
+    assert.equal(await target.locator('.docshelf-pin-icon').count(), 1);
+    assert.equal(await readFile(shelfPath, 'utf8'), beforePin, 'Pinning must not modify the shared shelf.');
+    // Reveal both a collapsed project and folder from the shortcut.
+    await target.click();
+    await rows.filter({ has: page.getByText('pin-folders', { exact: true }) }).click();
+    await page.locator('.docshelf-project-toggle[data-project="Folder pin tests"]').click();
+    await shortcut.click();
+    assert.equal(await target.isVisible(), true);
+    assert.equal(await target.getAttribute('aria-expanded'), 'true');
+    assert.equal(await target.evaluate(el => el === document.activeElement), true);
+    await page.evaluate(async () => {
+      await app.plugins.disablePlugin('docshelf');
+      await app.plugins.enablePlugin('docshelf');
+      await app.plugins.getPlugin('docshelf').ready;
+      await app.plugins.getPlugin('docshelf').openShelf();
+    });
+    await poll(async () => await shortcut.count() === 1, 'Folder pins did not survive plugin restart.');
+    await writeFile(path.join(root, 'parent/sibling.md'), '# Split compacted chain\n');
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await rows.filter({ has: page.getByText('child', { exact: true }) }).count() === 1, 'The compacted folder did not split.');
+    assert.equal(await shortcut.count(), 1, 'Splitting a folder row lost its pin.');
+    assert.equal(await shortcut.getAttribute('data-folder'), folderKey);
+    await rm(path.join(root, 'parent/sibling.md'));
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(() => target.isVisible(), 'The folder chain did not merge again.');
+    assert.equal(await shortcut.count(), 1);
+    const registered = await readFile(shelfPath, 'utf8');
+    await writeFile(shelfPath, baseline);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await shortcut.count() === 0, 'Absent folders must not leave dead shortcuts.');
+    assert.ok(await page.evaluate(({ project, folderKey }) => app.plugins.getPlugin('docshelf').pinnedFolders.includes(JSON.stringify([project, folderKey])), { project, folderKey }));
+    await writeFile(shelfPath, registered);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await shortcut.count() === 1, 'Returning a registered folder lost its saved pin.');
+    await shortcut.focus();
+    await shortcut.press('Shift+F10');
+    await page.getByText('Unpin folder', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 0, 'Keyboard unpinning left a folder shortcut.');
+    assert.equal(await target.locator('.docshelf-pin-icon').count(), 0);
+    // Pin an ancestor while separate, then merge it into its child's row. The
+    // saved ancestor key is now an alias, not the rendered row's deepest key.
+    await writeFile(path.join(root, 'parent/sibling.md'), '# Separate ancestor\n');
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    const ancestor = rows.filter({ has: page.getByText('parent', { exact: true }) });
+    await poll(() => ancestor.isVisible(), 'The ancestor fixture did not split.');
+    folderKey = await ancestor.getAttribute('data-folder');
+    await ancestor.click({ button: 'right' });
+    await page.getByText('Pin folder', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 1, 'The separate ancestor did not pin.');
+    await rm(path.join(root, 'parent/sibling.md'));
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(() => target.isVisible(), 'The pinned ancestor did not compact.');
+    assert.equal(await shortcut.count(), 1, 'A pinned ancestor alias must resolve to its compacted row.');
+    assert.equal(await target.locator('.docshelf-pin-icon').count(), 1);
+    await shortcut.click({ button: 'right' });
+    await page.getByText('Unpin folder', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 0, 'Unpinning a compacted row did not remove its ancestor alias.');
+    assert.equal(await page.evaluate(({ project, folderKey }) => app.plugins.getPlugin('docshelf').pinnedFolders.includes(JSON.stringify([project, folderKey])), { project, folderKey }), false);
+    // Registered empty folders can be pinned independently of any document.
+    await rm(path.join(root, 'parent/child/note.md'));
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await rows.count() === 1, 'The empty registered folder must remain.');
+    folderKey = await rows.getAttribute('data-folder');
+    await rows.click({ button: 'right' });
+    await page.getByText('Pin folder', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 1, 'An empty registered folder could not be pinned.');
+    assert.equal(await page.locator('.docshelf-pinned .docshelf-item').count(), 0, 'A folder shortcut must not invent documents.');
+    await page.screenshot({ path: '.local/runtime/folder-pins.png' });
+    console.log('Folder pins survived restart, chain splitting/merging and temporary absence, revealed collapsed ancestors, supported keyboard unpinning and empty registrations without changing the shelf.');
+  } finally {
+    if (folderKey) await page.evaluate(({ project, folderKey }) => app.plugins.getPlugin('docshelf').pinFolder(project, folderKey, false), { project, folderKey });
+    await writeFile(shelfPath, baseline);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await rm(root, { recursive: true, force: true });
   }
 }

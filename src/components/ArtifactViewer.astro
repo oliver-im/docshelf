@@ -172,7 +172,7 @@ const blankFrameUrl = 'about:blank';
   import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
   import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
-  import { readPins, setPinned } from '@docshelf/core/pins';
+  import { readPins, setPinned, setFolderPinned, folderPinIdentity } from '@docshelf/core/pins';
 
   interface Artifact {
     route: string;
@@ -368,6 +368,7 @@ const blankFrameUrl = 'about:blank';
       },
     });
 
+    const folderHeadings = new Map<string, HTMLElement>();
     initializeImportDialog();
     showUnread();
     window.addEventListener('storage', (event) => {
@@ -419,12 +420,34 @@ const blankFrameUrl = 'about:blank';
         || artifact.sourceId || '';
     }
 
+    function pinnedFolderIds(heading: HTMLElement) {
+      return pins.folders.filter(id => folderHeadings.get(id) === heading);
+    }
+
+    async function toggleFolderPin(heading: HTMLElement, pinned: boolean) {
+      const identity = heading.dataset.docshelfFolderIdentity!;
+      const update = () => {
+        const current = readPins(readStoredValue(pinsKey));
+        const existing = current.folders.filter(id => folderHeadings.get(id) === heading);
+        let next = current;
+        if (!pinned) for (const id of existing) next = setFolderPinned(next, id, false);
+        else if (!existing.length) next = setFolderPinned(current, identity, true);
+        if (!writeStoredValue(pinsKey, next)) throw new Error('Folder pin could not be saved. Check your browser’s storage settings.');
+        pins = next;
+        showPins();
+      };
+      if (!navigator.locks) throw new Error('To save folder pins, use an up-to-date browser on HTTPS or localhost.');
+      await navigator.locks.request(pinsKey, update);
+    }
+
     function showPins() {
       const topLevel = document.querySelector<HTMLUListElement>('#starlight__sidebar ul.top-level');
       if (!topLevel) return;
       const previous = topLevel.querySelector<HTMLElement>('[data-docshelf-pins]');
       const collapsed = previous?.querySelector('details')?.open === false;
       const focusedSummary = previous?.querySelector('summary') === document.activeElement;
+      const focusedFolder = previous?.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement)?.dataset.docshelfFolderShortcut : undefined;
       const focusedRoute = previous?.contains(document.activeElement)
         ? document.activeElement?.closest('li.docshelf-document-row')?.querySelector<HTMLAnchorElement>('a')?.dataset.docshelfRoute : undefined;
       for (let index = sidebarLinks.length - 1; index >= 0; index--) {
@@ -433,7 +456,19 @@ const blankFrameUrl = 'about:blank';
       previous?.remove();
       const bySource = new Map(artifacts.map(artifact => [pinIdentity(artifact), artifact]));
       const pinned = pins.sources.flatMap(id => bySource.has(id) ? [bySource.get(id)!] : []);
-      if (pinned.length) {
+      const pinnedFolders = [...new Set(pins.folders.flatMap(id => folderHeadings.has(id) ? [folderHeadings.get(id)!] : []))];
+      for (const heading of new Set(folderHeadings.values())) {
+        heading.querySelector('.docshelf-pin-marker')?.remove();
+        heading.toggleAttribute('data-docshelf-pinned', pinnedFolderIds(heading).length > 0);
+        if (pinnedFolderIds(heading).length) {
+          const marker = document.createElement('span');
+          marker.className = 'docshelf-pin-marker';
+          marker.setAttribute('role', 'img');
+          marker.setAttribute('aria-label', 'Pinned');
+          heading.append(marker);
+        }
+      }
+      if (pinned.length || pinnedFolders.length) {
         const section = document.createElement('li');
         section.dataset.docshelfPins = '';
         const details = document.createElement('details');
@@ -444,6 +479,28 @@ const blankFrameUrl = 'about:blank';
         details.append(heading, list);
         section.append(details);
         topLevel.prepend(section);
+        for (const folder of pinnedFolders) {
+          const item = document.createElement('li');
+          const shortcut = document.createElement('button');
+          shortcut.type = 'button';
+          shortcut.className = 'docshelf-folder-shortcut';
+          shortcut.dataset.docshelfFolderShortcut = folder.dataset.docshelfFolderIdentity;
+          const title = document.createElement('span');
+          title.className = 'docshelf-pin-title';
+          title.textContent = folder.dataset.docshelfFolderName || '';
+          const context = document.createElement('span');
+          context.className = 'docshelf-pin-location';
+          context.textContent = folder.dataset.docshelfProject || '';
+          shortcut.setAttribute('aria-label', `Open folder ${title.textContent}, ${context.textContent}`);
+          shortcut.append(title, context);
+          shortcut.onclick = () => {
+            for (let group = folder.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
+            folder.focus();
+            folder.scrollIntoView({ block: 'nearest' });
+          };
+          item.append(shortcut);
+          list.append(item);
+        }
         for (const artifact of pinned) {
           const item = document.createElement('li');
           const link = document.createElement('a');
@@ -482,6 +539,11 @@ const blankFrameUrl = 'about:blank';
         }
       }
       showUnread();
+      if (focusedFolder) {
+        const target = Array.from(topLevel.querySelectorAll<HTMLElement>('[data-docshelf-folder-shortcut]')).find(item => item.dataset.docshelfFolderShortcut === focusedFolder)
+          || folderHeadings.get(focusedFolder);
+        target?.focus();
+      }
       if (focusedSummary) topLevel.querySelector<HTMLElement>('summary')?.focus();
       if (focusedRoute) {
         const target = sidebarLinks.find(entry => entry.route === focusedRoute)?.link;
@@ -802,9 +864,10 @@ const blankFrameUrl = 'about:blank';
       const menuItem = (label: string) => { const item = document.createElement('button'); item.type = 'button'; item.textContent = label; item.setAttribute('role', 'menuitem'); return item; };
       const button = menuItem('Add…');
       const readButton = menuItem('Mark all as read');
+      const pinButton = menuItem('Pin folder');
       const removeButton = menuItem('Remove from shelf…');
-      menu.append(button, readButton, removeButton); sidebar.append(menu);
-      const folderGroups = JSON.parse(root.dataset.folderGroups || '[]') as Array<{ project: string; folders: Array<{ key: string; name: string; title: string }> }>;
+      menu.append(button, readButton, pinButton, removeButton); sidebar.append(menu);
+      const folderGroups = JSON.parse(root.dataset.folderGroups || '[]') as Array<{ project: string; folders: Array<{ key: string; keys: string[]; name: string; title: string }> }>;
       for (const group of sidebar.querySelectorAll('ul.top-level > li > details')) {
         const headings = Array.from(group.querySelectorAll<HTMLElement>('summary'));
         const project = headings[0]?.querySelector('.large')?.textContent || '';
@@ -813,10 +876,15 @@ const blankFrameUrl = 'about:blank';
         folders.forEach((folder, index) => {
           const heading = headings[index + 1];
           if (heading.querySelector('.large')?.textContent !== folder.name) return;
+          heading.dataset.docshelfFolderIdentity = folderPinIdentity(project, folder.key);
+          heading.dataset.docshelfProject = project;
+          for (const key of folder.keys || [folder.key]) folderHeadings.set(folderPinIdentity(project, key), heading);
           heading.dataset.docshelfFolder = folder.key;
           heading.dataset.docshelfFolderName = folder.title;
         });
       }
+      let pinHeading: HTMLElement | undefined;
+      let pinDesired = false;
       let project = '';
       let removal: ShelfGroup | undefined;
       let removalToken: string | undefined;
@@ -831,11 +899,20 @@ const blankFrameUrl = 'about:blank';
       };
       button.onclick = () => { close(); window.dispatchEvent(new CustomEvent('docshelf:add', { detail: { project } })); };
       readButton.onclick = () => { close(); markArtifactsRead(groupArtifacts()); anchor?.focus(); };
+      pinButton.onclick = () => {
+        close();
+        if (!pinHeading) return;
+        const heading = pinHeading;
+        void toggleFolderPin(heading, pinDesired).then(() => {
+          for (let group = heading.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
+          heading.focus();
+        }).catch(error => window.alert(error instanceof Error ? error.message : 'Folder pin could not be saved.'));
+      };
       removeButton.onclick = () => { close(); if (anchor && removal && removalToken) documentActions.removeGroup(removal, anchor, removalToken); };
       menu.onkeydown = event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault();
-          const items = [button, readButton, removeButton].filter(item => !item.hidden && !item.disabled);
+          const items = [button, readButton, pinButton, removeButton].filter(item => !item.hidden && !item.disabled);
           const index = items.indexOf(document.activeElement as HTMLButtonElement);
           items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
         } else if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } close(); anchor?.focus(); }
@@ -854,7 +931,13 @@ const blankFrameUrl = 'about:blank';
         // Folder groups nest inside their project, so read the project from the top-level group.
         const summary = target.closest('ul.top-level > li')?.querySelector(':scope > details > summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
-        const heading = target.closest('summary');
+        const shortcut = target.closest<HTMLElement>('[data-docshelf-folder-shortcut]');
+        const heading = shortcut ? folderHeadings.get(shortcut.dataset.docshelfFolderShortcut!) : target.closest<HTMLElement>('summary');
+        pinHeading = heading?.dataset.docshelfFolderIdentity ? heading : undefined;
+        pinButton.hidden = !pinHeading;
+        pinDesired = !pinHeading || !pinnedFolderIds(pinHeading).length;
+        pinButton.textContent = pinDesired ? 'Pin folder' : 'Unpin folder';
+        if (shortcut && heading) project = heading.dataset.docshelfProject || '';
         readGroup = heading?.closest('details') ?? null;
         readButton.hidden = !readGroup;
         readButton.disabled = !groupArtifacts().some(artifact => artifact.sourceId && unread.has(artifact.sourceId));
@@ -2316,4 +2399,19 @@ const blankFrameUrl = 'about:blank';
       flex: 1;
     }
   }
+  :global(.docshelf-folder-shortcut) {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border: 0;
+    border-radius: .25rem;
+    padding: .35rem .5rem;
+    background: transparent;
+    color: var(--sl-color-gray-2);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  :global(.docshelf-folder-shortcut:hover) { background: var(--sl-color-gray-6); }
+  :global(.docshelf-folder-shortcut:focus-visible) { outline: 2px solid var(--sl-color-text-accent); }
 </style>
