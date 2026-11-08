@@ -4,15 +4,25 @@
  * Pins follow source identities, not titles or routes. Absent sources stay in
  * the list so a temporary removal (for example a branch switch) keeps the pin.
  * Each app stores this state per shelf and device, outside the shared shelf.
- * @typedef {{ version: 1, sources: string[] }} PinState
+ * Folder identities are separate so document and folder actions preserve each other.
+ * @typedef {{ version: 1, sources: string[], folders: string[] }} PinState
  */
+
+/** @param {unknown} value @returns {string[]} */
+const identities = value => Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string' && id.length > 0))] : [];
 
 /** @param {unknown} stored @returns {PinState} */
 export function readPins(stored) {
-  if (!stored || typeof stored !== 'object') return { version: 1, sources: [] };
-  const { version, sources } = /** @type {Partial<PinState>} */ (stored);
-  if (version !== 1 || !Array.isArray(sources)) return { version: 1, sources: [] };
-  return { version: 1, sources: [...new Set(sources.filter(id => typeof id === 'string' && id.length > 0))] };
+  if (!stored || typeof stored !== 'object') return { version: 1, sources: [], folders: [] };
+  const { version, sources, folders } = /** @type {Partial<PinState>} */ (stored);
+  if (version !== 1) return { version: 1, sources: [], folders: [] };
+  return { version: 1, sources: identities(sources), folders: identities(folders) };
+}
+
+/** @param {string[]} values @param {string} identity @param {boolean} pinned */
+function toggle(values, identity, pinned) {
+  if (!identity) return values;
+  return pinned ? (values.includes(identity) ? values : [...values, identity]) : values.filter(id => id !== identity);
 }
 
 /**
@@ -24,7 +34,15 @@ export function readPins(stored) {
  */
 export function setPinned(stored, source, pinned) {
   const state = readPins(stored);
-  if (!source) return state;
-  if (!pinned) return { version: 1, sources: state.sources.filter(id => id !== source) };
-  return state.sources.includes(source) ? state : { version: 1, sources: [...state.sources, source] };
+  return { ...state, sources: toggle(state.sources, source, pinned) };
 }
+
+/** @param {unknown} stored @param {string} identity @param {boolean} pinned @returns {PinState} */
+export function setFolderPinned(stored, identity, pinned) {
+  const state = readPins(stored);
+  return { ...state, folders: toggle(state.folders, identity, pinned) };
+}
+
+/** Use stable tree keys, never folder labels, so duplicate names stay distinct.
+ * @param {string} project @param {string} key */
+export function folderPinIdentity(project, key) { return JSON.stringify([project, key]); }

@@ -5,6 +5,7 @@ import type { Artifact } from '../core/types';
 import { DOCSHELF_ICON } from './icon';
 import { documentLabel, sourceIdentity } from '../core/catalog';
 import type { DocumentTreeNode, FolderSegment } from '@docshelf/core/directories';
+import { folderPinIdentity } from '@docshelf/core/pins';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { MAX_SEARCH_DOCUMENT_CHARACTERS } from '../core/search-text';
@@ -122,7 +123,7 @@ export class ShelfView extends ItemView {
     // Collapsing a project updates its existing DOM directly. Include order
     // here, while setState explicitly invalidates restored collapse state.
     const unread = artifacts.filter(artifact => this.plugin.isUnread(artifact)).map(artifact => artifact.route);
-    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath(), unread, this.plugin.pinnedSources]);
+    const key = JSON.stringify([this.query, this.projectOrder, [...this.documentOrder], [...this.folderOrder], hits, artifacts.length, [...folders], this.plugin.catalog?.directories, this.plugin.shelfMissing && this.plugin.shelfPath(), unread, this.plugin.pinnedSources, this.plugin.pinnedFolders]);
     if (key === this.renderedResults) return;
     this.renderedResults = key;
     this.results.empty();
@@ -134,7 +135,17 @@ export class ShelfView extends ItemView {
     }
     const bySource = new Map(hits.map(hit => [sourceIdentity(hit.artifact), hit]));
     const pinned = this.plugin.pinnedSources.flatMap(id => bySource.has(id) ? [bySource.get(id)!] : []);
-    if (pinned.length) {
+    const byFolder = new Map<string, { project: string; node: FolderNode }>();
+    const collect = (project: string, nodes: DocumentTreeNode<Artifact>[]) => {
+      for (const node of nodes) if (node.type === 'folder') {
+        const entry = { project, node };
+        for (const key of node.keys) byFolder.set(folderPinIdentity(project, key), entry);
+        collect(project, node.children);
+      }
+    };
+    for (const project of this.orderedProjects()) collect(project, this.plugin.projectTree(project, this.orderedDocuments(project)));
+    const pinnedFolders = [...new Set(this.plugin.pinnedFolders.flatMap(id => byFolder.has(id) ? [byFolder.get(id)!] : []))];
+    if (pinned.length || pinnedFolders.length) {
       const section = this.results.createDiv({ cls: 'docshelf-pinned' });
       const heading = section.createEl('h3', { cls: 'docshelf-project-heading' });
       const toggle = heading.createEl('button', { cls: 'docshelf-pinned-toggle', attr: { type: 'button', 'aria-expanded': String(!this.pinsCollapsed) } });
@@ -148,6 +159,7 @@ export class ShelfView extends ItemView {
         toggle.setAttribute('aria-expanded', String(!this.pinsCollapsed));
         this.app.workspace.requestSaveLayout();
       };
+      for (const { project, node } of pinnedFolders) this.renderPinnedFolder(items, project, node);
       for (const hit of pinned) this.renderItem(items, hit, false, folders.get(hit.artifact.route) || [], true);
     }
     const groups = new Map<string, SearchHit[]>();
@@ -252,10 +264,15 @@ export class ShelfView extends ItemView {
       const collapseKey = JSON.stringify([project, node.key]);
       const folder = parent.createDiv({ cls: 'docshelf-folder' });
       const folderUnread = this.containsUnread(node.children);
-      const toggle = folder.createEl('button', { cls: 'docshelf-folder-toggle', attr: { type: 'button', 'aria-expanded': String(!this.collapsedFolders.has(collapseKey)), 'aria-description': `${folderUnread ? 'Contains unread documents. ' : ''}Drag to reorder folders. Press Shift+F10 for folder actions.` } });
+      const pinned = this.plugin.isFolderPinned(project, node.keys);
+      const toggle = folder.createEl('button', { cls: 'docshelf-folder-toggle', attr: { type: 'button', 'aria-expanded': String(!this.collapsedFolders.has(collapseKey)), 'aria-description': `${pinned ? 'Pinned. ' : ''}${folderUnread ? 'Contains unread documents. ' : ''}Drag to reorder folders. Press Shift+F10 for folder actions.` } });
       setIcon(toggle.createSpan({ cls: 'docshelf-project-chevron', attr: { 'aria-hidden': 'true' } }), 'chevron-right');
       setIcon(toggle.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), 'folder');
       toggle.createSpan({ text: node.name, cls: 'docshelf-folder-name' });
+      if (pinned) {
+        toggle.dataset.pinned = 'true';
+        setIcon(toggle.createSpan({ cls: 'docshelf-pin-icon', attr: { 'aria-label': 'Pinned', role: 'img' } }), 'pin');
+      }
       if (folderUnread) toggle.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
       if (node.registered && !node.count) toggle.createSpan({ text: 'No documents', cls: 'docshelf-folder-empty' });
       toggle.dataset.project = project;
@@ -321,11 +338,55 @@ export class ShelfView extends ItemView {
 
   private showFolderMenu(project: string, parent: string, node: FolderNode, toggle: HTMLButtonElement): void {
     const menu = this.createMenu(project);
+    this.addFolderPinAction(menu, project, node);
     this.addMoveActions(menu, childKey(node), () => this.siblingFolders(project, parent), order => this.saveSiblingFolders(project, parent, order, node.key));
     menu.addSeparator();
     this.addMarkAllReadAction(menu, project, node.key);
     menu.addItem(item => item.setTitle('Remove from shelf…').setIcon('list-minus').onClick(() => this.plugin.showRemove({ project, folder: node.key, name: node.path.join('/') })));
     this.showMenu(menu, toggle);
+  }
+
+  private addFolderPinAction(menu: Menu, project: string, node: FolderNode): void {
+    const pinned = this.plugin.isFolderPinned(project, node.keys);
+    menu.addItem(item => item.setTitle(pinned ? 'Unpin folder' : 'Pin folder').setIcon(pinned ? 'pin-off' : 'pin').onClick(async () => {
+      await this.plugin.pinFolder(project, node.key, !pinned);
+      this.revealFolder(project, node.keys);
+    }));
+  }
+
+  private revealFolder(project: string, keys: string[]): void {
+    const target = Array.from(this.results.querySelectorAll<HTMLButtonElement>('.docshelf-folder-toggle'))
+      .find(button => button.dataset.project === project && keys.includes(button.dataset.folder || ''));
+    if (!target) return;
+    for (let parent = target.parentElement; parent && parent !== this.results; parent = parent.parentElement) {
+      if (parent.hidden) parent.parentElement?.querySelector<HTMLButtonElement>(':scope > .docshelf-folder-toggle, :scope > h3 > button')?.click();
+    }
+    if (target.getAttribute('aria-expanded') === 'false') target.click();
+    target.focus();
+    target.scrollIntoView({ block: 'nearest' });
+  }
+
+  private renderPinnedFolder(parent: HTMLElement, project: string, node: FolderNode): void {
+    const button = parent.createEl('button', { cls: 'docshelf-pinned-folder', attr: { type: 'button', 'aria-label': node.path.join('/'), 'aria-description': `Pinned folder. ${project}. Open folder in project. Press Shift+F10 for folder actions.` } });
+    button.dataset.project = project;
+    button.dataset.folder = node.key;
+    const heading = button.createDiv({ cls: 'docshelf-item-heading' });
+    setIcon(heading.createSpan({ cls: 'docshelf-item-icon', attr: { 'aria-hidden': 'true' } }), 'folder');
+    heading.createSpan({ text: node.path.join('/'), cls: 'docshelf-item-title' });
+    setIcon(heading.createSpan({ cls: 'docshelf-pin-icon', attr: { 'aria-label': 'Pinned', role: 'img' } }), 'pin');
+    if (this.containsUnread(node.children)) heading.createSpan({ cls: 'docshelf-unread-dot', attr: { 'aria-hidden': 'true' } });
+    button.createSpan({ text: project, cls: 'docshelf-item-project' });
+    setTooltip(button, `${project} › ${node.path.join('/')}`, { placement: 'right' });
+    button.onclick = () => this.revealFolder(project, node.keys);
+    const showMenu = () => {
+      const menu = this.createMenu(project);
+      this.addFolderPinAction(menu, project, node);
+      this.showMenu(menu, button);
+    };
+    button.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); showMenu(); });
+    button.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); event.stopPropagation(); showMenu(); }
+    });
   }
 
   private makeFolderSortable(folder: HTMLElement, toggle: HTMLButtonElement, project: string, parent: string, node: FolderNode): void {

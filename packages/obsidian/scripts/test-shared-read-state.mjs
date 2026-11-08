@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { appendEvent, endCursor, eventLogPath } from '../../local/events.mjs';
 import { createEvent } from '@docshelf/core/events';
 
@@ -86,7 +88,49 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
     for (const window of [page, second]) {
       await poll(async () => await window.locator('.docshelf-pinned').count() === 0, 'Unpinning did not reach the other vault window.');
     }
-    console.log('Document pins synchronized between vault windows without losing concurrent changes.');
+    // A document writer must preserve simultaneous folder changes, and vice versa.
+    const shelfBeforeFolder = await readFile(shelfPath, 'utf8');
+    const folder = path.join(path.dirname(sources[0]), 'concurrent-folder-pin');
+    await mkdir(folder);
+    let folderKey;
+    try {
+      await page.evaluate(folder => app.plugins.getPlugin('docshelf').addSources([folder], 'Concurrent pins'), folder);
+      for (const window of [page, second]) await poll(async () => await window.locator('.docshelf-folder-toggle[data-project="Concurrent pins"]').count() === 1, 'The shared folder fixture did not reach both windows.');
+      folderKey = await page.locator('.docshelf-folder-toggle[data-project="Concurrent pins"]').getAttribute('data-folder');
+      const folderPin = (window, pinned) => window.evaluate(({ folderKey, pinned }) => app.plugins.getPlugin('docshelf').pinFolder('Concurrent pins', folderKey, pinned), { folderKey, pinned });
+      await Promise.all([pin(page, 0, true), folderPin(second, true)]);
+      for (const window of [page, second]) {
+        await poll(async () => await window.locator('.docshelf-pinned .docshelf-item').count() === 1 && await window.locator('.docshelf-pinned-folder').count() === 1, 'Concurrent document/folder changes overwrote each other or failed to synchronize.');
+      }
+      // Emulate a still-open 0.8.x window, whose writer knows only document sources.
+      await second.evaluate(async () => {
+        const p = app.plugins.getPlugin('docshelf');
+        const artifact = p.catalog.artifacts[1];
+        const identity = artifact.canonicalPath || artifact.sourcePath;
+        localStorage.setItem(p.pinsKey, JSON.stringify({ version: 1, sources: [identity] }));
+        await app.plugins.disablePlugin('docshelf');
+        await app.plugins.enablePlugin('docshelf');
+        await app.plugins.getPlugin('docshelf').ready;
+        await app.plugins.getPlugin('docshelf').openShelf();
+      });
+      for (const window of [page, second]) {
+        await poll(() => window.evaluate(() => {
+          const p = app.plugins.getPlugin('docshelf');
+          return p.isPinned(p.catalog.artifacts[1]) && !p.isPinned(p.catalog.artifacts[0]) && p.pinnedFolders.length === 1;
+        }), 'An older document-only writer erased folder pins or failed to update the other window.');
+        assert.equal(await window.locator('.docshelf-pinned-folder').count(), 1, 'A legacy document write must preserve folder shortcuts across reload and storage events.');
+      }
+      await Promise.all([pin(second, 1, false), folderPin(page, false)]);
+      for (const window of [page, second]) await poll(async () => await window.locator('.docshelf-pinned').count() === 0, 'Concurrent folder/document unpins did not reach both windows.');
+    } finally {
+      if (folderKey) await page.evaluate(folderKey => app.plugins.getPlugin('docshelf').pinFolder('Concurrent pins', folderKey, false), folderKey);
+      await pin(page, 0, false);
+      await pin(page, 1, false);
+      await writeFile(shelfPath, shelfBeforeFolder);
+      await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+      await rm(folder, { recursive: true, force: true });
+    }
+    console.log('Document and folder pins synchronized between vault windows without losing concurrent changes.');
   } finally {
     await page.evaluate(() => { delete document.hasFocus; });
     await second.close();

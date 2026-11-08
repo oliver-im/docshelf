@@ -55,9 +55,11 @@ in the web app. Public GitHub shelf registrations and absolute source paths
 are Obsidian-only; keep them out of a shared shelf. See
 [shared setup and differences](https://github.com/oliver-im/docshelf/blob/main/docs/unification.md).
 
-## Pinned documents
+## Pinned documents and folders
 
 Right-click a document, or open its actions menu, and choose **Pin document**. The **Pinned** section appears above the projects and shows each document's project and folder. The original row stays in its folder with a pin indicator. Choose **Unpin document** from either location to remove the shortcut. Pins follow the source when its title or shelf route changes; temporarily absent documents regain their shortcut when they return.
+
+Right-click a folder, or focus its row and press **Shift+F10**, then choose **Pin folder**. Select its shortcut to reveal and focus the original folder, including collapsed ancestors. Empty registered folders can be pinned too. Folder pins survive single-folder row merging and splitting, and return after temporary absence. Choose **Unpin folder** from the original or shortcut to remove it.
 
 Pins are saved per shelf in this browser. Other tabs at the same site update automatically. Web and Obsidian keep separate pins, and neither writes pins into source documents or the shared shelf file.
 

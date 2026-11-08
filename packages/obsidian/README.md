@@ -258,9 +258,11 @@ and do not join Obsidian Sync. This plugin is desktop-only. Mirroring and mobile
 support are outside this version's scope. Local Markdown uses Obsidian's native
 rendering; the read-only GitHub viewer displays Mermaid fences as code.
 
-## Pinned documents
+## Pinned documents and folders
 
 Right-click a document, or focus its row and press **Shift+F10**, then choose **Pin document**. The **Pinned** section above the projects shows a shortcut with its project and folder. The document stays in its original folder with a pin indicator. Choose **Unpin document** from either row to remove the shortcut. Pins survive restarts and title or route changes, and temporarily absent documents regain their shortcut when they return. Pins are stored per shelf in this device's Obsidian profile, shared between vault windows using that shelf, and separate from web pins.
+
+Right-click a folder, or focus its row and press **Shift+F10**, then choose **Pin folder**. Select its shortcut to reveal and focus the original folder, including collapsed ancestors. Empty registered folders can be pinned too. Folder pins survive single-folder row merging and splitting, and return after temporary absence. Choose **Unpin folder** from the original or shortcut to remove it.
 
 ![Pinned document above the projects, with a pin indicator on its original row](../../docs/images/document-pins.png)
 
@@ -305,5 +307,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.8.3/docshelf-0.8.3.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.8.3
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.9.0/docshelf-0.9.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.9.0

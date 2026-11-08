@@ -62,6 +62,13 @@ test('document trees list folders first, keep document order, and merge single-f
   ]);
   assert.deepEqual(outline(tree), [{ a: [{ 'x/y': ['deep.md'] }, 'note.md'] }, { 'b/guides/v2': ['guide.md'] }, 'z.md', 'a.md']);
   assert.deepEqual([tree[1].key, tree[1].orderKey, tree[1].count], ['b:guides:v2', 'b', 1]);
+  assert.deepEqual(tree[1].keys, ['b', 'b:guides', 'b:guides:v2'], 'Compacted rows must retain every folder identity for saved pins.');
+  const split = documentTree([
+    { item: 'guide.md', folders: segments(['b', 'guides', 'v2']) },
+    { item: 'readme.md', folders: segments(['b', 'guides']) },
+  ]);
+  assert.deepEqual(split[0].keys, ['b', 'b:guides']);
+  assert.deepEqual(split[0].children[0].keys, ['b:guides:v2'], 'A pin must still resolve after a compacted chain splits.');
   assert.deepEqual(documentTree([]), []);
 });
 

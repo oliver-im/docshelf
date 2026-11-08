@@ -15,7 +15,7 @@ import { testReportRegressions } from './test-report-regressions.mjs';
 import { testReportReferences } from './test-report-references.mjs';
 import { testDirectories } from './test-directories.mjs';
 import { testSharedReadState } from './test-shared-read-state.mjs';
-import { testDocumentPins } from './test-pins.mjs';
+import { testDocumentPins, testFolderPins } from './test-pins.mjs';
 import { testSearchCoverage } from './test-search-coverage.mjs';
 import { testDocumentHistory } from './test-document-history.mjs';
 
@@ -134,6 +134,7 @@ try {
   assert.equal(await page.locator('.docshelf-item-icon svg').count(), 2);
   assert.deepEqual(await page.locator('.docshelf-project-count').allTextContents(), ['1', '1']);
   await testDocumentPins({ page, poll, shelfPath });
+  await testFolderPins({ page, poll, shelfPath, workspace });
   await firstProject.click();
   assert.equal(await firstProject.getAttribute('aria-expanded'), 'false');
   assert.equal(await secondProject.getAttribute('aria-expanded'), 'true');

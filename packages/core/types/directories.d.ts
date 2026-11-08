@@ -19,6 +19,7 @@ export type DocumentTreeNode<T> = {
     name: string;
     key: string;
     orderKey: string;
+    keys: string[];
     path: string[];
     registered: boolean;
     count: number;

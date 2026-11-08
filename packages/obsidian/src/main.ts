@@ -21,9 +21,9 @@ import { MAX_SEARCH_CHARACTERS, type SearchContent } from './core/search-text';
 import { watchScope } from '../../local/watch-scope.mjs';
 import { AddModal, ProjectPicker, pickSources } from './ui/add';
 import { prepareAddition, commitAddition, prepareRemoval, removeFromShelf, prepareProjectRemoval, removeProjectFromShelf, prepareFolderRemoval, removeFolderFromShelf, documentLayout } from '../../local/shelf.mjs';
-import { documentTree, type FolderSegment } from '@docshelf/core/directories';
+import { documentTree, type DocumentTreeNode, type FolderSegment } from '@docshelf/core/directories';
 import { unreadSources } from '@docshelf/core/read-state';
-import { readPins, setPinned } from '@docshelf/core/pins';
+import { readPins, setPinned, setFolderPinned, folderPinIdentity, type PinState } from '@docshelf/core/pins';
 import { ShelfReadState } from './core/read-state';
 import { eventLogPath } from '../../local/events.mjs';
 import { RemoveModal, type RemovalTarget } from './ui/remove';
@@ -60,6 +60,7 @@ export default class DocShelfPlugin extends Plugin {
   /** Opened documents, and those on the shelf when tracking began, kept per device and shelf rather than in the shared shelf file. */
   private readState: ShelfReadState | null = null;
   pinnedSources: string[] = [];
+  pinnedFolders: string[] = [];
   private pinsKey = '';
   private readStatusError = '';
   private unread = new Set<string>();
@@ -82,7 +83,7 @@ export default class DocShelfPlugin extends Plugin {
     };
     this.registerDomEvent(window, 'storage', event => {
       if (event.storageArea === window.localStorage && event.key === this.readState?.key) void this.readAnnouncements();
-      if (event.storageArea === window.localStorage && (event.key === this.pinsKey || event.key === null)) {
+      if (event.storageArea === window.localStorage && (event.key === this.pinsKey || event.key === `${this.pinsKey}:folders` || event.key === null)) {
         this.loadPins();
         if (!this.loading) this.emit();
       }
@@ -165,6 +166,7 @@ export default class DocShelfPlugin extends Plugin {
     this.readState = null;
     this.pinsKey = '';
     this.pinnedSources = [];
+    this.pinnedFolders = [];
     this.readStatusError = '';
     this.unread.clear();
     this.server.setCatalog(null);
@@ -329,22 +331,69 @@ export default class DocShelfPlugin extends Plugin {
 
   isPinned(artifact: Artifact): boolean { return this.pinnedSources.includes(sourceIdentity(artifact)); }
 
+  isFolderPinned(project: string, keys: string[]): boolean {
+    return keys.some(key => this.pinnedFolders.includes(folderPinIdentity(project, key)));
+  }
+
+  /** Parse invalid JSON as an empty preference, but let actual storage failures reach the caller. */
+  private storedPins(key: string): PinState {
+    const raw = window.localStorage.getItem(key);
+    let stored: unknown;
+    try { stored = JSON.parse(raw || 'null'); }
+    catch { stored = null; }
+    return readPins(stored);
+  }
+
   private loadPins(): void {
-    try { this.pinnedSources = readPins(JSON.parse(window.localStorage.getItem(this.pinsKey) || 'null')).sources; }
-    catch { this.pinnedSources = []; }
+    try {
+      this.pinnedSources = this.storedPins(this.pinsKey).sources;
+      // Older versions rewrite the document record without preserving unknown
+      // fields. Keep folders separate so an older vault cannot erase them.
+      this.pinnedFolders = this.storedPins(`${this.pinsKey}:folders`).folders;
+    } catch {
+      this.pinnedSources = [];
+      this.pinnedFolders = [];
+    }
   }
 
   async pinDocument(artifact: Artifact, pinned: boolean): Promise<void> {
-    const key = this.pinsKey;
     const identity = sourceIdentity(artifact);
-    if (!key || !this.catalog?.artifacts.some(item => sourceIdentity(item) === identity)) return;
+    if (!this.catalog?.artifacts.some(item => sourceIdentity(item) === identity)) return;
+    await this.savePins(state => setPinned(state, identity, pinned));
+  }
+
+  async pinFolder(project: string, key: string, pinned: boolean): Promise<void> {
+    const find = (nodes: DocumentTreeNode<Artifact>[]): string[] | undefined => {
+      for (const node of nodes) if (node.type === 'folder') {
+        if (node.keys.includes(key)) return node.keys;
+        const found = find(node.children);
+        if (found) return found;
+      }
+    };
+    const keys = find(this.projectTree(project, (this.catalog?.artifacts || []).filter(item => item.project === project)));
+    if (!keys) return;
+    await this.savePins(state => {
+      if (pinned) return setFolderPinned(state, folderPinIdentity(project, key), true);
+      // Several pinned ancestors can compact into one visible row. Unpin that
+      // row once, without leaving an invisible alias that reappears on refresh.
+      return keys.reduce((next, alias) => setFolderPinned(next, folderPinIdentity(project, alias), false), state);
+    }, 'folder');
+  }
+
+  private async savePins(update: (state: PinState) => PinState, kind: 'document' | 'folder' = 'document'): Promise<void> {
+    const key = this.pinsKey;
+    if (!key) return;
     try {
       await navigator.locks.request(key, () => {
-        const next = setPinned(JSON.parse(window.localStorage.getItem(key) || 'null'), identity, pinned);
-        window.localStorage.setItem(key, JSON.stringify(next));
-        if (this.pinsKey === key) { this.pinnedSources = next.sources; this.emit(); }
+        const storageKey = kind === 'folder' ? `${key}:folders` : key;
+        const next = update(this.storedPins(storageKey));
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+        if (this.pinsKey === key) {
+          this.loadPins();
+          this.emit();
+        }
       });
-    } catch (error) { new Notice(`Document pin could not be saved: ${message(error)}`); }
+    } catch (error) { new Notice(`Pin could not be saved: ${message(error)}`); }
   }
 
   private async updateReadState(catalog: Catalog, read: string[] = []): Promise<void> {
