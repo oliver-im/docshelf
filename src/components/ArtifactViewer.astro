@@ -334,7 +334,11 @@ const blankFrameUrl = 'about:blank';
     let readState = loadReadState(shelfSources);
     let unread = readState ? unreadSources(readState, shelfSources) : new Set<string>();
     const pinsKey = `docshelf:pins:${basePath}:${root.dataset.shelfId}`;
-    let pins = readPins(readStoredValue(pinsKey));
+    const folderPinsKey = `${pinsKey}:folders`;
+    function readStoredPins() {
+      return { ...readPins(readStoredValue(pinsKey)), folders: readPins(readStoredValue(folderPinsKey)).folders };
+    }
+    let pins = readStoredPins();
 
     let currentArtifact: Artifact | undefined;
     let currentSelection: ArtifactSelection | undefined;
@@ -354,8 +358,8 @@ const blankFrameUrl = 'about:blank';
           if (!source) throw new Error('This document is no longer on the shelf.');
           const update = () => {
             const next = setPinned(readStoredValue(pinsKey), source, pinned);
-            if (!writeStoredValue(pinsKey, next)) throw new Error('Document pin could not be saved. Check your browser’s storage settings.');
-            pins = next;
+            if (!writeStoredValue(pinsKey, { version: next.version, sources: next.sources })) throw new Error('Document pin could not be saved. Check your browser’s storage settings.');
+            pins = readStoredPins();
             showPins();
           };
           if (!navigator.locks) throw new Error('To save document pins, use an up-to-date browser on HTTPS or localhost.');
@@ -372,8 +376,8 @@ const blankFrameUrl = 'about:blank';
     initializeImportDialog();
     showUnread();
     window.addEventListener('storage', (event) => {
-      if (event.key === pinsKey || event.key === null) {
-        pins = readPins(readStoredValue(pinsKey));
+      if (event.key === pinsKey || event.key === folderPinsKey || event.key === null) {
+        pins = readStoredPins();
         showPins();
       }
       if (event.key !== readStateStorageKey || !readState) return;
@@ -427,12 +431,12 @@ const blankFrameUrl = 'about:blank';
     async function toggleFolderPin(heading: HTMLElement, pinned: boolean) {
       const identity = heading.dataset.docshelfFolderIdentity!;
       const update = () => {
-        const current = readPins(readStoredValue(pinsKey));
+        const current = readStoredPins();
         const existing = current.folders.filter(id => folderHeadings.get(id) === heading);
         let next = current;
         if (!pinned) for (const id of existing) next = setFolderPinned(next, id, false);
         else if (!existing.length) next = setFolderPinned(current, identity, true);
-        if (!writeStoredValue(pinsKey, next)) throw new Error('Folder pin could not be saved. Check your browser’s storage settings.');
+        if (!writeStoredValue(folderPinsKey, { version: next.version, sources: [], folders: next.folders })) throw new Error('Folder pin could not be saved. Check your browser’s storage settings.');
         pins = next;
         showPins();
       };
@@ -474,7 +478,10 @@ const blankFrameUrl = 'about:blank';
         const details = document.createElement('details');
         details.open = !collapsed;
         const heading = document.createElement('summary');
-        heading.textContent = 'Pinned';
+        const headingLabel = document.createElement('span');
+        headingLabel.className = 'group-label';
+        headingLabel.textContent = 'Pinned';
+        heading.append(headingLabel);
         const list = document.createElement('ul');
         details.append(heading, list);
         section.append(details);
@@ -1132,11 +1139,17 @@ const blankFrameUrl = 'about:blank';
         setUnreadMarker(link, pinnedTitle || link, isUnread, 'Unread');
         if (pinnedTitle) link.setAttribute('aria-description', isUnread ? 'Pinned. Unread.' : 'Pinned.');
       }
+      for (const shortcut of document.querySelectorAll<HTMLElement>('[data-docshelf-folder-shortcut]')) {
+        const folder = folderHeadings.get(shortcut.dataset.docshelfFolderShortcut!);
+        const isUnread = Boolean(folder?.closest('details')?.querySelector('a[data-docshelf-unread]'));
+        setUnreadMarker(shortcut, shortcut.querySelector<HTMLElement>('.docshelf-pin-title') || shortcut, isUnread, 'Contains unread documents');
+        shortcut.setAttribute('aria-description', isUnread ? 'Pinned folder. Contains unread documents.' : 'Pinned folder.');
+      }
       for (const group of document.querySelectorAll<HTMLDetailsElement>('#starlight__sidebar details')) {
         const summary = group.querySelector<HTMLElement>(':scope > summary');
         const label = summary?.querySelector<HTMLElement>('.group-label');
         if (summary && label) {
-          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread]')), 'Contains unread documents');
+          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread], button[data-docshelf-folder-shortcut][data-docshelf-unread]')), 'Contains unread documents');
         }
       }
     }

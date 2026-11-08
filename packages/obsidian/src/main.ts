@@ -83,7 +83,7 @@ export default class DocShelfPlugin extends Plugin {
     };
     this.registerDomEvent(window, 'storage', event => {
       if (event.storageArea === window.localStorage && event.key === this.readState?.key) void this.readAnnouncements();
-      if (event.storageArea === window.localStorage && (event.key === this.pinsKey || event.key === null)) {
+      if (event.storageArea === window.localStorage && (event.key === this.pinsKey || event.key === `${this.pinsKey}:folders` || event.key === null)) {
         this.loadPins();
         if (!this.loading) this.emit();
       }
@@ -335,12 +335,25 @@ export default class DocShelfPlugin extends Plugin {
     return keys.some(key => this.pinnedFolders.includes(folderPinIdentity(project, key)));
   }
 
+  /** Parse invalid JSON as an empty preference, but let actual storage failures reach the caller. */
+  private storedPins(key: string): PinState {
+    const raw = window.localStorage.getItem(key);
+    let stored: unknown;
+    try { stored = JSON.parse(raw || 'null'); }
+    catch { stored = null; }
+    return readPins(stored);
+  }
+
   private loadPins(): void {
-    let state: PinState;
-    try { state = readPins(JSON.parse(window.localStorage.getItem(this.pinsKey) || 'null')); }
-    catch { state = readPins(null); }
-    this.pinnedSources = state.sources;
-    this.pinnedFolders = state.folders;
+    try {
+      this.pinnedSources = this.storedPins(this.pinsKey).sources;
+      // Older versions rewrite the document record without preserving unknown
+      // fields. Keep folders separate so an older vault cannot erase them.
+      this.pinnedFolders = this.storedPins(`${this.pinsKey}:folders`).folders;
+    } catch {
+      this.pinnedSources = [];
+      this.pinnedFolders = [];
+    }
   }
 
   async pinDocument(artifact: Artifact, pinned: boolean): Promise<void> {
@@ -364,19 +377,19 @@ export default class DocShelfPlugin extends Plugin {
       // Several pinned ancestors can compact into one visible row. Unpin that
       // row once, without leaving an invisible alias that reappears on refresh.
       return keys.reduce((next, alias) => setFolderPinned(next, folderPinIdentity(project, alias), false), state);
-    });
+    }, 'folder');
   }
 
-  private async savePins(update: (state: PinState) => PinState): Promise<void> {
+  private async savePins(update: (state: PinState) => PinState, kind: 'document' | 'folder' = 'document'): Promise<void> {
     const key = this.pinsKey;
     if (!key) return;
     try {
       await navigator.locks.request(key, () => {
-        const next = update(readPins(JSON.parse(window.localStorage.getItem(key) || 'null')));
-        window.localStorage.setItem(key, JSON.stringify(next));
+        const storageKey = kind === 'folder' ? `${key}:folders` : key;
+        const next = update(this.storedPins(storageKey));
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
         if (this.pinsKey === key) {
-          this.pinnedSources = next.sources;
-          this.pinnedFolders = next.folders;
+          this.loadPins();
           this.emit();
         }
       });

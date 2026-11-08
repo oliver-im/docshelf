@@ -102,11 +102,30 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
       for (const window of [page, second]) {
         await poll(async () => await window.locator('.docshelf-pinned .docshelf-item').count() === 1 && await window.locator('.docshelf-pinned-folder').count() === 1, 'Concurrent document/folder changes overwrote each other or failed to synchronize.');
       }
-      await Promise.all([pin(second, 0, false), folderPin(page, false)]);
+      // Emulate a still-open 0.8.x window, whose writer knows only document sources.
+      await second.evaluate(async () => {
+        const p = app.plugins.getPlugin('docshelf');
+        const artifact = p.catalog.artifacts[1];
+        const identity = artifact.canonicalPath || artifact.sourcePath;
+        localStorage.setItem(p.pinsKey, JSON.stringify({ version: 1, sources: [identity] }));
+        await app.plugins.disablePlugin('docshelf');
+        await app.plugins.enablePlugin('docshelf');
+        await app.plugins.getPlugin('docshelf').ready;
+        await app.plugins.getPlugin('docshelf').openShelf();
+      });
+      for (const window of [page, second]) {
+        await poll(() => window.evaluate(() => {
+          const p = app.plugins.getPlugin('docshelf');
+          return p.isPinned(p.catalog.artifacts[1]) && !p.isPinned(p.catalog.artifacts[0]) && p.pinnedFolders.length === 1;
+        }), 'An older document-only writer erased folder pins or failed to update the other window.');
+        assert.equal(await window.locator('.docshelf-pinned-folder').count(), 1, 'A legacy document write must preserve folder shortcuts across reload and storage events.');
+      }
+      await Promise.all([pin(second, 1, false), folderPin(page, false)]);
       for (const window of [page, second]) await poll(async () => await window.locator('.docshelf-pinned').count() === 0, 'Concurrent folder/document unpins did not reach both windows.');
     } finally {
       if (folderKey) await page.evaluate(folderKey => app.plugins.getPlugin('docshelf').pinFolder('Concurrent pins', folderKey, false), folderKey);
       await pin(page, 0, false);
+      await pin(page, 1, false);
       await writeFile(shelfPath, shelfBeforeFolder);
       await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
       await rm(folder, { recursive: true, force: true });

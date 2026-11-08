@@ -174,6 +174,23 @@ export async function testFolderPins({ page, poll, shelfPath, workspace }) {
     await page.getByText('Pin folder', { exact: true }).click();
     await poll(async () => await shortcut.count() === 1, 'An empty registered folder could not be pinned.');
     assert.equal(await page.locator('.docshelf-pinned .docshelf-item').count(), 0, 'A folder shortcut must not invent documents.');
+    // Syntactically corrupt browser storage must not permanently block future saves.
+    await page.evaluate(async ({ project, folderKey }) => {
+      const p = app.plugins.getPlugin('docshelf');
+      localStorage.setItem(p.pinsKey, '{broken document JSON');
+      localStorage.setItem(`${p.pinsKey}:folders`, '{broken folder JSON');
+      await p.pinFolder(project, folderKey, true);
+      await p.pinDocument(p.catalog.artifacts[0], true);
+      await app.plugins.disablePlugin('docshelf');
+      await app.plugins.enablePlugin('docshelf');
+      await app.plugins.getPlugin('docshelf').ready;
+      await app.plugins.getPlugin('docshelf').openShelf();
+    }, { project, folderKey });
+    await poll(async () => await shortcut.count() === 1 && await page.locator('.docshelf-pinned .docshelf-item').count() === 1, 'Saving after malformed JSON failed to repair document/folder storage durably.');
+    await page.evaluate(() => {
+      const p = app.plugins.getPlugin('docshelf');
+      return p.pinDocument(p.catalog.artifacts[0], false);
+    });
     await page.screenshot({ path: '.local/runtime/folder-pins.png' });
     console.log('Folder pins survived restart, chain splitting/merging and temporary absence, revealed collapsed ancestors, supported keyboard unpinning and empty registrations without changing the shelf.');
   } finally {

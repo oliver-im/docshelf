@@ -4,12 +4,16 @@ Pin folders as well as documents above the project list. Right-click a folder, o
 
 - Folder pins support empty registered folders, distinguish matching folder names in different projects, and survive restarts and temporary absence from the shelf.
 - Pins keep following the same folder when single-folder chains merge or split in the sidebar. Unpinning a merged row clears its pinned aliases together.
-- Document and folder pins share device-local storage and cross-window updates without overwriting each other. Existing document pins remain intact; no shelf or source document changes are needed.
+- Document and folder pins use separate device-local records and shared cross-window coordination without overwriting each other. Older app windows can still update document pins without erasing folder pins. Existing document pins remain intact; no shelf or source document changes are needed.
 - DocShelf Web also gains folder pin actions and shortcuts, with separate pins for each app and shelf.
 
 ## Install or update
 
-Use Obsidian's Community plugins settings to check for updates, or open the [community listing](https://community.obsidian.md/plugins/docshelf). For a manual install, download `docshelf-0.9.0.zip`, extract it, and copy `main.js`, `manifest.json`, and `styles.css` into the existing `.obsidian/plugins/docshelf/` folder. **Keep `data.json` and `recovery/`**. Re-enable the plugin afterward. `SHA256SUMS` covers the ZIP and standalone assets; the three standard install assets have GitHub provenance attestations.
+Use Obsidian's Community plugins settings to check for updates, or open the [community listing](https://community.obsidian.md/plugins/docshelf).
+
+For a fresh manual install, download `docshelf-0.9.0.zip`, extract it, and copy its `docshelf` folder into your vault's `.obsidian/plugins/` folder, creating the parent folder if necessary. Enable DocShelf in Community plugins afterward.
+
+For a manual update, save or review pending Markdown edits, then disable DocShelf before replacing files. Copy `main.js`, `manifest.json`, and `styles.css` from the ZIP into the existing `.obsidian/plugins/docshelf/` folder. **Keep `data.json` and `recovery/`**. Re-enable the plugin afterward. `SHA256SUMS` covers the ZIP and standalone assets; the three standard install assets have GitHub provenance attestations.
 
 Existing shelves, routes, settings, recovery records, and document pins remain compatible. Pins are device-local reading preferences stored outside the shared shelf and source documents. No migration is required.
 
