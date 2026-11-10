@@ -172,7 +172,7 @@ const blankFrameUrl = 'about:blank';
   import { htmlSandbox } from '../lib/html-sandbox.js';
   import { createDocumentActions, type ShelfGroup } from '../lib/document-actions';
   import { markRead, markUnread, reconcileReadState, unreadSources, type ReadState } from '@docshelf/core/read-state';
-  import { readPins, setPinned, setFolderPinned, folderPinIdentity } from '@docshelf/core/pins';
+  import { readPins, setPin, pinnedIdentities, pinStorageKey, folderPinIdentity, type PinKind } from '@docshelf/core/pins';
 
   interface Artifact {
     route: string;
@@ -334,9 +334,10 @@ const blankFrameUrl = 'about:blank';
     let readState = loadReadState(shelfSources);
     let unread = readState ? unreadSources(readState, shelfSources) : new Set<string>();
     const pinsKey = `docshelf:pins:${basePath}:${root.dataset.shelfId}`;
-    const folderPinsKey = `${pinsKey}:folders`;
+    const folderPinsKey = pinStorageKey(pinsKey, 'folder');
+    const projectPinsKey = pinStorageKey(pinsKey, 'project');
     function readStoredPins() {
-      return { ...readPins(readStoredValue(pinsKey)), folders: readPins(readStoredValue(folderPinsKey)).folders };
+      return { ...readPins(readStoredValue(pinsKey)), folders: readPins(readStoredValue(folderPinsKey)).folders, projects: readPins(readStoredValue(projectPinsKey)).projects };
     }
     let pins = readStoredPins();
 
@@ -357,7 +358,7 @@ const blankFrameUrl = 'about:blank';
           const source = pinIdentity(artifacts.find(artifact => artifact.route === route));
           if (!source) throw new Error('This document is no longer on the shelf.');
           const update = () => {
-            const next = setPinned(readStoredValue(pinsKey), source, pinned);
+            const next = setPin(readStoredValue(pinsKey), 'document', source, pinned);
             if (!writeStoredValue(pinsKey, { version: next.version, sources: next.sources })) throw new Error('Document pin could not be saved. Check your browser’s storage settings.');
             pins = readStoredPins();
             showPins();
@@ -373,10 +374,11 @@ const blankFrameUrl = 'about:blank';
     });
 
     const folderHeadings = new Map<string, HTMLElement>();
+    const projectHeadings = new Map<string, HTMLElement>();
     initializeImportDialog();
     showUnread();
     window.addEventListener('storage', (event) => {
-      if (event.key === pinsKey || event.key === folderPinsKey || event.key === null) {
+      if (event.key === pinsKey || event.key === folderPinsKey || event.key === projectPinsKey || event.key === null) {
         pins = readStoredPins();
         showPins();
       }
@@ -424,23 +426,31 @@ const blankFrameUrl = 'about:blank';
         || artifact.sourceId || '';
     }
 
-    function pinnedFolderIds(heading: HTMLElement) {
-      return pins.folders.filter(id => folderHeadings.get(id) === heading);
+    function groupPinKind(heading: HTMLElement): Extract<PinKind, 'folder' | 'project'> {
+      return heading.dataset.docshelfProjectIdentity !== undefined ? 'project' : 'folder';
     }
 
-    async function toggleFolderPin(heading: HTMLElement, pinned: boolean) {
-      const identity = heading.dataset.docshelfFolderIdentity!;
+    function groupPinIds(heading: HTMLElement, state = pins) {
+      const kind = groupPinKind(heading);
+      const headings = kind === 'project' ? projectHeadings : folderHeadings;
+      return pinnedIdentities(state, kind).filter(id => headings.get(id) === heading);
+    }
+
+    async function toggleGroupPin(heading: HTMLElement, pinned: boolean) {
+      const kind = groupPinKind(heading);
+      const identity = kind === 'project' ? heading.dataset.docshelfProjectIdentity! : heading.dataset.docshelfFolderIdentity!;
       const update = () => {
         const current = readStoredPins();
-        const existing = current.folders.filter(id => folderHeadings.get(id) === heading);
+        const existing = groupPinIds(heading, current);
         let next = current;
-        if (!pinned) for (const id of existing) next = setFolderPinned(next, id, false);
-        else if (!existing.length) next = setFolderPinned(current, identity, true);
-        if (!writeStoredValue(folderPinsKey, { version: next.version, sources: [], folders: next.folders })) throw new Error('Folder pin could not be saved. Check your browser’s storage settings.');
+        if (!pinned) for (const id of existing) next = setPin(next, kind, id, false);
+        else if (!existing.length) next = setPin(current, kind, identity, true);
+        const field = kind === 'project' ? 'projects' : 'folders';
+        if (!writeStoredValue(pinStorageKey(pinsKey, kind), { version: next.version, sources: [], [field]: next[field] })) throw new Error('Pin could not be saved. Check your browser’s storage settings.');
         pins = next;
         showPins();
       };
-      if (!navigator.locks) throw new Error('To save folder pins, use an up-to-date browser on HTTPS or localhost.');
+      if (!navigator.locks) throw new Error('To save pins, use an up-to-date browser on HTTPS or localhost.');
       await navigator.locks.request(pinsKey, update);
     }
 
@@ -450,8 +460,9 @@ const blankFrameUrl = 'about:blank';
       const previous = topLevel.querySelector<HTMLElement>('[data-docshelf-pins]');
       const collapsed = previous?.querySelector('details')?.open === false;
       const focusedSummary = previous?.querySelector('summary') === document.activeElement;
-      const focusedFolder = previous?.contains(document.activeElement)
-        ? (document.activeElement as HTMLElement)?.dataset.docshelfFolderShortcut : undefined;
+      const focusedGroup = previous?.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement)?.dataset.docshelfGroupShortcut : undefined;
+      const focusedKind = previous?.contains(document.activeElement) ? (document.activeElement as HTMLElement)?.dataset.docshelfPinKind : undefined;
       const focusedRoute = previous?.contains(document.activeElement)
         ? document.activeElement?.closest('li.docshelf-document-row')?.querySelector<HTMLAnchorElement>('a')?.dataset.docshelfRoute : undefined;
       for (let index = sidebarLinks.length - 1; index >= 0; index--) {
@@ -460,11 +471,14 @@ const blankFrameUrl = 'about:blank';
       previous?.remove();
       const bySource = new Map(artifacts.map(artifact => [pinIdentity(artifact), artifact]));
       const pinned = pins.sources.flatMap(id => bySource.has(id) ? [bySource.get(id)!] : []);
-      const pinnedFolders = [...new Set(pins.folders.flatMap(id => folderHeadings.has(id) ? [folderHeadings.get(id)!] : []))];
-      for (const heading of new Set(folderHeadings.values())) {
+      const pinnedGroups = [...new Set([
+        ...pins.projects.flatMap(id => projectHeadings.has(id) ? [projectHeadings.get(id)!] : []),
+        ...pins.folders.flatMap(id => folderHeadings.has(id) ? [folderHeadings.get(id)!] : []),
+      ])];
+      for (const heading of new Set([...projectHeadings.values(), ...folderHeadings.values()])) {
         heading.querySelector('.docshelf-pin-marker')?.remove();
-        heading.toggleAttribute('data-docshelf-pinned', pinnedFolderIds(heading).length > 0);
-        if (pinnedFolderIds(heading).length) {
+        heading.toggleAttribute('data-docshelf-pinned', groupPinIds(heading).length > 0);
+        if (groupPinIds(heading).length) {
           const marker = document.createElement('span');
           marker.className = 'docshelf-pin-marker';
           marker.setAttribute('role', 'img');
@@ -472,7 +486,7 @@ const blankFrameUrl = 'about:blank';
           heading.append(marker);
         }
       }
-      if (pinned.length || pinnedFolders.length) {
+      if (pinned.length || pinnedGroups.length) {
         const section = document.createElement('li');
         section.dataset.docshelfPins = '';
         const details = document.createElement('details');
@@ -486,19 +500,21 @@ const blankFrameUrl = 'about:blank';
         details.append(heading, list);
         section.append(details);
         topLevel.prepend(section);
-        for (const folder of pinnedFolders) {
+        for (const folder of pinnedGroups) {
           const item = document.createElement('li');
           const shortcut = document.createElement('button');
           shortcut.type = 'button';
-          shortcut.className = 'docshelf-folder-shortcut';
-          shortcut.dataset.docshelfFolderShortcut = folder.dataset.docshelfFolderIdentity;
+          shortcut.className = 'docshelf-group-shortcut';
+          const kind = groupPinKind(folder);
+          shortcut.dataset.docshelfPinKind = kind;
+          shortcut.dataset.docshelfGroupShortcut = kind === 'project' ? folder.dataset.docshelfProjectIdentity : folder.dataset.docshelfFolderIdentity;
           const title = document.createElement('span');
           title.className = 'docshelf-pin-title';
-          title.textContent = folder.dataset.docshelfFolderName || '';
+          title.textContent = (kind === 'project' ? folder.dataset.docshelfProjectIdentity : folder.dataset.docshelfFolderName) || '';
           const context = document.createElement('span');
           context.className = 'docshelf-pin-location';
-          context.textContent = folder.dataset.docshelfProject || '';
-          shortcut.setAttribute('aria-label', `Open folder ${title.textContent}, ${context.textContent}`);
+          context.textContent = kind === 'project' ? 'Project' : folder.dataset.docshelfProject || '';
+          shortcut.setAttribute('aria-label', `Open ${kind} ${title.textContent}${kind === 'folder' ? `, ${context.textContent}` : ''}`);
           shortcut.append(title, context);
           shortcut.onclick = () => {
             for (let group = folder.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
@@ -546,9 +562,9 @@ const blankFrameUrl = 'about:blank';
         }
       }
       showUnread();
-      if (focusedFolder) {
-        const target = Array.from(topLevel.querySelectorAll<HTMLElement>('[data-docshelf-folder-shortcut]')).find(item => item.dataset.docshelfFolderShortcut === focusedFolder)
-          || folderHeadings.get(focusedFolder);
+      if (focusedGroup !== undefined) {
+        const target = Array.from(topLevel.querySelectorAll<HTMLElement>('[data-docshelf-group-shortcut]')).find(item => item.dataset.docshelfGroupShortcut === focusedGroup && item.dataset.docshelfPinKind === focusedKind)
+          || (focusedKind === 'project' ? projectHeadings : folderHeadings).get(focusedGroup);
         target?.focus();
       }
       if (focusedSummary) topLevel.querySelector<HTMLElement>('summary')?.focus();
@@ -878,7 +894,12 @@ const blankFrameUrl = 'about:blank';
       for (const group of sidebar.querySelectorAll('ul.top-level > li > details')) {
         const headings = Array.from(group.querySelectorAll<HTMLElement>('summary'));
         const project = headings[0]?.querySelector('.large')?.textContent || '';
-        const folders = folderGroups.find(entry => entry.project === project)?.folders;
+        const registered = folderGroups.find(entry => entry.project === project);
+        if (!registered || !headings[0]) continue;
+        headings[0].dataset.docshelfProjectIdentity = project;
+        headings[0].dataset.docshelfProject = project;
+        projectHeadings.set(project, headings[0]);
+        const folders = registered.folders;
         if (!folders || folders.length !== headings.length - 1) continue;
         folders.forEach((folder, index) => {
           const heading = headings[index + 1];
@@ -910,10 +931,10 @@ const blankFrameUrl = 'about:blank';
         close();
         if (!pinHeading) return;
         const heading = pinHeading;
-        void toggleFolderPin(heading, pinDesired).then(() => {
+        void toggleGroupPin(heading, pinDesired).then(() => {
           for (let group = heading.closest('details'); group; group = group.parentElement?.closest('details') ?? null) group.open = true;
           heading.focus();
-        }).catch(error => window.alert(error instanceof Error ? error.message : 'Folder pin could not be saved.'));
+        }).catch(error => window.alert(error instanceof Error ? error.message : 'Pin could not be saved.'));
       };
       removeButton.onclick = () => { close(); if (anchor && removal && removalToken) documentActions.removeGroup(removal, anchor, removalToken); };
       menu.onkeydown = event => {
@@ -938,18 +959,18 @@ const blankFrameUrl = 'about:blank';
         // Folder groups nest inside their project, so read the project from the top-level group.
         const summary = target.closest('ul.top-level > li')?.querySelector(':scope > details > summary');
         project = summary?.querySelector('.large')?.textContent?.trim() || '';
-        const shortcut = target.closest<HTMLElement>('[data-docshelf-folder-shortcut]');
-        const heading = shortcut ? folderHeadings.get(shortcut.dataset.docshelfFolderShortcut!) : target.closest<HTMLElement>('summary');
-        pinHeading = heading?.dataset.docshelfFolderIdentity ? heading : undefined;
+        const shortcut = target.closest<HTMLElement>('[data-docshelf-group-shortcut]');
+        const heading = shortcut ? (shortcut.dataset.docshelfPinKind === 'project' ? projectHeadings : folderHeadings).get(shortcut.dataset.docshelfGroupShortcut!) : target.closest<HTMLElement>('summary');
+        pinHeading = heading && (heading.dataset.docshelfFolderIdentity !== undefined || heading.dataset.docshelfProjectIdentity !== undefined) ? heading : undefined;
         pinButton.hidden = !pinHeading;
-        pinDesired = !pinHeading || !pinnedFolderIds(pinHeading).length;
-        pinButton.textContent = pinDesired ? 'Pin folder' : 'Unpin folder';
+        pinDesired = !pinHeading || !groupPinIds(pinHeading).length;
+        pinButton.textContent = `${pinDesired ? 'Pin' : 'Unpin'} ${pinHeading ? groupPinKind(pinHeading) : 'group'}`;
         if (shortcut && heading) project = heading.dataset.docshelfProject || '';
         readGroup = heading?.closest('details') ?? null;
         readButton.hidden = !readGroup;
         readButton.disabled = !groupArtifacts().some(artifact => artifact.sourceId && unread.has(artifact.sourceId));
         const folder = heading instanceof HTMLElement ? heading.dataset.docshelfFolder : undefined;
-        removal = !project ? undefined : heading === summary ? { project } : folder ? { project, folder, name: (heading as HTMLElement).dataset.docshelfFolderName } : undefined;
+        removal = !project ? undefined : heading?.dataset.docshelfProjectIdentity !== undefined ? { project } : folder ? { project, folder, name: (heading as HTMLElement).dataset.docshelfFolderName } : undefined;
         removalToken = undefined;
         removeButton.hidden = true;
         const request = ++opened;
@@ -1139,17 +1160,18 @@ const blankFrameUrl = 'about:blank';
         setUnreadMarker(link, pinnedTitle || link, isUnread, 'Unread');
         if (pinnedTitle) link.setAttribute('aria-description', isUnread ? 'Pinned. Unread.' : 'Pinned.');
       }
-      for (const shortcut of document.querySelectorAll<HTMLElement>('[data-docshelf-folder-shortcut]')) {
-        const folder = folderHeadings.get(shortcut.dataset.docshelfFolderShortcut!);
+      for (const shortcut of document.querySelectorAll<HTMLElement>('[data-docshelf-group-shortcut]')) {
+        const kind = shortcut.dataset.docshelfPinKind;
+        const folder = (kind === 'project' ? projectHeadings : folderHeadings).get(shortcut.dataset.docshelfGroupShortcut!);
         const isUnread = Boolean(folder?.closest('details')?.querySelector('a[data-docshelf-unread]'));
         setUnreadMarker(shortcut, shortcut.querySelector<HTMLElement>('.docshelf-pin-title') || shortcut, isUnread, 'Contains unread documents');
-        shortcut.setAttribute('aria-description', isUnread ? 'Pinned folder. Contains unread documents.' : 'Pinned folder.');
+        shortcut.setAttribute('aria-description', `Pinned ${kind}.${isUnread ? ' Contains unread documents.' : ''}`);
       }
       for (const group of document.querySelectorAll<HTMLDetailsElement>('#starlight__sidebar details')) {
         const summary = group.querySelector<HTMLElement>(':scope > summary');
         const label = summary?.querySelector<HTMLElement>('.group-label');
         if (summary && label) {
-          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread], button[data-docshelf-folder-shortcut][data-docshelf-unread]')), 'Contains unread documents');
+          setUnreadMarker(summary, label, Boolean(group.querySelector('a[data-docshelf-unread], button[data-docshelf-group-shortcut][data-docshelf-unread]')), 'Contains unread documents');
         }
       }
     }
@@ -2412,7 +2434,7 @@ const blankFrameUrl = 'about:blank';
       flex: 1;
     }
   }
-  :global(.docshelf-folder-shortcut) {
+  :global(.docshelf-group-shortcut) {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -2425,6 +2447,6 @@ const blankFrameUrl = 'about:blank';
     text-align: left;
     cursor: pointer;
   }
-  :global(.docshelf-folder-shortcut:hover) { background: var(--sl-color-gray-6); }
-  :global(.docshelf-folder-shortcut:focus-visible) { outline: 2px solid var(--sl-color-text-accent); }
+  :global(.docshelf-group-shortcut:hover) { background: var(--sl-color-gray-6); }
+  :global(.docshelf-group-shortcut:focus-visible) { outline: 2px solid var(--sl-color-text-accent); }
 </style>

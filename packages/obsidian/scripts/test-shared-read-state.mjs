@@ -98,9 +98,10 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
       for (const window of [page, second]) await poll(async () => await window.locator('.docshelf-folder-toggle[data-project="Concurrent pins"]').count() === 1, 'The shared folder fixture did not reach both windows.');
       folderKey = await page.locator('.docshelf-folder-toggle[data-project="Concurrent pins"]').getAttribute('data-folder');
       const folderPin = (window, pinned) => window.evaluate(({ folderKey, pinned }) => app.plugins.getPlugin('docshelf').pinFolder('Concurrent pins', folderKey, pinned), { folderKey, pinned });
-      await Promise.all([pin(page, 0, true), folderPin(second, true)]);
+      const projectPin = (window, pinned) => window.evaluate(pinned => app.plugins.getPlugin('docshelf').pinProject('Concurrent pins', pinned), pinned);
+      await Promise.all([pin(page, 0, true), folderPin(second, true), projectPin(page, true)]);
       for (const window of [page, second]) {
-        await poll(async () => await window.locator('.docshelf-pinned .docshelf-item').count() === 1 && await window.locator('.docshelf-pinned-folder').count() === 1, 'Concurrent document/folder changes overwrote each other or failed to synchronize.');
+        await poll(async () => await window.locator('.docshelf-pinned .docshelf-item').count() === 1 && await window.locator('.docshelf-pinned-folder').count() === 1 && await window.locator('.docshelf-pinned-project').count() === 1, 'Concurrent document/folder/project changes overwrote each other or failed to synchronize.');
       }
       // Emulate a still-open 0.8.x window, whose writer knows only document sources.
       await second.evaluate(async () => {
@@ -116,13 +117,20 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
       for (const window of [page, second]) {
         await poll(() => window.evaluate(() => {
           const p = app.plugins.getPlugin('docshelf');
-          return p.isPinned(p.catalog.artifacts[1]) && !p.isPinned(p.catalog.artifacts[0]) && p.pinnedFolders.length === 1;
+          return p.isPinned(p.catalog.artifacts[1]) && !p.isPinned(p.catalog.artifacts[0]) && p.pinnedFolders.length === 1 && p.isProjectPinned('Concurrent pins');
         }), 'An older document-only writer erased folder pins or failed to update the other window.');
         assert.equal(await window.locator('.docshelf-pinned-folder').count(), 1, 'A legacy document write must preserve folder shortcuts across reload and storage events.');
       }
-      await Promise.all([pin(second, 1, false), folderPin(page, false)]);
+      // A folder-aware older writer also cannot erase the project record.
+      await second.evaluate(() => {
+        const p = app.plugins.getPlugin('docshelf');
+        localStorage.setItem(`${p.pinsKey}:folders`, JSON.stringify({ version: 1, sources: [], folders: p.pinnedFolders }));
+      });
+      for (const window of [page, second]) assert.equal(await window.locator('.docshelf-pinned-project').count(), 1);
+      await Promise.all([pin(second, 1, false), folderPin(page, false), projectPin(second, false)]);
       for (const window of [page, second]) await poll(async () => await window.locator('.docshelf-pinned').count() === 0, 'Concurrent folder/document unpins did not reach both windows.');
     } finally {
+      await page.evaluate(() => app.plugins.getPlugin('docshelf').pinProject('Concurrent pins', false));
       if (folderKey) await page.evaluate(folderKey => app.plugins.getPlugin('docshelf').pinFolder('Concurrent pins', folderKey, false), folderKey);
       await pin(page, 0, false);
       await pin(page, 1, false);
@@ -130,7 +138,7 @@ export async function testSharedReadState({ page, poll, shelfPath, openSecondVau
       await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
       await rm(folder, { recursive: true, force: true });
     }
-    console.log('Document and folder pins synchronized between vault windows without losing concurrent changes.');
+    console.log('Document, folder and project pins synchronized between vault windows without losing concurrent changes.');
   } finally {
     await page.evaluate(() => { delete document.hasFocus; });
     await second.close();

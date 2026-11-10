@@ -200,3 +200,100 @@ export async function testFolderPins({ page, poll, shelfPath, workspace }) {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+export async function testProjectPins({ page, poll, shelfPath, workspace }) {
+  const baseline = await readFile(shelfPath, 'utf8');
+  const root = path.join(workspace, 'pin-project');
+  const project = 'Project pin tests';
+  const otherShelf = `${shelfPath}.project-pins.json`;
+  const settings = await page.evaluate(() => ({ ...app.plugins.getPlugin('docshelf').settings }));
+  const row = page.locator('.docshelf-project-toggle[data-project="Project pin tests"]');
+  const shortcut = page.locator('.docshelf-pinned-project[data-project="Project pin tests"]');
+  await mkdir(root, { recursive: true });
+  try {
+    await page.evaluate(async ({ root, project }) => {
+      const p = app.plugins.getPlugin('docshelf');
+      await p.addSources([root], project);
+      await p.openShelf();
+    }, { root, project });
+    await poll(() => row.isVisible(), 'The empty registered project did not appear.');
+    const registered = await readFile(shelfPath, 'utf8');
+    await row.focus();
+    await row.press('Shift+F10');
+    await page.getByText('Pin project', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 1, 'An empty project could not be pinned.');
+    assert.equal(await row.locator('.docshelf-pin-icon').count(), 1);
+    assert.equal(await shortcut.getAttribute('draggable'), null, 'Project shortcuts must not reorder originals.');
+    assert.equal(await readFile(shelfPath, 'utf8'), registered, 'Project pins must not change the shared shelf.');
+    // New documents in an already registered project announce unread state on
+    // both the original project and its shortcut, including accessible text.
+    assert.equal(await shortcut.locator('.docshelf-unread-dot').count(), 0);
+    assert.doesNotMatch(await shortcut.getAttribute('aria-description'), /Contains unread documents/);
+    await writeFile(path.join(root, 'arriving.md'), '# Newly arrived document\n');
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await shortcut.locator('.docshelf-unread-dot').count() === 1, 'A populated pinned project did not show its unread document.');
+    assert.equal(await row.locator('.docshelf-unread-dot').count(), 1);
+    assert.match(await shortcut.getAttribute('aria-description'), /Contains unread documents/);
+    await row.click({ button: 'right' });
+    await page.getByText('Mark all as read', { exact: true }).click();
+    await poll(async () => await shortcut.locator('.docshelf-unread-dot').count() === 0, 'Reading a project did not clear its shortcut unread marker.');
+    assert.equal(await row.locator('.docshelf-unread-dot').count(), 0);
+    assert.doesNotMatch(await shortcut.getAttribute('aria-description'), /Contains unread documents/);
+    if (await row.getAttribute('aria-expanded') === 'true') await row.click();
+    await shortcut.click();
+    assert.equal(await row.getAttribute('aria-expanded'), 'true');
+    assert.equal(await row.evaluate(el => el === document.activeElement), true, 'The shortcut must focus the original project.');
+    await page.locator('.docshelf-search').fill('no-such-project-pin-document');
+    assert.equal(await shortcut.count(), 0, 'Project shortcuts must not bypass document filtering.');
+    await page.locator('.docshelf-search').fill('');
+    assert.equal(await shortcut.count(), 1, 'Clearing search must restore project shortcuts.');
+    await page.evaluate(async () => {
+      await app.plugins.disablePlugin('docshelf');
+      await app.plugins.enablePlugin('docshelf');
+      await app.plugins.getPlugin('docshelf').ready;
+      await app.plugins.getPlugin('docshelf').openShelf();
+    });
+    await poll(async () => await shortcut.count() === 1, 'Project pins did not survive reload.');
+    await writeFile(otherShelf, registered);
+    await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure(settings), { ...settings, shelfPath: otherShelf });
+    assert.equal(await shortcut.count(), 0, 'Project pins must be scoped to the shelf.');
+    await page.evaluate(settings => app.plugins.getPlugin('docshelf').configure(settings), settings);
+    await poll(async () => await shortcut.count() === 1, 'Returning to a shelf lost its project pin.');
+    await writeFile(shelfPath, baseline);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await shortcut.count() === 0, 'An absent project left a dead shortcut.');
+    assert.equal(await page.evaluate(project => app.plugins.getPlugin('docshelf').isProjectPinned(project), project), true);
+    await writeFile(shelfPath, registered);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await poll(async () => await shortcut.count() === 1, 'A returning project lost its saved pin.');
+    if (await row.getAttribute('aria-expanded') === 'true') await row.click();
+    await shortcut.focus();
+    await shortcut.press('Shift+F10');
+    await page.getByText('Unpin project', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 0, 'Keyboard unpinning left a project shortcut.');
+    assert.equal(await row.locator('.docshelf-pin-icon').count(), 0);
+    assert.equal(await row.evaluate(el => el === document.activeElement), true);
+    // A corrupt project record must be repairable without touching other pin kinds.
+    await page.evaluate(async project => {
+      const p = app.plugins.getPlugin('docshelf');
+      localStorage.setItem(`${p.pinsKey}:projects`, '{broken JSON');
+      await p.pinProject(project, true);
+    }, project);
+    await poll(async () => await shortcut.count() === 1, 'Saving did not repair corrupt project storage.');
+    await shortcut.click({ button: 'right' });
+    await page.getByText('Unpin project', { exact: true }).click();
+    await poll(async () => await shortcut.count() === 0, 'Context-menu unpinning failed.');
+    assert.equal(await row.count(), 1, 'Unpinning must keep the original project.');
+    console.log('Project pins support empty registrations, keyboard and pointer actions, focused reveal, filtering, reload, shelf scoping and temporary absence.');
+  } finally {
+    await page.evaluate(async ({ settings, project }) => {
+      const p = app.plugins.getPlugin('docshelf');
+      await p.configure(settings);
+      await p.pinProject(project, false);
+    }, { settings, project });
+    await writeFile(shelfPath, baseline);
+    await page.evaluate(() => app.plugins.getPlugin('docshelf').refresh());
+    await rm(otherShelf, { force: true });
+    await rm(root, { recursive: true, force: true });
+  }
+}
