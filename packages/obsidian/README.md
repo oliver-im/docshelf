@@ -264,6 +264,8 @@ Right-click a document, or focus its row and press **Shift+F10**, then choose **
 
 Right-click a folder, or focus its row and press **Shift+F10**, then choose **Pin folder**. Select its shortcut to reveal and focus the original folder, including collapsed ancestors. Empty registered folders can be pinned too. Folder pins survive single-folder row merging and splitting, and return after temporary absence. Choose **Unpin folder** from the original or shortcut to remove it.
 
+Right-click a project, or focus its heading and press **Shift+F10**, then choose **Pin project**. Its shortcut opens and focuses that project. Projects with only empty registered folders can be pinned too. Choose **Unpin project** from either location to remove it. Project pins follow the exact project name and return after temporary absence; renaming a project creates a different identity. Project, folder, and document pins are independent and never pin or unpin one another.
+
 ![Pinned document above the projects, with a pin indicator on its original row](../../docs/images/document-pins.png)
 
 ## Develop and verify
@@ -307,5 +309,5 @@ MIT. URL and line-range helpers are shared with the web app through `@docshelf/c
 See the repository [security policy](../../SECURITY.md) and
 [plugin architecture](docs/architecture.md) for the file-access boundaries.
 
-[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.9.0/docshelf-0.9.0.zip
-[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.9.0
+[obsidian-download]: https://github.com/oliver-im/docshelf/releases/download/0.10.0/docshelf-0.10.0.zip
+[obsidian-release]: https://github.com/oliver-im/docshelf/releases/tag/0.10.0

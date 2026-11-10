@@ -61,6 +61,8 @@ Right-click a document, or open its actions menu, and choose **Pin document**. T
 
 Right-click a folder, or focus its row and press **Shift+F10**, then choose **Pin folder**. Select its shortcut to reveal and focus the original folder, including collapsed ancestors. Empty registered folders can be pinned too. Folder pins survive single-folder row merging and splitting, and return after temporary absence. Choose **Unpin folder** from the original or shortcut to remove it.
 
+Right-click a project heading, or focus it and press **Shift+F10**, then choose **Pin project**. Its shortcut opens and focuses the original project, including projects with only empty registered folders. Choose **Unpin project** from either location to remove it. Pins follow the exact project name and return after temporary absence; renaming a project creates a different identity. Project, folder, and document pins are independent.
+
 Pins are saved per shelf in this browser. Other tabs at the same site update automatically. Web and Obsidian keep separate pins, and neither writes pins into source documents or the shared shelf file.
 
 ## Content and search
